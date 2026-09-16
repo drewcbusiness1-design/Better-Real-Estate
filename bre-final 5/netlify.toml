@@ -1,0 +1,41 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+  command = "npm run build"
+
+[functions]
+  node_bundler = "esbuild"
+  # Ship these npm packages as-is from node_modules instead of letting
+  # esbuild try to bundle/tree-shake them. A couple of them (pg, stripe)
+  # use dynamic requires internally that esbuild's static bundler can
+  # silently mishandle — the code runs fine on a local machine (plain
+  # Node just resolves node_modules normally) but can fail to cold-start
+  # once esbuild has bundled it for the cloud, which is invisible until
+  # it's actually deployed. Marking them external is the standard fix.
+  external_node_modules = ["express", "bcryptjs", "cookie-session", "serverless-http", "@neondatabase/serverless", "pg", "stripe", "@netlify/blobs"]
+  included_files = ["mailer.js", "store.js", "storage.js", "dropship.js", "policy.js", "payments.js", "server.js"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback — everything else serves the app shell
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+[dev]
+  command = "echo 'static'"
+  targetPort = 3000
+  publish = "public"
