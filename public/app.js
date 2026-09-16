@@ -70,6 +70,10 @@ async function boot() {
     state.user = d.user; state.pricing = d.pricing; state.access = d.access;
   } catch {}
   if (!state.pricing) { try { state.pricing = (await api('GET', '/api/pricing')).pricing; } catch {} }
+  try {
+    const pc = await api('GET', '/api/payments/config');
+    if (pc.enabled && pc.publishableKey && window.Stripe) state.stripe = window.Stripe(pc.publishableKey);
+  } catch {}
   applyTheme(state.user?.settings?.theme || localStorage.getItem('bre_theme') || 'light');
   if (state.verifyToken) state.view = 'verify';
   else if (state.resetToken) state.view = 'reset';
@@ -109,7 +113,7 @@ function renderTabs() {
   const tabs = document.getElementById('tabbar');
   tabs.innerHTML = '';
   if (!state.user) return;
-  const items = [['feed','⌂','Feed'], ['shop','▦','Shop'], ['compose','＋','Post'], ['leaderboard','♦','Board'], ['me','☺','Profile']];
+  const items = [['feed','⌂','Feed'], ['shop','▦','Shop'], ['compose','＋','Post'], ['leaderboard','♦','Board'], ['me','◍','Profile']];
   items.forEach(([v, ic, label]) => tabs.appendChild(el('button', {
     class: state.view === v ? 'active' : '', onclick: () => go(v)
   }, [el('span', { class: 'ic' }, ic), el('span', {}, label)])));
@@ -265,7 +269,72 @@ function trialBar() {
   ]);
 }
 
-/* ================= FEED ================= */
+/* ================= CARD PAYMENT MODAL ================= */
+// Shared by every purchase button. If the server says the wallet balance
+// already covered it (or Stripe isn't configured yet), there's nothing to
+// do here. Otherwise this shows a real Stripe card form, confirms the
+// charge with Stripe directly (the card number never touches this
+// server), then waits briefly for the webhook to actually grant the
+// purchase before refreshing.
+async function handlePurchaseResponse(resp, successMsg, onDone) {
+  if (!resp?.requiresPayment) {
+    toast(successMsg, 'ok');
+    if (onDone) await onDone();
+    return;
+  }
+  await payWithCard(resp.clientSecret, resp.amount, async () => {
+    toast(successMsg, 'ok');
+    if (onDone) await onDone();
+  });
+}
+
+function payWithCard(clientSecret, amountCents, onSuccess) {
+  return new Promise(resolve => {
+    if (!state.stripe) {
+      toast('Card payments are not set up on this site yet.', 'err');
+      resolve(); return;
+    }
+    const overlay = el('div', { style: 'position:fixed;inset:0;background:rgba(10,10,10,.55);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;' });
+    const panel = el('div', { class: 'panel', style: 'margin:0;max-width:400px;width:100%;animation:rise .25s' });
+    panel.appendChild(el('h2', { style: 'font-size:22px' }, 'Pay ' + cents(amountCents)));
+    panel.appendChild(el('div', { class: 'sub' }, 'Your card is charged directly by Stripe — this site never sees or stores your card number.'));
+    const mount = el('div', { style: 'padding:12px 13px;border:1px solid var(--line);border-radius:9px;background:var(--bg-elev);margin-bottom:6px' });
+    panel.appendChild(mount);
+    const err = el('div', { class: 'errmsg' });
+    panel.appendChild(err);
+    const payBtn = el('button', { class: 'submitbtn' }, 'Pay now');
+    const cancelBtn = el('button', { class: 'btn-ghost', style: 'width:100%;margin-top:10px' }, 'Cancel');
+    panel.appendChild(payBtn);
+    panel.appendChild(cancelBtn);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    const elements = state.stripe.elements();
+    const card = elements.create('card', { style: { base: { fontSize: '15px', color: 'var(--ink)' } } });
+    card.mount(mount);
+
+    function close() { overlay.remove(); resolve(); }
+    cancelBtn.onclick = close;
+
+    payBtn.onclick = async () => {
+      payBtn.disabled = true; payBtn.textContent = 'Processing…';
+      err.textContent = '';
+      const { error, paymentIntent } = await state.stripe.confirmCardPayment(clientSecret, { payment_method: { card } });
+      if (error) {
+        err.textContent = error.message;
+        payBtn.disabled = false; payBtn.textContent = 'Pay now';
+        return;
+      }
+      if (paymentIntent?.status === 'succeeded') {
+        payBtn.textContent = 'Payment received — updating your account…';
+        // The webhook applies the purchase server-side; give it a moment.
+        setTimeout(async () => { close(); if (onSuccess) await onSuccess(); }, 1600);
+      }
+    };
+  });
+}
+
+
 async function renderFeed() {
   const wrap = el('div', { class: 'feedwrap' });
   const vb = verifyBanner(); if (vb) wrap.appendChild(vb);
@@ -436,8 +505,10 @@ async function renderDetail() {
           el('div', { class: 'ld' }, 'Exact address, seller notes, phone and email — plus the ability to make an offer.'),
           el('button', {
             class: 'btn-primary', onclick: async () => {
-              try { await api('POST', `/api/listings/${listing.id}/unlock`); await refreshMe(); render(); }
-              catch (e) { toast(e.message, 'err'); }
+              try {
+                const r = await api('POST', `/api/listings/${listing.id}/unlock`);
+                await handlePurchaseResponse(r, 'Unlocked', async () => { await refreshMe(); render(); });
+              } catch (e) { toast(e.message, 'err'); }
             }
           }, state.user.unlockCredits > 0 ? 'Use free credit' : 'Unlock ' + cents(state.pricing.unlockCredit)),
           el('a', { onclick: () => go('upgrade') }, 'or go Pro for unlimited')
@@ -563,15 +634,37 @@ function renderUpgrade() {
   const st = el('div', { class: 'okmsg' });
   const proCard = el('div', { class: 'card', style: 'padding:22px;margin-bottom:14px' }, [
     el('h3', { style: 'margin:0 0 4px;font-size:20px' }, p.pro.label),
-    el('div', { style: "font-family:'Fraunces',serif;font-size:32px;font-weight:600" }, cents(p.pro.monthly) + el('span') ),
-    el('div', { class: 'sub', style: 'margin-bottom:14px' }, 'per month'),
-    el('div', { class: 'dnotes' }, 'Unlimited listing unlocks · seller analytics on your own listings · early access to new listings in your buy box · Pro badge on your profile.'),
-    el('button', {
-      class: 'submitbtn', onclick: async () => {
-        try { await api('POST', '/api/billing/subscribe'); await refreshMe(); st.textContent = 'Pro active.'; render(); }
-        catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
-      }
-    }, state.access?.pro ? 'Extend another month' : 'Go Pro')
+    el('div', { class: 'row2' }, [
+      el('div', { class: 'card', style: 'padding:16px;text-align:center' }, [
+        el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:700" }, [
+          cents(p.pro.monthly), el('span', { style: 'font-size:13px;font-weight:500;color:var(--ink-soft)' }, '/mo')
+        ]),
+        el('div', { class: 'hint', style: 'margin:6px 0 10px' }, 'billed monthly'),
+        el('button', {
+          class: 'submitbtn', style: 'margin-top:0', onclick: async () => {
+            try {
+              const r = await api('POST', '/api/billing/subscribe', { period: 'monthly' });
+              await handlePurchaseResponse(r, 'Pro active — billed monthly.', async () => { await refreshMe(); render(); });
+            } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
+          }
+        }, 'Choose monthly')
+      ]),
+      el('div', { class: 'card', style: 'padding:16px;text-align:center;border-color:var(--accent)' }, [
+        el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:700" }, [
+          cents(p.pro.annual), el('span', { style: 'font-size:13px;font-weight:500;color:var(--ink-soft)' }, '/yr')
+        ]),
+        el('div', { class: 'hint', style: 'margin:6px 0 10px;color:var(--accent-text);font-weight:600' }, `save ${cents(p.pro.monthly * 12 - p.pro.annual)}/yr`),
+        el('button', {
+          class: 'submitbtn', style: 'margin-top:0', onclick: async () => {
+            try {
+              const r = await api('POST', '/api/billing/subscribe', { period: 'annual' });
+              await handlePurchaseResponse(r, 'Pro active — billed annually.', async () => { await refreshMe(); render(); });
+            } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
+          }
+        }, 'Choose annual')
+      ])
+    ]),
+    el('div', { class: 'dnotes', style: 'margin-top:14px' }, 'Unlimited listing unlocks · seller analytics on your own listings · early access to new listings in your buy box · Pro badge on your profile.')
   ]);
   wrap.appendChild(proCard);
 
@@ -581,8 +674,10 @@ function renderUpgrade() {
     el('div', { class: 'sub' }, `${cents(Math.round(p.unlockPack.price / p.unlockPack.qty))} each vs ${cents(p.unlockCredit)} one at a time`),
     el('button', {
       class: 'submitbtn', onclick: async () => {
-        try { await api('POST', '/api/billing/unlock-pack'); await refreshMe(); st.textContent = 'Credits added.'; render(); }
-        catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
+        try {
+          const r = await api('POST', '/api/billing/unlock-pack');
+          await handlePurchaseResponse(r, 'Credits added.', async () => { await refreshMe(); render(); });
+        } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
       }
     }, 'Buy pack')
   ]));
@@ -606,8 +701,10 @@ async function renderWallet() {
       el('button', { class: 'solid', onclick: async () => {
         const amt = prompt('Top up how much? (dollars)', '25');
         if (!amt) return;
-        try { await api('POST', '/api/wallet/deposit', { amount: Math.round(Number(amt) * 100) }); render(); }
-        catch (e) { toast(e.message, 'err'); }
+        try {
+          const r = await api('POST', '/api/wallet/deposit', { amount: Math.round(Number(amt) * 100) });
+          await handlePurchaseResponse(r, 'Funds added.', async () => render());
+        } catch (e) { toast(e.message, 'err'); }
       } }, 'Add funds'),
       el('button', { onclick: async () => {
         const amt = prompt('Withdraw how much? (dollars)', String((w.balance / 100).toFixed(2)));
@@ -652,24 +749,39 @@ async function renderWallet() {
     el('label', {}, 'Card number'), num,
     twoUp('Exp month', mm, 'Exp year', yy),
     addBtn, addSt,
-    el('div', { class: 'hint' }, 'Your full card number never leaves this page — the app derives the brand and last four digits in the browser and stores only those. Swap in Stripe Elements for real charges; see the README.')
+    el('div', { class: 'hint' }, state.stripe
+      ? 'Real payments are handled by Stripe\'s own secure card form at checkout — your card number never reaches this server. This saved-card list is only used as a fallback before Stripe is fully configured.'
+      : 'Card payments are not live on this site yet. Your full card number never leaves this page even so — only the brand and last four digits are derived and stored, as a placeholder until Stripe is connected.')
   ]));
 
-  // payout
+  // payout — Stripe Connect: the user links their own bank account
+  // directly with Stripe. Once linked, withdrawals above are automatic.
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Payout account'));
-  const pName = el('input', { placeholder: 'Chase ••••', value: w.payoutMethod?.accountName || '' });
-  const pLast = el('input', { placeholder: '4 digits', inputmode: 'numeric', value: w.payoutMethod?.last4 || '' });
+  const payoutBox = el('div', { class: 'card', style: 'padding:16px' });
   const pSt = el('div', { class: 'errmsg' });
-  const pBtn = el('button', { class: 'submitbtn' }, w.payoutMethod ? 'Update payout account' : 'Connect payout account');
+  let statusLine = el('div', { class: 'hint' }, 'Checking your payout status…');
+  payoutBox.appendChild(statusLine);
+  const pBtn = el('button', { class: 'submitbtn' }, 'Set up payouts');
   pBtn.onclick = async () => {
-    try { await api('POST', '/api/wallet/payout-method', { accountName: pName.value, last4: pLast.value }); render(); }
-    catch (e) { pSt.textContent = e.message; }
+    try {
+      const r = await api('POST', '/api/wallet/payout-method');
+      if (r.url) window.location.href = r.url;
+    } catch (e) { pSt.textContent = e.message; }
   };
-  wrap.appendChild(el('div', { class: 'card', style: 'padding:16px' }, [
-    el('label', {}, 'Account nickname'), pName,
-    el('label', {}, 'Last 4 digits'), pLast, pBtn, pSt,
-    el('div', { class: 'hint' }, 'Real payouts need Stripe Connect — this records a reference only and never stores full bank numbers.')
-  ]));
+  payoutBox.appendChild(pBtn);
+  payoutBox.appendChild(pSt);
+  wrap.appendChild(payoutBox);
+  api('GET', '/api/wallet/payout-status').then(({ status }) => {
+    if (status?.payoutsEnabled) {
+      statusLine.textContent = '✓ Payouts are set up. Withdrawals above go straight to your bank.';
+      statusLine.className = 'hint';
+      pBtn.textContent = 'Update payout details';
+    } else if (status) {
+      statusLine.textContent = 'Almost there — finish the form Stripe opened to activate payouts.';
+    } else {
+      statusLine.textContent = 'Link a bank account so withdrawals can be sent automatically — no need to wait on anyone to process it by hand.';
+    }
+  }).catch(() => {});
 
   // ledger
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Activity'));
@@ -722,8 +834,8 @@ async function renderShop() {
       }
       if (!confirm(`Buy "${i.title}" for ${cents(i.price)}?`)) return;
       try {
-        await api('POST', '/api/shop/buy', { itemId: i.id, shipping });
-        toast('Purchased — see Profile → Orders', 'ok'); render();
+        const r = await api('POST', '/api/shop/buy', { itemId: i.id, shipping });
+        await handlePurchaseResponse(r, 'Purchased — see Profile → Orders', async () => render());
       } catch (e) { toast(e.message, 'err'); }
     };
     grid.appendChild(el('div', { class: 'shopcard' }, [
@@ -841,8 +953,10 @@ async function renderPromote() {
           : 'Pinned above organic listings for the whole window.')
       ]),
       el('button', { class: 'btn-primary', onclick: async () => {
-        try { await api('POST', '/api/promotions/buy', { listingId: listing.id, tierId: t.id }); st.textContent = t.label + ' applied.'; }
-        catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
+        try {
+          const r = await api('POST', '/api/promotions/buy', { listingId: listing.id, tierId: t.id });
+          await handlePurchaseResponse(r, t.label + ' applied.', async () => { st.textContent = t.label + ' applied.'; });
+        } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
       } }, cents(t.price))
     ]);
     wrap.appendChild(card);
@@ -1071,8 +1185,10 @@ async function renderMe() {
     wrap.appendChild(el('div', { class: 'card', style: 'padding:16px' }, [
       el('div', { class: 'dnotes' }, 'Verified sellers rank higher in the feed and get a badge buyers can see. One-time ' + cents(state.pricing.verificationFee) + '.'),
       el('button', { class: 'submitbtn', onclick: async () => {
-        try { await api('POST', '/api/verify/request'); vst.textContent = 'Submitted — an admin will review it.'; await refreshMe(); }
-        catch (e) { vst.className = 'errmsg'; vst.textContent = e.message; }
+        try {
+          const r = await api('POST', '/api/verify/request');
+          await handlePurchaseResponse(r, 'Submitted — an admin will review it.', async () => { await refreshMe(); render(); });
+        } catch (e) { vst.className = 'errmsg'; vst.textContent = e.message; }
       } }, state.user.verificationPending ? 'Pending review' : 'Request verification'),
       vst
     ]));
@@ -1519,12 +1635,109 @@ async function renderSuppliers() {
 
   function showImport(s) {
     importArea.innerHTML = '';
+    importArea.appendChild(el('div', { class: 'sectiontitle' }, 'Add products from ' + s.name));
+
+    let mode = 'form';
+    const tabs = el('div', { class: 'roletabs', style: 'margin-bottom:14px' });
+    const formBtn = el('button', { class: 'selected' }, 'Add one item');
+    const bulkBtn = el('button', {}, 'Paste a list (advanced)');
+    tabs.appendChild(formBtn); tabs.appendChild(bulkBtn);
+    importArea.appendChild(tabs);
+
+    const body = el('div');
+    importArea.appendChild(body);
+
+    formBtn.onclick = () => { mode = 'form'; formBtn.className = 'selected'; bulkBtn.className = ''; drawBody(); };
+    bulkBtn.onclick = () => { mode = 'bulk'; bulkBtn.className = 'selected'; formBtn.className = ''; drawBody(); };
+
+    async function drawBody() {
+      body.innerHTML = '';
+      if (mode === 'bulk') { body.appendChild(bulkForm(s)); return; }
+      body.appendChild(await singleItemForm(s));
+    }
+    drawBody();
+  }
+
+  async function singleItemForm(supplier) {
+    const { categories } = await api('GET', '/api/shop/categories');
+    const wrap = el('div', { class: 'card', style: 'padding:18px' });
+    wrap.appendChild(el('div', { class: 'policybox' }, [
+      el('b', {}, 'Before adding anything electrical'),
+      document.createTextNode('Get UL or ETL certification from this supplier in writing and keep it on file. Uncertified electrical goods are not legal to sell and are a real fire risk.')
+    ]));
+
+    const title = el('input', { placeholder: 'Matte black pendant light' });
+    const category = el('select', {}, categories.map(c => el('option', { value: c }, c)));
+    const cost = el('input', { type: 'number', placeholder: '18.50' });
+    const shipping = el('input', { type: 'number', placeholder: '4.00' });
+    const markup = el('input', { type: 'number', value: supplier.markupPercent });
+    const stock = el('input', { type: 'number', value: 25 });
+    const sku = el('input', { placeholder: 'Optional — their product code' });
+    const desc = el('textarea', { placeholder: 'What it is, dimensions, anything a buyer should know.' });
+
+    const preview = el('div', { class: 'calcbox' });
+    function updatePreview() {
+      const c = (Number(cost.value) || 0) * 100 + (Number(shipping.value) || 0) * 100;
+      const m = Number(markup.value) || 0;
+      const retail = Math.round(c * (1 + m / 100));
+      preview.innerHTML = '';
+      preview.appendChild(el('div', { class: 'calcrow' }, [el('span', {}, 'Your cost + shipping'), el('span', {}, cents(c))]));
+      preview.appendChild(el('div', { class: 'calcrow total' }, [el('span', {}, 'Buyer will pay'), el('span', { class: 'g' }, cents(retail))]));
+    }
+    [cost, shipping, markup].forEach(inp => inp.addEventListener('input', updatePreview));
+    updatePreview();
+
+    // Reuses the same photo picker pattern as the regular sell-item form.
+    let photos = [];
+    const fileInput = el('input', { type: 'file', accept: 'image/*', multiple: true, style: 'display:none' });
+    const previewRow = el('div', { class: 'previewrow' });
+    const picker = el('div', { class: 'picker', onclick: () => fileInput.click() }, 'Add photos (optional)');
+    fileInput.onchange = async () => {
+      for (const f of [...fileInput.files].slice(0, 6 - photos.length)) photos.push(await downscale(f));
+      fileInput.value = ''; drawPhotos();
+    };
+    function drawPhotos() {
+      previewRow.innerHTML = '';
+      photos.forEach((p, i) => previewRow.appendChild(el('div', { class: 'pv' }, [
+        el('img', { src: p }), el('button', { onclick: () => { photos.splice(i, 1); drawPhotos(); } }, '×')
+      ])));
+    }
+
+    wrap.appendChild(el('label', {}, 'Title')); wrap.appendChild(title);
+    wrap.appendChild(el('label', {}, 'Category')); wrap.appendChild(category);
+    wrap.appendChild(twoUp('Your cost ($)', cost, 'Shipping cost ($)', shipping));
+    wrap.appendChild(twoUp('Markup (%)', markup, 'Stock quantity', stock));
+    wrap.appendChild(el('label', {}, 'Their product code (SKU)')); wrap.appendChild(sku);
+    wrap.appendChild(el('label', {}, 'Description')); wrap.appendChild(desc);
+    wrap.appendChild(el('label', {}, 'Photos')); wrap.appendChild(picker); wrap.appendChild(fileInput); wrap.appendChild(previewRow);
+    wrap.appendChild(preview);
+
+    const err = el('div', { class: 'errmsg' });
+    const btn = el('button', { class: 'submitbtn' }, 'Add to marketplace');
+    btn.onclick = async () => {
+      if (!title.value.trim() || !cost.value) { err.textContent = 'Title and cost are required.'; return; }
+      try {
+        const r = await api('POST', `/api/admin/suppliers/${supplier.id}/import`, {
+          products: [{
+            title: title.value, category: category.value, cost: cost.value, shipping: shipping.value,
+            markupPercent: markup.value, stock: stock.value, sku: sku.value, description: desc.value, photos
+          }]
+        });
+        toast('Added to the marketplace', 'ok');
+        title.value = ''; cost.value = ''; shipping.value = ''; sku.value = ''; desc.value = ''; photos = []; drawPhotos(); updatePreview();
+        err.className = 'okmsg'; err.textContent = `Live now: ${r.items[0].title} at ${cents(r.items[0].price)}`;
+      } catch (e) { err.className = 'errmsg'; err.textContent = e.message; }
+    };
+    wrap.appendChild(btn); wrap.appendChild(err);
+    return wrap;
+  }
+
+  function bulkForm(s) {
     const ta = el('textarea', { style: 'min-height:170px;font-family:monospace;font-size:12.5px',
       placeholder: '[\n  {"title":"Matte black pendant light","cost":18.50,"shipping":4.00,"sku":"PL-882","stock":50},\n  {"title":"Smart WiFi thermostat","cost":42.00,"shipping":6.50,"sku":"TH-119","stock":30}\n]' });
     const st = el('div', { class: 'hint' });
-    importArea.appendChild(el('div', { class: 'sectiontitle' }, 'Import into ' + s.name));
-    importArea.appendChild(el('div', { class: 'card', style: 'padding:18px' }, [
-      el('div', { class: 'hint', style: 'margin-bottom:10px' }, 'Paste a JSON array of products. Each needs at minimum a title and cost. Markup, category and pricing are applied automatically.'),
+    return el('div', { class: 'card', style: 'padding:18px' }, [
+      el('div', { class: 'hint', style: 'margin-bottom:10px' }, 'For adding many products at once. Paste a JSON list — each needs at least a title and cost. Markup, category and pricing are applied automatically. Use "Add one item" instead unless you specifically have a list like this.'),
       el('div', { class: 'policybox' }, [
         el('b', {}, 'Before importing anything electrical'),
         document.createTextNode('Get UL or ETL certification documents from this supplier in writing and keep them on file. Selling uncertified electrical goods in the US is not legal, and "the supplier said it was fine" is not a defense if something causes a fire.')
@@ -1542,9 +1755,9 @@ async function renderSuppliers() {
         } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
       } }, 'Import products'),
       st
-    ]));
-    importArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    ]);
   }
+
   return wrap;
 }
 

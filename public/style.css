@@ -375,6 +375,13 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
   .dhead h2{font-size:26px;}
   .page h2{font-size:26px;}
 }
+@media(max-width:430px){
+  /* "Better Real Estate" crowds the top bar next to the icon buttons on a
+     phone screen — drop to just "Better" (still has the accent dot as a
+     mark) rather than let it wrap or overflow. */
+  .brand .brandthin{display:none;}
+  .brand{font-size:20px;}
+}
 @media(min-width:601px) and (max-width:860px){
   .herogrid2{grid-template-columns:1fr;gap:32px;}
   .heropreview{order:-1;max-width:340px;margin:0 auto;}

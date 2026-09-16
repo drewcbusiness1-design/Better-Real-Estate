@@ -39,7 +39,7 @@ const PRICING = {
   freeUnlocks: 5,                 // free detail unlocks before paywall
   unlockCredit: 199,              // $1.99 to unlock one listing's details
   unlockPack: { qty: 10, price: 1499 }, // $14.99 for 10
-  pro: { monthly: 2900, label: 'Better Pro' },  // $29/mo
+  pro: { monthly: 3000, annual: 32000, label: 'Better Pro' },  // $30/mo or $320/yr
   promotions: {
     boost24:   { id: 'boost24',   label: 'Boost — 24 hours',  hours: 24,  price: 900,  weight: 1000 },
     boost3d:   { id: 'boost3d',   label: 'Boost — 3 days',    hours: 72,  price: 1900, weight: 1000 },
@@ -290,44 +290,79 @@ app.get('/api/wallet', requireAuth, async (req, res) => {
 app.post('/api/wallet/deposit', requireAuth, async (req, res) => {
   const amount = Math.round(Number(req.body?.amount) || 0);
   if (amount < 500) return res.status(400).json({ error: 'Minimum top-up is $5.00.' });
-  if (!req.user.paymentMethods.length) return res.status(400).json({ error: 'Add a card first.' });
-  // TODO(stripe): create a PaymentIntent and only credit the ledger from the webhook.
-  ledgerAdd(req.db, req.user.id, 'deposit', amount, 'Wallet top-up', { simulated: true });
+  if (payments.enabled()) {
+    try {
+      const pi = await payments.createPaymentIntent(req.user, amount, 'wallet_topup');
+      await saveDB(req.db);
+      return res.json({ requiresPayment: true, clientSecret: pi.client_secret, amount });
+    } catch (e) { return res.status(400).json({ error: e.message }); }
+  }
+  // Stripe not configured yet — record it so the flow is testable.
+  ledgerAdd(req.db, req.user.id, 'deposit', amount, 'Wallet top-up (simulated — Stripe not configured)', { simulated: true });
   maybePayReferral(req.db, req.user);
   await saveDB(req.db);
   res.json({ balance: balanceOf(req.db, req.user.id) });
 });
 app.post('/api/wallet/payout-method', requireAuth, async (req, res) => {
-  const { accountName, last4 } = req.body || {};
-  if (!accountName || !/^\d{4}$/.test(String(last4 || ''))) return res.status(400).json({ error: 'Account name and last 4 digits are required.' });
-  // TODO(stripe): replace with a Stripe Connect account link; never collect full bank numbers here.
-  req.user.payoutMethod = { accountName: String(accountName).slice(0, 80), last4: String(last4), connectedAt: new Date().toISOString() };
-  await saveDB(req.db); res.json({ payoutMethod: req.user.payoutMethod });
+  // Stripe Connect: the user links their own bank account directly with
+  // Stripe on Stripe's own hosted page. Their banking details never touch
+  // this server, and once linked, withdrawals below are fully automatic —
+  // nobody has to review or send anything by hand.
+  try {
+    const appUrl = process.env.APP_URL || 'http://localhost:8888';
+    if (!payments.enabled()) return res.status(400).json({ error: 'Payments are not configured yet.' });
+    const { accountId, url } = await payments.createConnectAccount(req.user, appUrl);
+    req.user.stripeAccountId = accountId;
+    await saveDB(req.db);
+    res.json({ url });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.get('/api/wallet/payout-status', requireAuth, async (req, res) => {
+  try { res.json({ status: await payments.connectAccountStatus(req.user.stripeAccountId) }); }
+  catch (e) { res.json({ status: null }); }
 });
 app.post('/api/wallet/withdraw', requireAuth, async (req, res) => {
   const amount = Math.round(Number(req.body?.amount) || 0);
   const bal = balanceOf(req.db, req.user.id);
-  if (!req.user.payoutMethod) return res.status(400).json({ error: 'Connect a payout account first.' });
   if (amount < PRICING.minWithdrawal) return res.status(400).json({ error: `Minimum withdrawal is ${money(PRICING.minWithdrawal)}.` });
   if (amount > bal) return res.status(400).json({ error: 'Withdrawal exceeds your balance.' });
-  // TODO(stripe): create a Transfer/Payout via Stripe Connect; mark completed on webhook.
-  ledgerAdd(req.db, req.user.id, 'withdrawal', -amount, 'Payout to ' + req.user.payoutMethod.accountName, { simulated: true });
-  req.db.payouts.push({ id: crypto.randomUUID(), userId: req.user.id, amount, status: 'pending', at: new Date().toISOString() });
+
+  if (payments.enabled() && req.user.stripeAccountId) {
+    const status = await payments.connectAccountStatus(req.user.stripeAccountId);
+    if (!status?.payoutsEnabled) return res.status(400).json({ error: 'Finish linking your bank account first — it only takes a minute.' });
+    await payments.payout(req.user.stripeAccountId, amount);
+    ledgerAdd(req.db, req.user.id, 'withdrawal', -amount, 'Payout to your bank account', { automatic: true });
+  } else if (payments.enabled()) {
+    return res.status(400).json({ error: 'Link a payout account first.' });
+  } else {
+    // Stripe not configured yet — record it so the flow is testable, but
+    // nothing actually moves until real keys are added.
+    ledgerAdd(req.db, req.user.id, 'withdrawal', -amount, 'Payout (simulated — Stripe not configured)', { simulated: true });
+  }
   await saveDB(req.db);
   res.json({ balance: balanceOf(req.db, req.user.id) });
 });
 
-// charge helper: wallet first, then card
-function charge(db, user, amountCents, description, meta = {}) {
+// charge helper: wallet first, then Stripe. When the wallet doesn't cover
+// it and Stripe is live, this returns a PaymentIntent for the browser to
+// confirm with a real card — the purchase itself is only granted once the
+// webhook confirms Stripe actually charged the card (see
+// /api/payments/webhook). If Stripe isn't configured yet, falls back to a
+// simulated charge so the whole app is still testable before real keys
+// are added.
+async function chargeOrIntent(db, user, amountCents, purpose, description, meta = {}) {
   const bal = balanceOf(db, user.id);
   if (bal >= amountCents) {
     ledgerAdd(db, user.id, 'purchase', -amountCents, description, meta);
-    return { source: 'wallet' };
+    return { paid: true };
+  }
+  if (payments.enabled()) {
+    const pi = await payments.createPaymentIntent(user, amountCents, purpose, meta);
+    return { paid: false, clientSecret: pi.client_secret, amount: amountCents };
   }
   if (!user.paymentMethods.length) throw new Error('Add a card or top up your wallet first.');
-  // TODO(stripe): charge the saved payment method here; credit only on webhook success.
-  ledgerAdd(db, user.id, 'card_charge', 0, description + ' (card •••• ' + user.paymentMethods[0].last4 + ')', { ...meta, charged: amountCents, simulated: true });
-  return { source: 'card' };
+  ledgerAdd(db, user.id, 'card_charge', 0, description + ' (simulated — Stripe not configured)', { ...meta, charged: amountCents, simulated: true });
+  return { paid: true };
 }
 function maybePayReferral(db, user) {
   if (user.referredBy && !user.referralPaid) {
@@ -343,10 +378,15 @@ function maybePayReferral(db, user) {
 /* ============================ SUBSCRIPTION & UNLOCKS ============================ */
 app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
   try {
-    charge(req.db, req.user, PRICING.pro.monthly, 'Better Pro — 1 month');
+    const period = req.body?.period === 'annual' ? 'annual' : 'monthly';
+    const amount = period === 'annual' ? PRICING.pro.annual : PRICING.pro.monthly;
+    const days = period === 'annual' ? 365 : 30;
+    const result = await chargeOrIntent(req.db, req.user, amount, 'pro_subscription', `Better Pro — ${period === 'annual' ? '1 year' : '1 month'}`, { period });
+    if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
     const base = isPro(req.user) ? new Date(req.user.planUntil).getTime() : Date.now();
     req.user.plan = 'pro';
-    req.user.planUntil = new Date(base + 30 * 86400000).toISOString();
+    req.user.planPeriod = period;
+    req.user.planUntil = new Date(base + days * 86400000).toISOString();
     maybePayReferral(req.db, req.user);
     await saveDB(req.db);
     res.json({ user: publicUser(req.user) });
@@ -357,7 +397,8 @@ app.post('/api/billing/cancel', requireAuth, async (req, res) => {
 });
 app.post('/api/billing/unlock-pack', requireAuth, async (req, res) => {
   try {
-    charge(req.db, req.user, PRICING.unlockPack.price, `${PRICING.unlockPack.qty} listing unlocks`);
+    const result = await chargeOrIntent(req.db, req.user, PRICING.unlockPack.price, 'unlock_pack', `${PRICING.unlockPack.qty} listing unlocks`);
+    if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
     req.user.unlockCredits += PRICING.unlockPack.qty;
     maybePayReferral(req.db, req.user);
     await saveDB(req.db);
@@ -429,8 +470,10 @@ app.post('/api/listings/:id/unlock', requireAuth, async (req, res) => {
   if (req.user.unlockCredits > 0) {
     req.user.unlockCredits -= 1;
   } else {
-    try { charge(req.db, req.user, PRICING.unlockCredit, 'Listing unlock — ' + listing.address, { listingId: listing.id }); }
+    let result;
+    try { result = await chargeOrIntent(req.db, req.user, PRICING.unlockCredit, 'listing_unlock', 'Listing unlock — ' + listing.address, { listingId: listing.id }); }
     catch (e) { return res.status(400).json({ error: e.message }); }
+    if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
     maybePayReferral(req.db, req.user);
   }
   req.db.unlocks.push({ id: crypto.randomUUID(), userId: req.user.id, listingId: listing.id, at: new Date().toISOString() });
@@ -524,8 +567,10 @@ app.post('/api/promotions/buy', requireAuth, async (req, res) => {
   if (listing.ownerId !== req.user.id) return res.status(403).json({ error: 'Not your listing.' });
   const tier = PRICING.promotions[tierId];
   if (!tier) return res.status(400).json({ error: 'Unknown promotion.' });
-  try { charge(req.db, req.user, tier.price, tier.label + ' — ' + listing.address, { listingId }); }
+  let result;
+  try { result = await chargeOrIntent(req.db, req.user, tier.price, 'promotion', tier.label + ' — ' + listing.address, { listingId, tierId }); }
   catch (e) { return res.status(400).json({ error: e.message }); }
+  if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
 
   if (tierId === 'bump') {
     listing.freshAt = new Date().toISOString();
@@ -611,8 +656,10 @@ app.post('/api/reviews', requireAuth, async (req, res) => {
 /* ============================ VERIFICATION ============================ */
 app.post('/api/verify/request', requireAuth, async (req, res) => {
   if (req.user.verified) return res.status(409).json({ error: 'Already verified.' });
-  try { charge(req.db, req.user, PRICING.verificationFee, 'Seller verification'); }
+  let result;
+  try { result = await chargeOrIntent(req.db, req.user, PRICING.verificationFee, 'verification', 'Seller verification'); }
   catch (e) { return res.status(400).json({ error: e.message }); }
+  if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
   req.user.verificationPending = true;
   maybePayReferral(req.db, req.user);
   await saveDB(req.db); res.json({ ok: true });
@@ -666,29 +713,38 @@ app.get('/api/shop/items', async (req, res) => {
   res.json({ items });
 });
 
-app.post('/api/shop/buy', requireAuth, async (req, res) => {
-  const item = req.db.shopItems.find(i => i.id === req.body?.itemId);
-  if (!item || !item.active || item.stock < 1) return res.status(404).json({ error: 'Item unavailable.' });
-  if (item.sellerId === req.user.id) return res.status(400).json({ error: "That's your own listing." });
-  try { charge(req.db, req.user, item.price, 'Purchase — ' + item.title, { itemId: item.id }); }
-  catch (e) { return res.status(400).json({ error: e.message }); }
-
+// Shared by the instant (wallet/simulated) purchase path and the Stripe
+// webhook, so a card-paid marketplace order is fulfilled exactly the same
+// way as a wallet-paid one — fee split, stock, and dropship routing all
+// happen in one place instead of being duplicated and risking drift.
+function fulfilShopPurchase(db, item, buyer, shipping) {
   const isDropship = !!item.dropship;
   const fee = isDropship ? 0 : Math.round(item.price * PRICING.marketplaceFeeBps / 10000);
   const net = item.price - fee;
   if (!isDropship) {
-    ledgerAdd(req.db, item.sellerId, 'sale', net, 'Sold — ' + item.title + ' (after ' + (PRICING.marketplaceFeeBps/100) + '% fee)', { itemId: item.id, gross: item.price, fee });
+    ledgerAdd(db, item.sellerId, 'sale', net, 'Sold — ' + item.title + ' (after ' + (PRICING.marketplaceFeeBps / 100) + '% fee)', { itemId: item.id, gross: item.price, fee });
   }
   item.stock -= 1; if (item.stock < 1) item.active = false;
-  const shipping = req.body?.shipping || null;
-  const order = { id: crypto.randomUUID(), itemId: item.id, title: item.title, buyerId: req.user.id, buyerName: req.user.name, sellerId: item.sellerId, price: item.price, fee, net, status: 'paid', shipping, dropship: !!item.dropship, at: new Date().toISOString() };
-  req.db.orders.push(order);
-
-  // Dropship items go into the fulfilment queue instead of paying a user out.
-  if (item.dropship) {
-    const supplier = req.db.suppliers.find(s => s.id === item.supplierId) || null;
-    req.db.supplierOrders.push(dropship.routeOrder({ order, item, supplier, buyer: req.user, shipping, crypto }));
+  const order = { id: crypto.randomUUID(), itemId: item.id, title: item.title, buyerId: buyer.id, buyerName: buyer.name, sellerId: item.sellerId, price: item.price, fee, net, status: 'paid', shipping, dropship: isDropship, at: new Date().toISOString() };
+  db.orders.push(order);
+  if (isDropship) {
+    const supplier = db.suppliers.find(s => s.id === item.supplierId) || null;
+    db.supplierOrders.push(dropship.routeOrder({ order, item, supplier, buyer, shipping, crypto }));
   }
+  return order;
+}
+
+app.post('/api/shop/buy', requireAuth, async (req, res) => {
+  const item = req.db.shopItems.find(i => i.id === req.body?.itemId);
+  if (!item || !item.active || item.stock < 1) return res.status(404).json({ error: 'Item unavailable.' });
+  if (item.sellerId === req.user.id) return res.status(400).json({ error: "That's your own listing." });
+  const shipping = req.body?.shipping || null;
+  let result;
+  try { result = await chargeOrIntent(req.db, req.user, item.price, 'shop_purchase', 'Purchase — ' + item.title, { itemId: item.id, shipping: JSON.stringify(shipping || {}) }); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
+  if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
+
+  const order = fulfilShopPurchase(req.db, item, req.user, shipping);
   maybePayReferral(req.db, req.user);
   await saveDB(req.db);
   res.json({ order, balance: balanceOf(req.db, req.user.id) });
@@ -837,22 +893,6 @@ app.get('/api/payments/methods', requireAuth, async (req, res) => {
   catch (e) { res.json({ methods: [], error: e.message }); }
 });
 
-/* ---- Stripe Connect: seller payouts ---- */
-app.post('/api/payments/connect', requireAuth, async (req, res) => {
-  try {
-    const appUrl = process.env.APP_URL || 'http://localhost:8888';
-    const { accountId, url } = await payments.createConnectAccount(req.user, appUrl);
-    req.user.stripeAccountId = accountId;
-    await saveDB(req.db);
-    res.json({ url });
-  } catch (e) { res.status(400).json({ error: e.message }); }
-});
-
-app.get('/api/payments/connect/status', requireAuth, async (req, res) => {
-  try { res.json({ status: await payments.connectAccountStatus(req.user.stripeAccountId) }); }
-  catch (e) { res.json({ status: null }); }
-});
-
 /* ---- THE WEBHOOK: the only place money is credited ----
    Mounted with a raw body parser because Stripe signs the exact bytes. */
 app.post('/api/payments/webhook',
@@ -908,6 +948,21 @@ app.post('/api/payments/webhook',
             db.unlocks.push({ id: crypto.randomUUID(), userId: user.id, listingId, at: new Date().toISOString() });
           }
           ledgerAdd(db, user.id, 'purchase', 0, 'Listing unlock', { paymentIntentId: pi.id, charged: pi.amount, listingId });
+        } else if (purpose === 'pro_subscription') {
+          const period = pi.metadata.period === 'annual' ? 'annual' : 'monthly';
+          const days = period === 'annual' ? 365 : 30;
+          const base = isPro(user) ? new Date(user.planUntil).getTime() : Date.now();
+          user.plan = 'pro';
+          user.planPeriod = period;
+          user.planUntil = new Date(base + days * 86400000).toISOString();
+          ledgerAdd(db, user.id, 'purchase', 0, `Better Pro — ${period === 'annual' ? '1 year' : '1 month'}`, { paymentIntentId: pi.id, charged: pi.amount });
+        } else if (purpose === 'shop_purchase') {
+          const item = db.shopItems.find(i => i.id === pi.metadata.itemId);
+          if (item && item.stock > 0) {
+            let shipping = null;
+            try { shipping = JSON.parse(pi.metadata.shipping || 'null'); } catch {}
+            fulfilShopPurchase(db, item, user, shipping);
+          }
         }
         maybePayReferral(db, user);
         await saveDB(db);
@@ -917,6 +972,10 @@ app.post('/api/payments/webhook',
         const sess = event.data.object;
         const user = db.users.find(u => u.id === sess.metadata?.userId);
         if (user && sess.mode === 'subscription') {
+          // TODO(stripe): once real monthly and annual Price objects exist in
+          // your Stripe dashboard, read the period back off sess.metadata
+          // (set it when creating the Checkout session) and extend by 30 vs
+          // 365 days accordingly, same as /api/billing/subscribe above.
           user.plan = 'pro';
           user.stripeSubscriptionId = sess.subscription;
           user.planUntil = new Date(Date.now() + 31 * 86400000).toISOString();
