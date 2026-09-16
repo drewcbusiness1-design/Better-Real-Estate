@@ -27,7 +27,15 @@ const handler = serverless(app, { binary: ['image/*', 'application/octet-stream'
 exports.handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;
   const path = normalise(event.path || event.rawUrl || '');
-  return handler({ ...event, path, rawPath: path }, context);
+  console.log('[api] request:', event.httpMethod, 'raw path:', event.path, '→ normalised:', path);
+  try {
+    const res = await handler({ ...event, path, rawPath: path }, context);
+    if (res.statusCode >= 500) console.error('[api] response', res.statusCode, ':', res.body);
+    return res;
+  } catch (e) {
+    console.error('[api] UNCAUGHT:', e.message, e.stack);
+    return { statusCode: 500, body: JSON.stringify({ error: 'Server error: ' + e.message }) };
+  }
 };
 
 // exported for tests

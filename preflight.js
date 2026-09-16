@@ -15,7 +15,7 @@ const head = m => console.log('\n\x1b[1m' + m + '\x1b[0m');
 
 head('Database');
 const conn = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
-if (!conn) bad('No database. The app is running on db.local.json, which does NOT work on Netlify — a function has no persistent disk, so every signup would vanish. Run `netlify db init`.');
+if (!conn) bad('No database connected. Add a DATABASE_URL environment variable (e.g. a free Neon.tech Postgres connection string) in Site configuration → Environment variables, then redeploy. (On Netlify itself, signup and login now fail with a clear error instead of crashing until this is done — but nothing will actually save until it is.)');
 else if (!/^postgres(ql)?:\/\//.test(conn)) bad('Connection string is not a Postgres URL.');
 else ok('Postgres connection string present.');
 if (fs.existsSync(path.join(__dirname, 'db.json'))) soft('A leftover db.json exists. It is no longer used — delete it so nobody edits the wrong thing.');

@@ -12,6 +12,23 @@ const dropship = require('./dropship');
 const policy = require('./policy');
 const payments = require('./payments');
 const app = express();
+
+/* Every app.get/post/patch/delete below is an async function. Express 4
+   does not catch errors thrown inside an async handler on its own — an
+   unhandled rejection there either hangs the request or, on Netlify,
+   turns into an opaque 502 with no useful message. This wraps every
+   handler so any thrown error (a database problem, a bug, anything)
+   lands in the error-handling middleware at the bottom of this file
+   and comes back to the browser as a plain, readable JSON message
+   instead of a silent failure. */
+['get', 'post', 'patch', 'delete'].forEach(method => {
+  const original = app[method].bind(app);
+  app[method] = (routePath, ...handlers) => original(routePath, ...handlers.map(h =>
+    typeof h === 'function'
+      ? (req, res, next) => Promise.resolve(h(req, res, next)).catch(next)
+      : h
+  ));
+});
 const PORT = process.env.PORT || 3000;
 
 /* =======================================================================
@@ -951,6 +968,7 @@ app.get('/api/health', async (req, res) => {
   try { const db = await loadDB(); out.db = 'connected'; out.users = db.users.length; out.listings = db.listings.length; }
   catch (e) { out.ok = false; out.db = 'error: ' + e.message; }
   out.mail = mailer.configured() ? 'configured' : 'console-only';
+  out.appUrl = process.env.APP_URL || 'NOT SET — emails will link to localhost, which is why the link failed to open';
   out.payments = payments.enabled() ? (process.env.STRIPE_WEBHOOK_SECRET ? 'live' : 'key set but STRIPE_WEBHOOK_SECRET missing') : 'simulated';
   out.admins = policy.adminEmails().length;
   res.status(out.ok ? 200 : 503).json(out);
@@ -1029,6 +1047,20 @@ app.get('/api/orders/:id/tracking', requireAuth, async (req, res) => {
   if (order.buyerId !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Not your order.' });
   const so = req.db.supplierOrders.find(s => s.orderId === order.id);
   res.json({ order, fulfilment: so || null });
+});
+
+// Catches anything thrown or rejected in any route above (see the
+// app.get/post/patch/delete wrapper near the top of this file). Always
+// the last app.use() — Express only routes here when a handler calls
+// next(err) or throws.
+app.use((err, req, res, next) => {
+  console.error('[error]', req.method, req.originalUrl, '—', err.message);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    error: status === 500
+      ? (err.message || 'Something went wrong on our end. Please try again in a moment.')
+      : err.message
+  });
 });
 
 if (require.main === module) {

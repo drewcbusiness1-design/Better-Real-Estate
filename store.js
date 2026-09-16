@@ -33,27 +33,45 @@ const COLLECTIONS = [
 
 const CONN = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
 
+// Detect a live serverless deploy (Netlify Functions / AWS Lambda). In that
+// environment the app's own folder is read-only — only /tmp is writable,
+// and /tmp doesn't survive between requests anyway — so the local-file
+// fallback below must never be used there. If it were, every signup would
+// either crash outright or silently vanish a moment later.
+const IS_SERVERLESS = !!(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
+
 /* ---------------------------------------------------------------------
    LOCAL FALLBACK
 
    With no database configured, fall back to a JSON file on disk so the
    app runs immediately with `npm start` and you can click through every
-   screen. This is development only — a serverless function has no
-   persistent disk, so on Netlify this file would vanish between
-   requests. `npm run preflight` fails the launch if you are still on it.
+   screen. This is development only, and only runs when IS_SERVERLESS is
+   false. `npm run preflight` also fails the launch if you are still on
+   it, as a second line of defense.
    --------------------------------------------------------------------- */
-const FILE_MODE = !CONN;
+const FILE_MODE = !CONN && !IS_SERVERLESS;
 const fsMod = require('fs');
 const pathMod = require('path');
 const FILE_PATH = pathMod.join(__dirname, 'db.local.json');
 
 if (FILE_MODE) {
   console.warn('\n\x1b[33m[store] No database configured — using db.local.json for local development.\x1b[0m');
-  console.warn('[store] This is fine for testing. Before deploying, run `netlify db init`.\n');
+  console.warn('[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.\n');
+}
+if (!CONN && IS_SERVERLESS) {
+  console.error('\n[store] FATAL: running on Netlify with no DATABASE_URL set.');
+  console.error('[store] Site configuration → Environment variables → add DATABASE_URL');
+  console.error('[store] with your Neon (or other Postgres) connection string, then redeploy.\n');
 }
 const isNeon = CONN && /neon\.tech|neon\.build/.test(CONN);
 let sql = null;
 if (CONN) {
+  // Log which driver was picked and a masked version of the host only —
+  // never the password — so a Functions log check can confirm the
+  // connection string actually arrived and looks like it should,
+  // without ever printing a credential anywhere.
+  const masked = CONN.replace(/:\/\/([^:]+):[^@]+@/, '://$1:***@');
+  console.log('[store] DATABASE_URL detected, using', isNeon ? 'Neon HTTP driver' : 'standard Postgres driver', '—', masked.split('@')[1] || '(host hidden)');
   if (isNeon && neon) {
     const q = neon(CONN);
     sql = (text, params) => (params ? q(text, params) : q(text));
@@ -74,6 +92,9 @@ const tableFor = c => 'kv_' + c.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 
 let initPromise = null;
 async function init() {
+  if (!CONN && IS_SERVERLESS) {
+    throw new Error("This site isn't fully set up yet — no database is connected. If you're the site owner: add a DATABASE_URL environment variable in Netlify (Site configuration → Environment variables) with a Postgres connection string, then redeploy.");
+  }
   if (FILE_MODE) return;
   if (!sql) throw new Error('Database not configured. See store.js.');
   if (initPromise) return initPromise;

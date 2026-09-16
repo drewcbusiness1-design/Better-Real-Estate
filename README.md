@@ -147,4 +147,3 @@ Every integration point is marked `TODO(stripe)` in `server.js`:
 - **HTTPS is mandatory** once this is public — sessions and payment tokens must never cross plain HTTP.
 - **You'll need terms of service and a privacy policy** before collecting payments and personal data, and taking a cut of marketplace sales may make you a payment facilitator in some jurisdictions. Worth 30 minutes with a lawyer before you flip on real payments.
 - **Seller-posted addresses are personal data.** Decide what's public pre-unlock (currently: city only) and document it.
-# Better-Real-Estate
