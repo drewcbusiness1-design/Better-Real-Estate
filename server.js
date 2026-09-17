@@ -1165,15 +1165,23 @@ app.patch('/api/shop/items/:id', requireAuth, async (req, res) => {
   if (b.photos !== undefined) {
     if (!Array.isArray(b.photos)) return res.status(400).json({ error: 'Photos must be a list.' });
     const next = [];
+    const photoProxyPrefix = `/api/shop/items/${encodeURIComponent(item.id)}/photo/`;
     for (const photo of b.photos.slice(0, 6)) {
       if (typeof photo !== 'string') continue;
       if (photo.startsWith('data:image/')) {
         const stored = await writeImage(photo);
         if (stored) next.push(stored);
       } else if ((item.photos || []).includes(photo)) {
-        // Existing URLs (including CJ-hosted images) may be retained/reordered,
-        // but arbitrary remote URLs cannot be injected through the edit form.
+        // Existing stored image references may be retained/reordered.
         next.push(photo);
+      } else if (photo.startsWith(photoProxyPrefix)) {
+        // Customer-safe proxy URLs are what the editor receives for dropship
+        // images. Resolve them back to the existing stored source by index so
+        // removing one image does not accidentally discard every remaining one.
+        const idxText = photo.slice(photoProxyPrefix.length);
+        const idx = /^\d+$/.test(idxText) ? Number(idxText) : -1;
+        const original = idx >= 0 ? (item.photos || [])[idx] : null;
+        if (original) next.push(original);
       }
     }
     item.photos = [...new Set(next)].slice(0, 6);
@@ -1887,7 +1895,15 @@ app.post('/api/admin/cj/import', requireAuth, requireAdmin, async (req, res) => 
     return res.status(400).json({ error: 'Could not calculate a profitable retail price for that CJ variant.' });
   }
 
-  const photos = [...new Set([variant.image, product.image, ...(product.images || [])].filter(Boolean))].slice(0, 6);
+  const sourcePhotos = [...new Set([variant.image, product.image, ...(product.images || [])].filter(Boolean))].slice(0, 6);
+  let photos = sourcePhotos;
+  if (req.body?.photos !== undefined) {
+    if (!Array.isArray(req.body.photos)) return res.status(400).json({ error: 'Photos must be a list.' });
+    const requested = [...new Set(req.body.photos.filter(p => typeof p === 'string' && p))].slice(0, 6);
+    const invalid = requested.find(p => !sourcePhotos.includes(p));
+    if (invalid) return res.status(400).json({ error: 'One or more selected product photos are invalid.' });
+    photos = requested;
+  }
   const generatedDescription = [
     product.description,
     variant.option ? `Option: ${variant.option}` : '',

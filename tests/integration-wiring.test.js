@@ -83,4 +83,14 @@ assert.ok(client.includes('Google Maps Platform'), 'Terms/privacy must disclose 
 assert.ok(client.includes('Stripe processes card payments'), 'Privacy policy must disclose Stripe payment processing');
 assert.ok(client.includes('shipping, supplier and fulfilment providers'), 'Privacy policy must disclose shipping/fulfilment sharing');
 
+// CJ gallery editing: admins can curate imported images before publish, and
+// customer-safe proxy URLs must round-trip through the editor without causing
+// every remaining supplier image to be discarded on save.
+assert.ok(client.includes('Photos from CJ — remove any you do not want to publish'), 'CJ review must allow photo curation before publish');
+assert.ok(client.includes('description: desc.value.trim(),\n                photos'), 'CJ import must submit the curated photo list');
+assert.ok(server.includes('const photoProxyPrefix = `/api/shop/items/${encodeURIComponent(item.id)}/photo/`;'), 'Shop edit must recognize first-party dropship photo proxies');
+assert.ok(server.includes('const original = idx >= 0 ? (item.photos || [])[idx] : null;'), 'Shop edit must map retained proxy photos back to the stored image');
+assert.ok(server.includes('const sourcePhotos = [...new Set([variant.image, product.image'), 'CJ import must build an allowlist of source product photos');
+assert.ok(server.includes("error: 'One or more selected product photos are invalid.'"), 'CJ import must reject arbitrary remote photo injection');
+
 console.log('✓ CJ integration wiring tests passed');

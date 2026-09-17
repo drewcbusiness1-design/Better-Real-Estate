@@ -2338,9 +2338,23 @@ async function renderSuppliers() {
           const desc = el('textarea', { style: 'min-height:120px' });
           desc.value = descDefault;
 
-          const photos = [...new Set([v.image, product.image, ...(product.images || [])].filter(Boolean))].slice(0, 6);
+          let photos = [...new Set([v.image, product.image, ...(product.images || [])].filter(Boolean))].slice(0, 6);
           const photoRow = el('div', { class: 'previewrow', style: 'margin:8px 0 14px' });
-          photos.forEach(src => photoRow.appendChild(el('div', { class: 'pv' }, el('img', { src }))));
+          const drawReviewPhotos = () => {
+            photoRow.innerHTML = '';
+            if (!photos.length) {
+              photoRow.appendChild(el('div', { class: 'hint' }, 'No product photos selected.'));
+              return;
+            }
+            photos.forEach((src, idx) => photoRow.appendChild(el('div', { class: 'pv editpv' }, [
+              el('img', { src }),
+              el('button', { class: 'pvremove', type: 'button', title: 'Remove photo', onclick: () => {
+                photos.splice(idx, 1);
+                drawReviewPhotos();
+              } }, '×')
+            ])));
+          };
+          drawReviewPhotos();
 
           const costCents = Math.round(v.price * 100);
           const profitCents = Math.max(0, v.autoRetailCents - costCents);
@@ -2363,7 +2377,8 @@ async function renderSuppliers() {
                 title: title.value.trim(),
                 category: categorySel.value,
                 retailPrice: retail.value,
-                description: desc.value.trim()
+                description: desc.value.trim(),
+                photos
               });
               publish.textContent = 'Published';
               toast(`${r.item.title} is live at ${cents(r.item.price)} + live CJ shipping`, 'ok');
@@ -2377,7 +2392,8 @@ async function renderSuppliers() {
             el('button', { onclick: drawVariantList }, '← Variants')
           ]));
           results.appendChild(details);
-          if (photos.length) { results.appendChild(el('label', {}, 'Photos from CJ')); results.appendChild(photoRow); }
+          results.appendChild(el('label', {}, 'Photos from CJ — remove any you do not want to publish'));
+          results.appendChild(photoRow);
           results.appendChild(el('label', {}, 'Title')); results.appendChild(title);
           results.appendChild(el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:10px' }, [
             el('div', {}, [el('label', {}, 'Marketplace category'), categorySel]),
