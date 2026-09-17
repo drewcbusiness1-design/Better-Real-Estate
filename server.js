@@ -1445,6 +1445,17 @@ app.get('/api/admin/cj/products', requireAuth, requireAdmin, async (req, res) =>
 app.get('/api/admin/cj/products/:pid', requireAuth, requireAdmin, async (req, res) => {
   if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected. Set CJ_API_KEY.' });
   const product = await cjAdapter.getProduct(req.params.pid, String(req.query.country || '').trim());
+  const suggestedCategory = dropship.guessCategory(`${product.name || ''} ${product.categoryName || ''}`);
+  product.suggestedCategory = suggestedCategory;
+  product.variants = (product.variants || []).map(v => {
+    const costCents = Math.round((Number(v.price) || 0) * 100);
+    const autoRetailCents = dropship.smartRetailCents(costCents, v.suggestedPrice);
+    return {
+      ...v,
+      autoRetailCents,
+      autoMarginCents: Math.max(0, autoRetailCents - costCents)
+    };
+  });
   res.json({ product });
 });
 
@@ -1468,41 +1479,62 @@ app.post('/api/admin/cj/import', requireAuth, requireAdmin, async (req, res) => 
 
   await cjAdapter.addToMyProduct(pid);
 
-  const requestedMarkup = Number(req.body?.markupPercent);
-  const markupPercent = Number.isFinite(requestedMarkup) && requestedMarkup >= 0 && requestedMarkup <= 1000
-    ? requestedMarkup : supplier.markupPercent;
+  const defaultTitle = variant.option && !String(product.name || '').toLowerCase().includes(String(variant.option).toLowerCase())
+    ? `${product.name || variant.name} — ${variant.option}`
+    : (product.name || variant.name || 'CJ product');
   const customTitle = String(req.body?.title || '').trim();
-  const title = customTitle || variant.name || product.name;
+  const title = (customTitle || defaultTitle).slice(0, 120);
   const requestedCategory = String(req.body?.category || '');
   const category = dropship.VALID_CATEGORIES.includes(requestedCategory)
     ? requestedCategory : dropship.guessCategory(`${title} ${product.categoryName || ''}`);
-  const photos = [...new Set([variant.image, product.image, ...(product.images || [])].filter(Boolean))].slice(0, 6);
-  const descriptionParts = [product.description, variant.option ? `Variant: ${variant.option}` : ''].filter(Boolean);
 
-  const priced = dropship.priceItem({
-    title,
-    category,
-    cost: variant.price,
-    shipping: 0, // CJ freight is quoted live to the buyer at checkout.
-    markupPercent,
-    stock: variant.stock,
-    sku: variant.vid,
-    shipsFrom: variant.fromCountryCode === 'US' ? 'CJ US warehouse' : 'CJ warehouse',
-    description: descriptionParts.join('\n\n')
-  }, supplier);
-  if (!priced) return res.status(400).json({ error: 'Could not price that CJ variant.' });
+  const costCents = Math.round(variant.price * 100);
+  const autoRetailCents = dropship.smartRetailCents(costCents, variant.suggestedPrice);
+  const requestedRetail = Number(req.body?.retailPrice);
+  const manualRetailCents = Number.isFinite(requestedRetail) && requestedRetail > 0
+    ? Math.round(requestedRetail * 100) : null;
+  if (manualRetailCents && manualRetailCents <= costCents) {
+    return res.status(400).json({ error: 'Retail price must be higher than the current CJ product cost.' });
+  }
+  const retailCents = manualRetailCents || autoRetailCents;
+  const usingAutoPrice = !manualRetailCents || Math.abs(manualRetailCents - autoRetailCents) <= 1;
+  if (!retailCents || retailCents <= costCents) {
+    return res.status(400).json({ error: 'Could not calculate a profitable retail price for that CJ variant.' });
+  }
+
+  const photos = [...new Set([variant.image, product.image, ...(product.images || [])].filter(Boolean))].slice(0, 6);
+  const generatedDescription = [
+    product.description,
+    variant.option ? `Option: ${variant.option}` : '',
+    variant.weight ? `Approx. product weight: ${variant.weight} g.` : '',
+    (variant.lengthMm && variant.widthMm && variant.heightMm)
+      ? `Approx. dimensions: ${variant.lengthMm} × ${variant.widthMm} × ${variant.heightMm} mm.` : ''
+  ].filter(Boolean).join('\n\n').slice(0, 1000);
+  const requestedDescription = String(req.body?.description || '').trim();
+  const description = (requestedDescription || generatedDescription).slice(0, 1000);
+  const actualMarkupPercent = Math.round(((retailCents / costCents) - 1) * 1000) / 10;
 
   const item = {
     id: crypto.randomUUID(), sellerId: req.user.id, sellerName: 'Better Real Estate',
-    title: priced.title, category: priced.category, condition: 'New in box',
-    price: priced.retailCents, cost: priced.costCents, margin: priced.marginCents,
-    stock: priced.stock, location: priced.shipsFrom || 'Ships direct',
-    description: priced.description, photos,
+    title, category, condition: 'New in box',
+    price: retailCents, cost: costCents, margin: retailCents - costCents,
+    stock: variant.stock,
+    location: variant.fromCountryCode === 'US' ? 'CJ US warehouse' : 'CJ warehouse',
+    description, photos,
     supplierId: supplier.id, supplierSku: variant.vid, dropship: true,
     cjPid: pid, cjVid: variant.vid, cjVariantSku: variant.sku,
+    cjBarcode: variant.barcode || null,
+    cjVariantOption: variant.option || null,
     cjFromCountryCode: variant.fromCountryCode || 'CN', cjProductSku: product.sku || null,
-    cjCategoryName: product.categoryName || null,
-    shipDays: supplier.shipDays,
+    cjCategoryId: product.categoryId || null, cjCategoryName: product.categoryName || null,
+    cjWeightGrams: variant.weight || product.weight || null,
+    cjLengthMm: variant.lengthMm || null, cjWidthMm: variant.widthMm || null, cjHeightMm: variant.heightMm || null,
+    cjSuggestedPrice: variant.suggestedPrice || null,
+    cjPricingMode: usingAutoPrice ? 'auto' : 'manual',
+    cjAutoRetailCents: autoRetailCents,
+    cjMarkupPercent: actualMarkupPercent,
+    cjLastSyncAt: new Date().toISOString(),
+    shipDays: product.deliveryCycle || supplier.shipDays,
     active: true, demo: false, createdAt: new Date().toISOString()
   };
   req.db.shopItems.push(item);

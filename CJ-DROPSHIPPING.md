@@ -21,9 +21,10 @@ Redeploy after adding the variable.
 3. Add a supplier named `CJdropshipping` and choose **CJdropshipping** as the type.
 4. Click **Import catalog** on that supplier.
 5. Use **CJdropshipping catalog** to search CJ directly.
-6. Open a product's variants and click **Import** on the exact variant you want to sell.
+6. Open a product's variants and click **Review** on the exact variant you want to sell.
+7. The review screen auto-fills CJ cost, a suggested retail price, title, marketplace category, description, photos, SKU, stock, warehouse, weight and dimensions. Adjust anything you want, then click **Publish to Marketplace**.
 
-Importing from the CJ browser automatically stores the real CJ product ID (PID), variant ID (VID), variant SKU, available stock/origin and product photos. It also adds the product to **My Products** on CJ when needed.
+Publishing from the CJ browser automatically stores the real CJ product ID (PID), variant ID (VID), variant SKU, barcode, current supplier cost, stock/origin, product photos and physical metadata. It also adds the product to **My Products** on CJ when needed. CJ freight remains live at customer checkout and is not baked into the item price.
 
 ## 3. What happens when a buyer purchases
 

@@ -7,6 +7,13 @@ const priced = dropship.priceItem({ title: 'Test Faucet', cost: 10, shipping: 0,
 assert.equal(priced.costCents, 1000);
 assert.ok(priced.retailCents > priced.costCents);
 
+const cheapAuto = dropship.smartRetailCents(500, 0);
+assert.equal(cheapAuto, 1099, 'cheap CJ items should keep a useful absolute product spread');
+const midAuto = dropship.smartRetailCents(2000, 0);
+assert.equal(midAuto, 3399, 'mid-priced CJ items should use the tiered auto-pricing rule');
+const suggestedFloor = dropship.smartRetailCents(2000, 45);
+assert.equal(suggestedFloor, 4499, 'a sane CJ suggested retail price can raise the auto retail recommendation');
+
 const routed = dropship.routeOrder({
   order: { id: 'o1', price: 1850, shippingCostCents: 350, cjLogisticName: 'CJPacket', cjQuotedDays: '6-10' },
   item: { supplierSku: 'v1', cjVid: 'v1', cjPid: 'p1', cjFromCountryCode: 'CN', title: 'Test Faucet', cost: 1000, price: 1500 },

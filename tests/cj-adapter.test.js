@@ -57,6 +57,20 @@ const cj = require('../cj-adapter');
   assert.equal(result.products[0].categoryName, 'Home');
   assert.equal(result.products[0].freeShipping, true);
 
+
+  const normalized = cj._normalizeVariant({
+    vid: 'v-meta', pid: 'p-meta', variantSku: 'SKU-META', variantKey: 'Black-Large',
+    variantImage: 'https://img/variant.jpg', variantSellPrice: 12.5, variantSugSellPrice: 24.99,
+    variantWeight: 450, variantLength: 200, variantWidth: 100, variantHeight: 50,
+    inventories: [{ countryCode: 'US', totalInventory: 8, verifiedWarehouse: 1 }]
+  }, { pid: 'p-meta', productNameEn: 'Meta Product' });
+  assert.equal(normalized.weight, 450);
+  assert.equal(normalized.lengthMm, 200);
+  assert.equal(normalized.widthMm, 100);
+  assert.equal(normalized.heightMm, 50);
+  assert.equal(normalized.stock, 8);
+  assert.equal(normalized.fromCountryCode, 'US');
+
   const freight = await cj.freightOptions({ vid: 'v1', fromCountryCode: 'CN', toCountryCode: 'US', zip: '08520' });
   assert.equal(freight[0].logisticName, 'Slow');
   assert.equal(freight[0].price, 3.5, 'fallback freight must include taxes + clearance fees');

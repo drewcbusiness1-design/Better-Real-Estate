@@ -77,6 +77,31 @@ function prettyPrice(cents) {
   return Math.round(cents / 500) * 500;
 }
 
+
+/**
+ * Suggested retail for CJ imports. This is intentionally a dollar-profit-aware
+ * rule instead of one flat percentage: cheap items need enough absolute profit
+ * to be worth fulfilling, while expensive items need less percentage markup.
+ * CJ's suggested price is used only when it is sane (above cost, not an absurd
+ * multiple) because their feed can contain placeholder suggestions.
+ */
+function smartRetailCents(costCents, cjSuggestedPrice = 0) {
+  const cost = Math.max(0, Number(costCents) || 0);
+  if (!cost) return 0;
+  let markupPct, minProfit;
+  if (cost < 1000) { markupPct = 100; minProfit = 600; }
+  else if (cost < 3000) { markupPct = 70; minProfit = 1000; }
+  else if (cost < 7500) { markupPct = 50; minProfit = 1500; }
+  else { markupPct = 35; minProfit = 2500; }
+
+  let target = Math.max(cost * (1 + markupPct / 100), cost + minProfit);
+  const suggestedCents = Math.round((Number(cjSuggestedPrice) || 0) * 100);
+  if (suggestedCents >= cost * 1.1 && suggestedCents <= cost * 4) {
+    target = Math.max(target, suggestedCents);
+  }
+  return prettyPrice(Math.round(target));
+}
+
 /**
  * Turn one supplier catalog row into a shop item.
  * Accepts loose field names because every supplier export is different.
@@ -149,4 +174,4 @@ function routeOrder({ order, item, supplier, buyer, shipping, crypto }) {
    Each should expose: fetchCatalog(credentials) and placeOrder(order).  */
 const ADAPTERS = {};
 
-module.exports = { KINDS, STATUSES, VALID_CATEGORIES, priceItem, guessCategory, routeOrder, prettyPrice, ADAPTERS };
+module.exports = { KINDS, STATUSES, VALID_CATEGORIES, priceItem, guessCategory, routeOrder, prettyPrice, smartRetailCents, ADAPTERS };

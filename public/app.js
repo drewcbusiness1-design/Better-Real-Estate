@@ -1860,61 +1860,114 @@ async function renderSuppliers() {
       results.innerHTML = '';
       results.appendChild(el('div', { class: 'hint' }, 'Loading variants…'));
       try {
-        const { product } = await api('GET', `/api/admin/cj/products/${encodeURIComponent(productSummary.pid)}`);
+        const { product } = await api('GET', `/api/admin/cj/products/${encodeURIComponent(productSummary.pid)}?country=${encodeURIComponent(country.value)}`);
         const { categories } = await api('GET', '/api/shop/categories');
-        results.innerHTML = '';
-        const header = el('div', { class: 'listrow', style: 'align-items:flex-start' }, [
-          product.image ? el('img', { src: product.image, style: 'width:84px;height:84px;object-fit:cover;border-radius:10px' }) : null,
-          el('div', { class: 'grow' }, [
-            el('div', { class: 't' }, product.name),
-            el('div', { class: 's' }, product.categoryName || 'CJ product'),
-            el('div', { class: 's' }, `${product.variants?.length || 0} variant(s)`)
-          ]),
-          el('button', { onclick: () => doSearch(1) }, '← Results')
-        ]);
-        results.appendChild(header);
 
-        const markup = el('input', { type: 'number', value: supplier.markupPercent, min: 0, max: 1000 });
-        const categorySel = el('select', {}, categories.map(c => el('option', { value: c }, c)));
-        results.appendChild(el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0' }, [
-          el('div', {}, [el('label', {}, 'Markup (%)'), markup]),
-          el('div', {}, [el('label', {}, 'Marketplace category'), categorySel])
-        ]));
+        function drawVariantList() {
+          results.innerHTML = '';
+          const header = el('div', { class: 'listrow', style: 'align-items:flex-start' }, [
+            product.image ? el('img', { src: product.image, style: 'width:84px;height:84px;object-fit:cover;border-radius:10px' }) : null,
+            el('div', { class: 'grow' }, [
+              el('div', { class: 't' }, product.name),
+              el('div', { class: 's' }, product.categoryName || 'CJ product'),
+              el('div', { class: 's' }, `${product.variants?.length || 0} variant(s) · category will auto-map to ${product.suggestedCategory || 'Other'}`)
+            ]),
+            el('button', { onclick: () => doSearch(1) }, '← Results')
+          ]);
+          results.appendChild(header);
+          results.appendChild(el('div', { class: 'hint', style: 'margin:10px 0' }, 'Choose a variant, then review the auto-filled listing before publishing. CJ cost, photos, SKU, stock, weight/dimensions, category and a suggested retail price are filled automatically.'));
 
-        const live = (product.variants || []).filter(v => v.stock > 0);
-        if (!live.length) {
-          results.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No in-stock variants'), el('p', {}, 'Try another product or remove the warehouse filter.') ]));
-          return;
+          const live = (product.variants || []).filter(v => v.stock > 0);
+          if (!live.length) {
+            results.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No in-stock variants'), el('p', {}, 'Try another product or remove the warehouse filter.') ]));
+            return;
+          }
+          const rows = el('div', { class: 'card' });
+          live.slice(0, 30).forEach(v => {
+            const origin = v.fromCountryCode === 'US' ? 'US stock' : (v.fromCountryCode ? `${v.fromCountryCode} stock` : 'CJ stock');
+            const reviewBtn = el('button', { class: 'btn-primary', style: 'border:none' }, 'Review');
+            reviewBtn.onclick = () => drawReview(v);
+            rows.appendChild(el('div', { class: 'listrow' }, [
+              v.image ? el('img', { src: v.image, style: 'width:58px;height:58px;object-fit:cover;border-radius:8px' }) : null,
+              el('div', { class: 'grow' }, [
+                el('div', { class: 't' }, v.option || v.name || 'Variant'),
+                el('div', { class: 's' }, `${v.sku || v.vid} · CJ cost ${cents(Math.round(v.price * 100))} · auto retail ${cents(v.autoRetailCents)}`),
+                el('div', { class: 's' }, `${origin} · ${v.stock.toLocaleString()} in stock${v.weight ? ` · ${v.weight} g` : ''}`)
+              ]),
+              reviewBtn
+            ]));
+          });
+          results.appendChild(rows);
+          if (live.length > 30) results.appendChild(el('div', { class: 'hint' }, `Showing the first 30 of ${live.length} in-stock variants.`));
         }
-        const rows = el('div', { class: 'card' });
-        live.slice(0, 30).forEach(v => {
-          const origin = v.fromCountryCode === 'US' ? 'US stock' : (v.fromCountryCode ? `${v.fromCountryCode} stock` : 'CJ stock');
-          const importBtn = el('button', { class: 'btn-primary', style: 'border:none' }, 'Import');
-          importBtn.onclick = async () => {
-            importBtn.disabled = true; importBtn.textContent = 'Importing…';
+
+        function drawReview(v) {
+          results.innerHTML = '';
+          const defaultTitle = v.option && !String(product.name || '').toLowerCase().includes(String(v.option).toLowerCase())
+            ? `${product.name} — ${v.option}` : product.name;
+          const title = el('input', { value: defaultTitle || v.name || 'CJ product' });
+          const categorySel = el('select', {}, categories.map(c => el('option', { value: c }, c)));
+          categorySel.value = categories.includes(product.suggestedCategory) ? product.suggestedCategory : 'Other';
+          const retail = el('input', { type: 'number', min: '0.01', step: '0.01', value: (v.autoRetailCents / 100).toFixed(2) });
+          const descDefault = [
+            product.description || '',
+            v.option ? `Option: ${v.option}` : '',
+            v.weight ? `Approx. product weight: ${v.weight} g.` : '',
+            (v.lengthMm && v.widthMm && v.heightMm) ? `Approx. dimensions: ${v.lengthMm} × ${v.widthMm} × ${v.heightMm} mm.` : ''
+          ].filter(Boolean).join('\n\n').slice(0, 1000);
+          const desc = el('textarea', { style: 'min-height:120px' });
+          desc.value = descDefault;
+
+          const photos = [...new Set([v.image, product.image, ...(product.images || [])].filter(Boolean))].slice(0, 6);
+          const photoRow = el('div', { class: 'previewrow', style: 'margin:8px 0 14px' });
+          photos.forEach(src => photoRow.appendChild(el('div', { class: 'pv' }, el('img', { src }))));
+
+          const costCents = Math.round(v.price * 100);
+          const profitCents = Math.max(0, v.autoRetailCents - costCents);
+          const details = el('div', { class: 'policybox', style: 'margin-bottom:12px' }, [
+            el('b', {}, 'Auto-filled from CJ'),
+            el('div', {}, `CJ cost: ${cents(costCents)} · Suggested retail: ${cents(v.autoRetailCents)} · Gross product spread: ${cents(profitCents)}`),
+            el('div', {}, `SKU: ${v.sku || '—'} · Stock: ${v.stock.toLocaleString()} · Ships from: ${v.fromCountryCode || 'CJ warehouse'}`),
+            el('div', {}, `${v.weight ? `Weight: ${v.weight} g` : 'Weight unavailable'}${v.lengthMm && v.widthMm && v.heightMm ? ` · Dimensions: ${v.lengthMm} × ${v.widthMm} × ${v.heightMm} mm` : ''}`),
+            el('div', { class: 'hint', style: 'margin-top:6px' }, 'Shipping is still quoted live from CJ at customer checkout. It is not included in this retail price.')
+          ]);
+
+          const publish = el('button', { class: 'btn-primary', style: 'border:none;width:100%' }, 'Publish to Marketplace');
+          publish.onclick = async () => {
+            publish.disabled = true; publish.textContent = 'Publishing…';
             try {
               const r = await api('POST', '/api/admin/cj/import', {
-                supplierId: supplier.id, pid: product.pid, vid: v.vid,
-                markupPercent: markup.value, category: categorySel.value
+                supplierId: supplier.id,
+                pid: product.pid,
+                vid: v.vid,
+                title: title.value.trim(),
+                category: categorySel.value,
+                retailPrice: retail.value,
+                description: desc.value.trim()
               });
-              importBtn.textContent = 'Imported';
+              publish.textContent = 'Published';
               toast(`${r.item.title} is live at ${cents(r.item.price)} + live CJ shipping`, 'ok');
             } catch (e) {
-              importBtn.disabled = false; importBtn.textContent = 'Import'; toast(e.message, 'err');
+              publish.disabled = false; publish.textContent = 'Publish to Marketplace'; toast(e.message, 'err');
             }
           };
-          rows.appendChild(el('div', { class: 'listrow' }, [
-            v.image ? el('img', { src: v.image, style: 'width:58px;height:58px;object-fit:cover;border-radius:8px' }) : null,
-            el('div', { class: 'grow' }, [
-              el('div', { class: 't' }, v.option || v.name || 'Variant'),
-              el('div', { class: 's' }, `${v.sku || v.vid} · CJ cost ${cents(Math.round(v.price * 100))}`),
-              el('div', { class: 's' }, `${origin} · ${v.stock.toLocaleString()} in stock`)
-            ]),
-            importBtn
+
+          results.appendChild(el('div', { style: 'display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px' }, [
+            el('div', { class: 't', style: 'font-size:18px' }, 'Review CJ listing'),
+            el('button', { onclick: drawVariantList }, '← Variants')
           ]));
-        });
-        results.appendChild(rows);
-        if (live.length > 30) results.appendChild(el('div', { class: 'hint' }, `Showing the first 30 of ${live.length} in-stock variants.`));
+          results.appendChild(details);
+          if (photos.length) { results.appendChild(el('label', {}, 'Photos from CJ')); results.appendChild(photoRow); }
+          results.appendChild(el('label', {}, 'Title')); results.appendChild(title);
+          results.appendChild(el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:10px' }, [
+            el('div', {}, [el('label', {}, 'Marketplace category'), categorySel]),
+            el('div', {}, [el('label', {}, 'Retail price ($)'), retail])
+          ]));
+          results.appendChild(el('label', {}, 'Description')); results.appendChild(desc);
+          results.appendChild(publish);
+        }
+
+        drawVariantList();
       } catch (e) {
         results.innerHTML = '';
         results.appendChild(el('div', { class: 'errmsg' }, e.message));
