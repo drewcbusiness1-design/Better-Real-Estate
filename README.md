@@ -152,3 +152,9 @@ Every integration point is marked `TODO(stripe)` in `server.js`:
 - **HTTPS is mandatory** once this is public — sessions and payment tokens must never cross plain HTTP.
 - **You'll need terms of service and a privacy policy** before collecting payments and personal data, and taking a cut of marketplace sales may make you a payment facilitator in some jurisdictions. Worth 30 minutes with a lawyer before you flip on real payments.
 - **Seller-posted addresses are personal data.** Decide what's public pre-unlock (currently: city only) and document it.
+
+## Shop listing management
+
+Signed-in marketplace sellers can open **Shop → My shop listings** (or Profile → My shop listings) to edit their own items after publishing. They can update title, category, condition, price, quantity, location, description, photos, publish/unpublish, or remove a listing. Photo order can be changed from the edit screen.
+
+Admins see **Manage shop listings** and can manage every marketplace item. Admin dropship/CJ rows additionally show private supplier cost and product spread; those internal values are not returned by the public marketplace API. Deleted items are soft-deleted so completed order and payout history keeps a stable item reference.

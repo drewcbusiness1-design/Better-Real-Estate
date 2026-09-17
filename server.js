@@ -864,6 +864,139 @@ app.get('/api/shop/items/:id', async (req, res) => {
   res.json({ item: publicShopItem(item) });
 });
 
+
+function isShopAdmin(user) {
+  return !!user && user.role === 'admin' && policy.isAdminEmail(user.email);
+}
+function canManageShopItem(user, item) {
+  return !!user && !!item && (isShopAdmin(user) || item.sellerId === user.id);
+}
+function managedShopItem(item, db, viewer) {
+  const base = {
+    ...publicShopItem(item),
+    active: !!item.active,
+    sellerId: item.sellerId,
+    sellerName: item.sellerName,
+    soldCount: db.orders.filter(o => o.itemId === item.id && o.status === 'paid').length,
+    updatedAt: item.updatedAt || null,
+    deleted: !!item.deleted
+  };
+  if (isShopAdmin(viewer)) {
+    base.cost = Number(item.cost || 0) || 0;
+    base.margin = Number(item.margin || 0) || 0;
+    base.supplierId = item.supplierId || null;
+    base.supplierSku = item.supplierSku || null;
+    base.cjPid = item.cjPid || null;
+    base.cjVid = item.cjVid || null;
+    base.cjVariantSku = item.cjVariantSku || null;
+    base.cjFromCountryCode = item.cjFromCountryCode || null;
+    base.cjLastSyncAt = item.cjLastSyncAt || null;
+  }
+  return base;
+}
+
+// Listing management. Regular users only see/manage their own shop items;
+// admins can manage every marketplace item, including CJ inventory.
+app.get('/api/shop/manage', requireAuth, async (req, res) => {
+  const admin = isShopAdmin(req.user);
+  const includeDeleted = admin && String(req.query.includeDeleted || '') === '1';
+  let items = req.db.shopItems.filter(i => includeDeleted || !i.deleted);
+  if (!admin) items = items.filter(i => i.sellerId === req.user.id);
+  items.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+  res.json({ items: items.map(i => managedShopItem(i, req.db, req.user)), admin });
+});
+
+app.get('/api/shop/manage/:id', requireAuth, async (req, res) => {
+  const item = req.db.shopItems.find(i => i.id === req.params.id && !i.deleted);
+  if (!item) return res.status(404).json({ error: 'Shop listing not found.' });
+  if (!canManageShopItem(req.user, item)) return res.status(403).json({ error: 'You cannot edit this listing.' });
+  res.json({ item: managedShopItem(item, req.db, req.user) });
+});
+
+app.patch('/api/shop/items/:id', requireAuth, async (req, res) => {
+  const item = req.db.shopItems.find(i => i.id === req.params.id && !i.deleted);
+  if (!item) return res.status(404).json({ error: 'Shop listing not found.' });
+  if (!canManageShopItem(req.user, item)) return res.status(403).json({ error: 'You cannot edit this listing.' });
+  const b = req.body || {};
+
+  const title = b.title === undefined ? item.title : String(b.title || '').trim().slice(0, 120);
+  const description = b.description === undefined ? item.description : String(b.description || '').slice(0, 1000);
+  const category = b.category === undefined ? item.category : (SHOP_CATEGORIES.includes(b.category) ? b.category : 'Other');
+  if (!title) return res.status(400).json({ error: 'Title is required.' });
+
+  // Apply the private-seller restricted-category policy on every edit too,
+  // so a normal user cannot publish a compliant item and later turn it into
+  // a prohibited electrical/appliance listing.
+  if (!item.dropship) {
+    const banned = policy.checkShopItem({ title, description, category }, false);
+    if (banned) return res.status(403).json({ error: banned });
+  }
+
+  let priceCents = item.price;
+  if (b.price !== undefined) {
+    const dollars = Number(b.price);
+    if (!Number.isFinite(dollars) || dollars <= 0) return res.status(400).json({ error: 'Price must be greater than $0.' });
+    priceCents = Math.round(dollars * 100);
+    if (item.dropship && Number(item.cost || 0) > 0 && priceCents <= Number(item.cost)) {
+      return res.status(400).json({ error: 'Retail price must stay above the supplier cost.' });
+    }
+  }
+
+  let stock = item.stock;
+  if (b.stock !== undefined) {
+    const n = Number(b.stock);
+    if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: 'Quantity cannot be negative.' });
+    stock = Math.floor(n);
+  }
+
+  if (b.photos !== undefined) {
+    if (!Array.isArray(b.photos)) return res.status(400).json({ error: 'Photos must be a list.' });
+    const next = [];
+    for (const photo of b.photos.slice(0, 6)) {
+      if (typeof photo !== 'string') continue;
+      if (photo.startsWith('data:image/')) {
+        const stored = await writeImage(photo);
+        if (stored) next.push(stored);
+      } else if ((item.photos || []).includes(photo)) {
+        // Existing URLs (including CJ-hosted images) may be retained/reordered,
+        // but arbitrary remote URLs cannot be injected through the edit form.
+        next.push(photo);
+      }
+    }
+    item.photos = [...new Set(next)].slice(0, 6);
+  }
+
+  item.title = title;
+  item.category = category;
+  item.condition = b.condition === undefined ? item.condition : String(b.condition || 'Used — good').slice(0, 60);
+  item.price = priceCents;
+  item.stock = stock;
+  item.location = b.location === undefined ? item.location : String(b.location || '').slice(0, 80);
+  item.description = description;
+  if (b.active !== undefined) item.active = !!b.active;
+  if (item.dropship) {
+    item.margin = Math.max(0, item.price - (Number(item.cost || 0) || 0));
+    if (b.price !== undefined) item.cjPricingMode = 'manual';
+  }
+  item.updatedAt = new Date().toISOString();
+  await saveDB(req.db);
+  res.json({ item: managedShopItem(item, req.db, req.user) });
+});
+
+app.delete('/api/shop/items/:id', requireAuth, async (req, res) => {
+  const item = req.db.shopItems.find(i => i.id === req.params.id && !i.deleted);
+  if (!item) return res.status(404).json({ error: 'Shop listing not found.' });
+  if (!canManageShopItem(req.user, item)) return res.status(403).json({ error: 'You cannot delete this listing.' });
+  // Soft-delete so completed orders, payout records and supplier-order history
+  // retain a stable item reference. The item disappears from shop + management.
+  item.active = false;
+  item.deleted = true;
+  item.deletedAt = new Date().toISOString();
+  item.updatedAt = item.deletedAt;
+  await saveDB(req.db);
+  res.json({ ok: true });
+});
+
 // Shared by the instant (wallet/simulated) purchase path and the Stripe
 // webhook, so a card-paid marketplace order is fulfilled exactly the same
 // way as a wallet-paid one — fee split, stock, and dropship routing all

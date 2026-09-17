@@ -1,7 +1,7 @@
 let state = {
   view: 'home', user: null, authMode: 'signup', pricing: null, access: null,
   detailId: null, profileId: null, photoIdx: 0, composePhotos: [], shopPhotos: [],
-  shopCat: 'All', shopQ: '', shopItemId: null
+  shopCat: 'All', shopQ: '', shopItemId: null, shopEditId: null, shopEditPhotos: [], shopManageQ: ''
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -127,7 +127,7 @@ function renderTabs() {
   if (!state.user) return;
   const items = [['feed','⌂','Feed'], ['shop','▦','Shop'], ['compose','＋','Post'], ['leaderboard','♦','Board'], ['me','◍','Profile']];
   items.forEach(([v, ic, label]) => {
-    const active = state.view === v || (v === 'shop' && ['shopitem','sellitem'].includes(state.view));
+    const active = state.view === v || (v === 'shop' && ['shopitem','sellitem','shopmanage','shopedit'].includes(state.view));
     tabs.appendChild(el('button', {
       class: active ? 'active' : '', onclick: () => go(v)
     }, [el('span', { class: 'ic' }, ic), el('span', {}, label)]));
@@ -142,7 +142,7 @@ async function renderApp() {
     compose: renderCompose, saved: renderSaved, messages: renderMessages,
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin,
-    wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, offers: renderOffers,
+    wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
     boostpicker: renderBoostPicker, workspace: renderWorkspace,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
@@ -150,7 +150,6 @@ async function renderApp() {
   };
   try { app.appendChild(await (views[state.view] || renderHome)()); }
   catch (e) {
-    if (placeholder) placeholder.remove();
     app.appendChild(el('div', { class: 'page' }, el('div', { class: 'empty' }, [
       el('h3', {}, 'Something went wrong'), el('p', {}, e.message),
       el('button', { class: 'btn-ghost', style: 'margin-top:18px', onclick: () => render() }, 'Try again')
@@ -885,7 +884,11 @@ async function renderShop() {
   });
   wrap.appendChild(chips);
 
-  wrap.appendChild(el('button', { class: 'btn-primary', style: 'width:100%;margin-bottom:18px', onclick: () => go('sellitem') }, '＋ Sell an item'));
+  const shopActions = el('div', { class: 'shopactions' }, [
+    el('button', { class: 'btn-primary', onclick: () => go('sellitem') }, '＋ Sell an item'),
+    el('button', { class: 'btn-ghost', onclick: () => go('shopmanage') }, state.user?.role === 'admin' ? 'Manage shop listings' : 'My shop listings')
+  ]);
+  wrap.appendChild(shopActions);
 
   const { items } = await api('GET', `/api/shop/items?category=${encodeURIComponent(state.shopCat)}&q=${encodeURIComponent(state.shopQ)}`);
   if (!items.length) { wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Nothing here yet'), el('p', {}, 'Be the first to list something.')])); return wrap; }
@@ -1126,6 +1129,180 @@ async function renderSellItem() {
     } catch (e) { err.textContent = e.message; }
   };
   wrap.appendChild(err); wrap.appendChild(sb);
+  return wrap;
+}
+
+
+async function renderShopManage() {
+  const wrap = el('div', { class: 'page' });
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('shop') }, '← Marketplace'));
+  const { items, admin } = await api('GET', '/api/shop/manage');
+  wrap.appendChild(el('h2', {}, admin ? 'Manage shop listings' : 'My shop listings'));
+  wrap.appendChild(el('div', { class: 'sub' }, admin
+    ? 'Admins can edit, publish, unpublish or remove any marketplace item. Supplier cost stays visible only here.'
+    : 'Edit your own marketplace items, update photos or price, temporarily unpublish them, or remove them.'));
+
+  const search = el('input', { placeholder: 'Search your shop listings…', value: state.shopManageQ || '' });
+  const listHost = el('div');
+  const statsHost = el('div');
+  wrap.appendChild(search); wrap.appendChild(statsHost); wrap.appendChild(listHost);
+
+  const draw = () => {
+    const q = String(search.value || '').trim().toLowerCase();
+    state.shopManageQ = search.value;
+    const filtered = items.filter(i => !q || `${i.title} ${i.category} ${i.sellerName || ''}`.toLowerCase().includes(q));
+    statsHost.innerHTML = '';
+    statsHost.appendChild(el('div', { class: 'shopmanagestats' }, [
+      el('span', {}, `${items.filter(i => i.active && i.stock > 0).length} live`),
+      el('span', {}, `${items.filter(i => !i.active || i.stock < 1).length} not live`),
+      el('span', {}, `${items.reduce((n, i) => n + (i.soldCount || 0), 0)} sold`)
+    ]));
+    listHost.innerHTML = '';
+    if (!filtered.length) {
+      listHost.appendChild(el('div', { class: 'empty' }, [el('h3', {}, items.length ? 'No matching items' : 'No shop listings yet'), el('p', {}, items.length ? 'Try a different search.' : 'Post an item from the Shop tab.') ]));
+      return;
+    }
+    const grid = el('div', { class: 'managegrid' });
+    filtered.forEach(item => {
+      const live = item.active && item.stock > 0;
+      const status = live ? 'Live' : (item.stock < 1 ? 'Out of stock' : 'Unpublished');
+      const statusClass = live ? 'good' : 'warn';
+      const media = el('div', { class: 'managephoto' }, item.photos?.length ? el('img', { src: item.photos[0], alt: item.title }) : 'No photo');
+      const meta = [
+        el('div', { class: 'managehead' }, [el('span', { class: 'pill ' + statusClass }, status), item.dropship ? el('span', { class: 'pill warn' }, 'CJ / supplier') : null]),
+        el('div', { class: 't' }, item.title),
+        el('div', { class: 's' }, `${cents(item.price)} · ${item.stock} in stock · ${item.category}`),
+        admin ? el('div', { class: 's' }, `Seller: ${item.sellerName || 'Unknown'}`) : null,
+        admin && item.dropship ? el('div', { class: 's' }, `Supplier cost ${cents(item.cost || 0)} · spread ${cents(Math.max(0, (item.price || 0) - (item.cost || 0)))}`) : null,
+        el('div', { class: 's' }, `${item.soldCount || 0} sold${item.updatedAt ? ' · edited ' + new Date(item.updatedAt).toLocaleDateString() : ''}`)
+      ];
+      const actions = el('div', { class: 'manageactions' });
+      if (live) actions.appendChild(el('button', { class: 'btn-ghost', onclick: () => go('shopitem', { shopItemId: item.id }) }, 'View'));
+      actions.appendChild(el('button', { onclick: () => go('shopedit', { shopEditId: item.id }) }, 'Edit'));
+      const toggle = el('button', { class: 'btn-ghost' }, item.active ? 'Unpublish' : 'Publish');
+      toggle.disabled = !item.active && item.stock < 1;
+      toggle.title = (!item.active && item.stock < 1) ? 'Set quantity above 0 before publishing.' : '';
+      toggle.onclick = async () => {
+        try {
+          await api('PATCH', `/api/shop/items/${encodeURIComponent(item.id)}`, { active: !item.active });
+          toast(item.active ? 'Listing unpublished' : 'Listing published', 'ok'); render();
+        } catch (e) { toast(e.message, 'err'); }
+      };
+      actions.appendChild(toggle);
+      const del = el('button', { class: 'dangerbtn' }, 'Delete');
+      del.onclick = async () => {
+        if (!confirm(`Remove "${item.title}" from the marketplace? Existing order records will be kept.`)) return;
+        try { await api('DELETE', `/api/shop/items/${encodeURIComponent(item.id)}`); toast('Listing removed', 'ok'); render(); }
+        catch (e) { toast(e.message, 'err'); }
+      };
+      actions.appendChild(del);
+      grid.appendChild(el('div', { class: 'managecard' }, [media, el('div', { class: 'managebody' }, meta), actions]));
+    });
+    listHost.appendChild(grid);
+  };
+  search.addEventListener('input', draw);
+  draw();
+  return wrap;
+}
+
+async function renderShopEdit() {
+  const wrap = el('div', { class: 'page' });
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('shopmanage') }, '← Shop listings'));
+  if (!state.shopEditId) {
+    wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Listing not selected'), el('p', {}, 'Open Shop listings and choose Edit.') ]));
+    return wrap;
+  }
+  const [{ item }, cats] = await Promise.all([
+    api('GET', `/api/shop/manage/${encodeURIComponent(state.shopEditId)}`),
+    api('GET', '/api/shop/categories')
+  ]);
+  const admin = state.user?.role === 'admin';
+  const categories = admin ? cats.categories : cats.sellableCategories;
+  wrap.appendChild(el('h2', {}, 'Edit shop listing'));
+  wrap.appendChild(el('div', { class: 'sub' }, admin && item.sellerId !== state.user.id ? `Posted by ${item.sellerName}. You are editing this as an admin.` : 'Changes update the existing marketplace item.'));
+
+  if (admin && item.dropship) {
+    wrap.appendChild(el('div', { class: 'admincostbox' }, [
+      el('b', {}, 'Supplier inventory'),
+      el('span', {}, `Cost: ${cents(item.cost || 0)}`),
+      el('span', {}, `Current spread: ${cents(Math.max(0, item.price - (item.cost || 0)))}`),
+      item.cjVariantSku ? el('span', {}, `CJ SKU: ${item.cjVariantSku}`) : null,
+      item.cjLastSyncAt ? el('span', {}, `Last CJ sync: ${new Date(item.cjLastSyncAt).toLocaleString()}`) : null
+    ]));
+  }
+
+  const title = el('input', { value: item.title || '' });
+  const cat = el('select', {}, categories.map(c => el('option', { value: c }, c))); cat.value = categories.includes(item.category) ? item.category : 'Other';
+  const conditions = [...new Set([item.condition, 'New in box', 'Like new', 'Used — good', 'Used — fair', 'For parts'].filter(Boolean))];
+  const cond = el('select', {}, conditions.map(c => el('option', { value: c }, c))); cond.value = item.condition;
+  const price = el('input', { type: 'number', min: '0.01', step: '0.01', value: (item.price / 100).toFixed(2) });
+  const stock = el('input', { type: 'number', min: '0', step: '1', value: item.stock });
+  const loc = el('input', { value: item.location || '', placeholder: 'City, ST or shipping origin' });
+  const desc = el('textarea', {}); desc.value = item.description || '';
+
+  state.shopEditPhotos = [...(item.photos || [])];
+  const fileInput = el('input', { type: 'file', accept: 'image/*', multiple: true, style: 'display:none' });
+  const preview = el('div', { class: 'previewrow' });
+  const picker = el('div', { class: 'picker', onclick: () => fileInput.click() }, 'Add photos (up to 6)');
+  const drawPhotos = () => {
+    preview.innerHTML = '';
+    state.shopEditPhotos.forEach((photo, idx) => preview.appendChild(el('div', { class: 'pv editpv' }, [
+      el('img', { src: photo }),
+      idx > 0 ? el('button', { class: 'pvmove pvleft', type: 'button', title: 'Move photo left', onclick: () => {
+        [state.shopEditPhotos[idx - 1], state.shopEditPhotos[idx]] = [state.shopEditPhotos[idx], state.shopEditPhotos[idx - 1]]; drawPhotos();
+      } }, '‹') : null,
+      idx < state.shopEditPhotos.length - 1 ? el('button', { class: 'pvmove pvright', type: 'button', title: 'Move photo right', onclick: () => {
+        [state.shopEditPhotos[idx + 1], state.shopEditPhotos[idx]] = [state.shopEditPhotos[idx], state.shopEditPhotos[idx + 1]]; drawPhotos();
+      } }, '›') : null,
+      el('button', { class: 'pvremove', type: 'button', title: 'Remove photo', onclick: () => { state.shopEditPhotos.splice(idx, 1); drawPhotos(); } }, '×')
+    ])));
+    picker.textContent = state.shopEditPhotos.length ? `Add more photos (${state.shopEditPhotos.length}/6)` : 'Add photos (up to 6)';
+  };
+  fileInput.onchange = async () => {
+    for (const f of [...fileInput.files].slice(0, Math.max(0, 6 - state.shopEditPhotos.length))) state.shopEditPhotos.push(await downscale(f));
+    fileInput.value = ''; drawPhotos();
+  };
+  drawPhotos();
+
+  wrap.appendChild(el('div', { class: 'editshopform card' }, [
+    el('label', {}, 'Photos'), picker, fileInput, preview,
+    el('label', {}, 'Title'), title,
+    twoUp('Category', cat, 'Condition', cond),
+    twoUp('Price ($)', price, 'Quantity', stock),
+    el('label', {}, 'Location / shipping origin'), loc,
+    el('label', {}, 'Description'), desc
+  ]));
+
+  const status = el('div', { class: 'errmsg' });
+  const actionRow = el('div', { class: 'editactions' });
+  const save = el('button', { class: 'submitbtn' }, 'Save changes');
+  save.onclick = async () => {
+    status.textContent = ''; save.disabled = true; save.textContent = 'Saving…';
+    try {
+      const r = await api('PATCH', `/api/shop/items/${encodeURIComponent(item.id)}`, {
+        title: title.value, category: cat.value, condition: cond.value, price: price.value,
+        stock: stock.value, location: loc.value, description: desc.value, photos: state.shopEditPhotos
+      });
+      state.shopEditPhotos = [...(r.item.photos || [])];
+      toast('Shop listing updated', 'ok'); go('shopmanage');
+    } catch (e) { status.textContent = e.message; save.disabled = false; save.textContent = 'Save changes'; }
+  };
+  const toggle = el('button', { class: 'btn-ghost' }, item.active ? 'Unpublish' : 'Publish');
+  toggle.onclick = async () => {
+    try {
+      if (!item.active && Number(stock.value) < 1) throw new Error('Set quantity above 0 before publishing.');
+      await api('PATCH', `/api/shop/items/${encodeURIComponent(item.id)}`, { active: !item.active, stock: stock.value });
+      toast(item.active ? 'Listing unpublished' : 'Listing published', 'ok'); go('shopmanage');
+    } catch (e) { status.textContent = e.message; }
+  };
+  const del = el('button', { class: 'dangerbtn' }, 'Delete listing');
+  del.onclick = async () => {
+    if (!confirm(`Delete "${item.title}" from the marketplace? Existing order records will remain.`)) return;
+    try { await api('DELETE', `/api/shop/items/${encodeURIComponent(item.id)}`); toast('Listing removed', 'ok'); go('shopmanage'); }
+    catch (e) { status.textContent = e.message; }
+  };
+  actionRow.appendChild(save); actionRow.appendChild(toggle); actionRow.appendChild(del);
+  wrap.appendChild(status); wrap.appendChild(actionRow);
   return wrap;
 }
 
@@ -1416,6 +1593,7 @@ async function renderMe() {
 
   const nav = el('div', { class: 'card' });
   [['Wallet & payouts', () => go('wallet')], ['Offers', () => go('offers')], ['Orders', () => go('orders')],
+   [state.user.role === 'admin' ? 'Admin — shop listings' : 'My shop listings', () => go('shopmanage')],
    ['Saved properties', () => go('saved')], ['Buy box', () => go('buybox')],
    ['Investor workspace' + (state.access?.platinum ? '' : ' 🔒'), () => go('workspace')],
    ['Plans & billing', () => go('upgrade')],
