@@ -966,7 +966,7 @@ async function renderShopItem() {
   const checkoutStatus = el('div', { class: 'errmsg' });
 
   if (item.dropship) {
-    checkout.appendChild(el('div', { class: 'checkoutnote' }, 'Enter the delivery address to get the live CJ shipping price before payment.'));
+    checkout.appendChild(el('div', { class: 'checkoutnote' }, 'Enter the delivery address to calculate shipping before payment.'));
     const line1 = el('input', { placeholder: 'Street address', autocomplete: 'street-address' });
     const line2 = el('input', { placeholder: 'Apartment, suite, unit (optional)', autocomplete: 'address-line2' });
     const city = el('input', { placeholder: 'City', autocomplete: 'address-level2' });
@@ -1012,13 +1012,13 @@ async function renderShopItem() {
         checkoutStatus.textContent = 'Street, city, state and ZIP are required.';
         return;
       }
-      quoteBtn.disabled = true; quoteBtn.textContent = 'Checking CJ shipping…';
+      quoteBtn.disabled = true; quoteBtn.textContent = 'Checking shipping…';
       try {
         quote = await api('POST', '/api/shop/shipping-quote', { itemId: item.id, shipping });
         quoteBox.className = 'quotesummary';
         quoteBox.innerHTML = '';
         quoteBox.appendChild(el('div', {}, [el('span', {}, 'Item'), el('b', {}, cents(item.price))]));
-        quoteBox.appendChild(el('div', {}, [el('span', {}, quote.logisticName || 'Shipping'), el('b', {}, cents(quote.shippingCostCents || 0))]));
+        quoteBox.appendChild(el('div', {}, [el('span', {}, 'Shipping'), el('b', {}, cents(quote.shippingCostCents || 0))]));
         if (quote.days) {
           const eta = /day/i.test(String(quote.days)) ? String(quote.days) : `${quote.days} days`;
           quoteBox.appendChild(el('div', { class: 'quoteeta' }, `Estimated delivery: ${eta}`));
@@ -1169,7 +1169,7 @@ async function renderShopManage() {
       const statusClass = live ? 'good' : 'warn';
       const media = el('div', { class: 'managephoto' }, item.photos?.length ? el('img', { src: item.photos[0], alt: item.title }) : 'No photo');
       const meta = [
-        el('div', { class: 'managehead' }, [el('span', { class: 'pill ' + statusClass }, status), item.dropship ? el('span', { class: 'pill warn' }, 'CJ / supplier') : null]),
+        el('div', { class: 'managehead' }, [el('span', { class: 'pill ' + statusClass }, status), item.dropship ? el('span', { class: 'pill warn' }, admin ? 'CJ / supplier' : 'Shipped item') : null]),
         el('div', { class: 't' }, item.title),
         el('div', { class: 's' }, `${cents(item.price)} · ${item.stock} in stock · ${item.category}`),
         admin ? el('div', { class: 's' }, `Seller: ${item.sellerName || 'Unknown'}`) : null,
@@ -1316,8 +1316,8 @@ async function renderOrders() {
   const b = el('div', { class: 'card' });
   if (!bought.length) b.appendChild(el('div', { class: 'ledrow' }, el('div', { class: 'dt' }, 'Nothing bought yet.')));
   bought.forEach(o => {
-    const statusPill = o.dropship
-      ? el('span', { class: 'pill warn' }, 'ships direct')
+    const statusPill = o.platformFulfilled
+      ? el('span', { class: 'pill warn' }, 'shipping')
       : el('span', { class: 'pill ' + (o.shipStatus === 'shipped' ? 'good' : 'warn') }, o.shipStatus === 'shipped' ? 'shipped' : 'pending');
     const row = el('div', { class: 'ledrow' }, [
       el('div', { class: 'grow' }, [
@@ -1329,7 +1329,7 @@ async function renderOrders() {
     ]);
     b.appendChild(row);
     // Peer-to-peer purchases that have sat unshipped can be reported.
-    if (!o.dropship && o.shipStatus !== 'shipped') {
+    if (!o.platformFulfilled && o.shipStatus !== 'shipped') {
       const reportBtn = el('button', { style: 'margin:0 16px 12px;font-size:12px' }, 'Report — never shipped');
       reportBtn.onclick = async () => {
         const reason = prompt(`What happened with "${o.title}"?`, 'Paid but item was never shipped.');
@@ -1351,10 +1351,10 @@ async function renderOrders() {
         el('div', { class: 'd' }, o.title + ' → ' + o.buyerName),
         el('div', { class: 'dt' }, 'Fee ' + cents(o.fee) + (o.tracking ? ' · tracking: ' + o.tracking : ''))
       ]),
-      o.dropship ? el('span', { class: 'pill warn' }, 'dropship') : el('span', { class: 'pill ' + (o.shipStatus === 'shipped' ? 'good' : 'warn') }, o.shipStatus === 'shipped' ? 'shipped' : 'pending'),
+      o.platformFulfilled ? el('span', { class: 'pill warn' }, 'fulfilled') : el('span', { class: 'pill ' + (o.shipStatus === 'shipped' ? 'good' : 'warn') }, o.shipStatus === 'shipped' ? 'shipped' : 'pending'),
       el('div', { class: 'amt pos' }, '+' + cents(o.net))
     ]));
-    if (!o.dropship && o.shipStatus !== 'shipped') {
+    if (!o.platformFulfilled && o.shipStatus !== 'shipped') {
       const trackInput = el('input', { placeholder: 'Tracking number (optional)', style: 'max-width:200px' });
       const shipBtn = el('button', {}, 'Mark shipped');
       shipBtn.onclick = async () => {

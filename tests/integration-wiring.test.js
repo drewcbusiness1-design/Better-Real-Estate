@@ -49,4 +49,19 @@ assert.ok(client.includes('shopedit: renderShopEdit'), 'Client is missing the sh
 assert.ok(client.includes("state.user?.role === 'admin' ? 'Manage shop listings' : 'My shop listings'"), 'Shop manager must be discoverable for admins and regular sellers');
 assert.ok(!client.includes('if (placeholder) placeholder.remove()'), 'Global render error handler must not reference an undefined placeholder');
 
+
+// Customer-facing CJ privacy: CJ remains an admin-only integration detail.
+// The public product/checkout/order APIs must strip CJ logistics identifiers,
+// supplier names and raw image hosts from regular-user responses.
+assert.ok(!client.includes("'Checking CJ shipping…'"), 'Customer checkout must not mention CJ while quoting shipping');
+assert.ok(!client.includes('live CJ shipping price before payment'), 'Customer checkout copy must not mention CJ');
+assert.ok(!client.includes("quote.logisticName || 'Shipping'"), 'Customer checkout must not render the supplier logistics method');
+assert.ok(server.includes('function customerSafeSupplierText'), 'Public supplier text must be scrubbed before reaching customers');
+assert.ok(server.includes('function publicShopPhotos'), 'Dropship images must be masked behind first-party product photo URLs');
+assert.ok(server.includes("app.get('/api/shop/items/:id/photo/:index'"), 'Existing supplier-hosted product images need a first-party proxy');
+assert.ok(server.includes('.map(publicShopOrder)'), 'Order history must use a customer-safe serializer');
+assert.ok(server.includes('publicFulfilmentStatus(so)'), 'Buyer tracking must not expose the raw supplier-order object');
+assert.ok(!server.includes("error: 'CJ shipping quotes are temporarily unavailable.'"), 'Customer shipping errors must not name CJ');
+assert.ok(!server.includes("error: 'CJdropshipping is not connected right now.'"), 'Customer checkout errors must not name CJ');
+
 console.log('✓ CJ integration wiring tests passed');

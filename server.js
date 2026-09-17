@@ -808,15 +808,58 @@ app.post('/api/admin/verify-user', requireAuth, requireAdmin, async (req, res) =
 
 /* ============================ SHOP / MARKETPLACE ============================ */
 const SHOP_CATEGORIES = ['Appliances','HVAC','Plumbing','Electrical','Flooring','Doors & Windows','Lighting','Cabinets & Counters','Roofing','Tools','Fixtures','Other'];
+function customerSafeSupplierText(value) {
+  return String(value || '')
+    .replace(/https?:\/\/(?:www\.)?cjdropshipping\.com\S*/gi, '')
+    .replace(/\bCJ\s*Dropshipping\b/gi, '')
+    .replace(/\bCJDropshipping\b/gi, '')
+    .replace(/\bCJ\b/gi, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .trim();
+}
+
+function publicShopPhotos(item) {
+  const photos = Array.isArray(item.photos) ? item.photos.filter(Boolean) : [];
+  if (!item.dropship) return photos;
+  return photos.map((src, index) => /^https?:\/\//i.test(String(src))
+    ? `/api/shop/items/${encodeURIComponent(item.id)}/photo/${index}`
+    : src);
+}
 function publicShopItem(item) {
   return {
-    id: item.id, title: item.title, category: item.category, condition: item.condition,
-    price: item.price, stock: item.stock, location: item.location, description: item.description,
-    photos: Array.isArray(item.photos) ? item.photos : [], sellerName: item.sellerName,
-    dropship: !!item.dropship, shipDays: item.shipDays || null, createdAt: item.createdAt,
-    variant: item.cjVariantOption || null, weightGrams: item.cjWeightGrams || null,
+    id: item.id, title: customerSafeSupplierText(item.title), category: item.category, condition: item.condition,
+    price: item.price, stock: item.stock, location: item.dropship ? '' : item.location, description: customerSafeSupplierText(item.description),
+    photos: publicShopPhotos(item), sellerName: item.dropship ? (customerSafeSupplierText(item.sellerName) || 'Better Real Estate') : item.sellerName,
+    dropship: !!item.dropship, shipDays: customerSafeSupplierText(item.shipDays) || null, createdAt: item.createdAt,
+    variant: customerSafeSupplierText(item.cjVariantOption) || null, weightGrams: item.cjWeightGrams || null,
     dimensionsMm: (item.cjLengthMm && item.cjWidthMm && item.cjHeightMm)
       ? { length: item.cjLengthMm, width: item.cjWidthMm, height: item.cjHeightMm } : null
+  };
+}
+
+function publicShopOrder(order) {
+  return {
+    id: order.id, itemId: order.itemId, title: customerSafeSupplierText(order.title),
+    buyerId: order.buyerId, buyerName: order.buyerName,
+    sellerId: order.sellerId, sellerName: order.dropship ? (customerSafeSupplierText(order.sellerName) || 'Better Real Estate') : order.sellerName,
+    price: order.price, productPrice: order.productPrice,
+    shippingCostCents: order.shippingCostCents || 0,
+    fee: order.fee, net: order.net, status: order.status,
+    shipStatus: order.shipStatus, tracking: order.tracking || null,
+    shipping: order.shipping || null,
+    platformFulfilled: !!order.dropship,
+    estimatedDelivery: order.cjQuotedDays || null,
+    at: order.at, shippedAt: order.shippedAt || null
+  };
+}
+
+function publicFulfilmentStatus(so) {
+  if (!so) return null;
+  return {
+    status: so.status || null,
+    tracking: so.tracking || null,
+    updatedAt: so.updatedAt || null
   };
 }
 app.get('/api/shop/categories', async (req, res) => res.json({
@@ -855,6 +898,33 @@ app.get('/api/shop/items', async (req, res) => {
   if (q) { const s = String(q).toLowerCase(); items = items.filter(i => i.title.toLowerCase().includes(s) || i.description.toLowerCase().includes(s)); }
   items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ items: items.map(publicShopItem) });
+});
+
+app.get('/api/shop/items/:id/photo/:index', async (req, res) => {
+  const db = await loadDB();
+  const item = db.shopItems.find(i => i.id === req.params.id && i.active && i.stock > 0);
+  if (!item) return res.status(404).end();
+  const index = Number(req.params.index);
+  if (!Number.isInteger(index) || index < 0) return res.status(404).end();
+  const src = Array.isArray(item.photos) ? item.photos[index] : null;
+  if (!src || !/^https?:\/\//i.test(String(src))) return res.status(404).end();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const upstream = await fetch(src, { signal: controller.signal, redirect: 'follow' });
+    if (!upstream.ok) return res.status(404).end();
+    const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+    if (!/^image\//i.test(contentType)) return res.status(404).end();
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    if (buf.length > 8 * 1024 * 1024) return res.status(413).end();
+    res.set('Content-Type', contentType);
+    res.set('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+    res.send(buf);
+  } catch {
+    res.status(404).end();
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 app.get('/api/shop/items/:id', async (req, res) => {
@@ -1014,7 +1084,7 @@ function fulfilShopPurchase(db, item, buyer, shipping, pricing = {}) {
   }
   item.stock -= 1; if (item.stock < 1) item.active = false;
   const order = {
-    id: crypto.randomUUID(), itemId: item.id, title: item.title,
+    id: crypto.randomUUID(), itemId: item.id, title: customerSafeSupplierText(item.title),
     buyerId: buyer.id, buyerName: buyer.name, buyerEmail: buyer.email,
     sellerId: item.sellerId, sellerName: item.sellerName,
     price: totalPrice, productPrice: item.price, shippingCostCents,
@@ -1037,7 +1107,7 @@ async function quoteDropshipShipping(item, shipping) {
   if (!item.cjVid && !item.supplierSku) return null;
   const sh = cjAdapter.normalizeShipping(shipping || {});
   if (!sh.line1 || !sh.city || !sh.state || !sh.zip) {
-    const err = new Error('Street, city, state and ZIP are required for CJ shipping.');
+    const err = new Error('Street, city, state and ZIP are required for shipping.');
     err.status = 400;
     throw err;
   }
@@ -1049,7 +1119,7 @@ async function quoteDropshipShipping(item, shipping) {
     zip: sh.zip
   });
   if (!options.length) {
-    const err = new Error('CJ has no shipping method for this item to that address.');
+    const err = new Error('No shipping method is available for this item to that address.');
     err.status = 400;
     throw err;
   }
@@ -1065,13 +1135,25 @@ async function quoteDropshipShipping(item, shipping) {
 app.post('/api/shop/shipping-quote', requireAuth, async (req, res) => {
   const item = req.db.shopItems.find(i => i.id === req.body?.itemId);
   if (!item || !item.active || item.stock < 1) return res.status(404).json({ error: 'Item unavailable.' });
-  if (!item.dropship) return res.json({ shippingCostCents: 0, totalCents: item.price, logisticName: null, days: '' });
+  if (!item.dropship) return res.json({ shippingCostCents: 0, totalCents: item.price, days: '' });
   const supplier = req.db.suppliers.find(s => s.id === item.supplierId);
-  if (supplier?.kind !== 'cj') return res.json({ shippingCostCents: 0, totalCents: item.price, logisticName: null, days: item.shipDays || '' });
-  if (!cjAdapter.configured()) return res.status(503).json({ error: 'CJ shipping quotes are temporarily unavailable.' });
+  if (supplier?.kind !== 'cj') return res.json({ shippingCostCents: 0, totalCents: item.price, days: item.shipDays || '' });
+  if (!cjAdapter.configured()) return res.status(503).json({ error: 'Shipping quotes are temporarily unavailable.' });
   const shipping = cjAdapter.normalizeShipping(req.body?.shipping || {});
-  const quote = await quoteDropshipShipping(item, shipping);
-  res.json({ ...quote, totalCents: item.price + quote.shippingCostCents });
+  try {
+    const quote = await quoteDropshipShipping(item, shipping);
+    res.json({
+      shippingCostCents: quote.shippingCostCents,
+      totalCents: item.price + quote.shippingCostCents,
+      days: quote.days || ''
+    });
+  } catch (e) {
+    const status = e.status || e.statusCode || 503;
+    const safe = status >= 500
+      ? 'Shipping is temporarily unavailable. Please try again in a moment.'
+      : String(e.message || 'Shipping could not be calculated.').replace(/CJdropshipping|\bCJ\b/gi, 'shipping provider');
+    res.status(status).json({ error: safe });
+  }
 });
 
 app.post('/api/shop/buy', requireAuth, async (req, res) => {
@@ -1088,8 +1170,17 @@ app.post('/api/shop/buy', requireAuth, async (req, res) => {
     }
     const supplier = req.db.suppliers.find(s => s.id === item.supplierId);
     if (supplier?.kind === 'cj') {
-      if (!cjAdapter.configured()) return res.status(503).json({ error: 'CJdropshipping is not connected right now.' });
-      const quote = await quoteDropshipShipping(item, shipping);
+      if (!cjAdapter.configured()) return res.status(503).json({ error: 'Shipping is temporarily unavailable. Please try again shortly.' });
+      let quote;
+      try {
+        quote = await quoteDropshipShipping(item, shipping);
+      } catch (e) {
+        const status = e.status || e.statusCode || 503;
+        const safe = status >= 500
+          ? 'Shipping is temporarily unavailable. Please try again in a moment.'
+          : String(e.message || 'Shipping could not be calculated.').replace(/CJdropshipping|\bCJ\b/gi, 'shipping provider');
+        return res.status(status).json({ error: safe });
+      }
       pricing = { shippingCostCents: quote.shippingCostCents, cjLogisticName: quote.logisticName, cjQuotedDays: quote.days };
     }
   }
@@ -1105,7 +1196,7 @@ app.post('/api/shop/buy', requireAuth, async (req, res) => {
   }
   let result;
   try {
-    result = await chargeOrIntent(req.db, req.user, amount, 'shop_purchase', 'Purchase — ' + item.title, {
+    result = await chargeOrIntent(req.db, req.user, amount, 'shop_purchase', 'Purchase — ' + customerSafeSupplierText(item.title), {
       itemId: item.id,
       shipping: JSON.stringify(shipping || {}),
       shippingCostCents: String(pricing.shippingCostCents || 0),
@@ -1118,13 +1209,13 @@ app.post('/api/shop/buy', requireAuth, async (req, res) => {
   const order = fulfilShopPurchase(req.db, item, req.user, shipping, pricing);
   maybePayReferral(req.db, req.user);
   await saveDB(req.db);
-  res.json({ order, balance: balanceOf(req.db, req.user.id) });
+  res.json({ order: publicShopOrder(order), balance: balanceOf(req.db, req.user.id) });
 });
 
 app.get('/api/shop/orders', requireAuth, async (req, res) => {
   res.json({
-    bought: req.db.orders.filter(o => o.buyerId === req.user.id),
-    sold: req.db.orders.filter(o => o.sellerId === req.user.id)
+    bought: req.db.orders.filter(o => o.buyerId === req.user.id).map(publicShopOrder),
+    sold: req.db.orders.filter(o => o.sellerId === req.user.id).map(publicShopOrder)
   });
 });
 
@@ -1140,7 +1231,7 @@ app.post('/api/orders/:id/ship', requireAuth, async (req, res) => {
   order.shippedAt = new Date().toISOString();
   await saveDB(req.db);
   const buyer = req.db.users.find(u => u.id === order.buyerId);
-  if (buyer) mailer.sendShippedNotice(buyer.email, buyer.name, order.title, tracking).catch(e => console.error('[mail]', e.message));
+  if (buyer) mailer.sendShippedNotice(buyer.email, buyer.name, customerSafeSupplierText(order.title), tracking).catch(e => console.error('[mail]', e.message));
   res.json({ order });
 });
 
@@ -1565,7 +1656,7 @@ app.post('/api/admin/supplier-orders/:id/status', requireAuth, requireAdmin, asy
   so.updatedAt = new Date().toISOString();
   await saveDB(req.db);
   if (justShipped && so.buyerEmail) {
-    mailer.sendShippedNotice(so.buyerEmail, so.buyerName, so.title, so.tracking).catch(e => console.error('[mail]', e.message));
+    mailer.sendShippedNotice(so.buyerEmail, so.buyerName, customerSafeSupplierText(so.title), so.tracking).catch(e => console.error('[mail]', e.message));
   }
   res.json({ order: so });
 });
@@ -1634,7 +1725,7 @@ app.post('/api/admin/cj/import', requireAuth, requireAdmin, async (req, res) => 
     ? `${product.name || variant.name} — ${variant.option}`
     : (product.name || variant.name || 'CJ product');
   const customTitle = String(req.body?.title || '').trim();
-  const title = (customTitle || defaultTitle).slice(0, 120);
+  const title = customerSafeSupplierText((customTitle || defaultTitle).slice(0, 120)) || 'Product';
   const requestedCategory = String(req.body?.category || '');
   const category = dropship.VALID_CATEGORIES.includes(requestedCategory)
     ? requestedCategory : dropship.guessCategory(`${title} ${product.categoryName || ''}`);
@@ -1662,7 +1753,7 @@ app.post('/api/admin/cj/import', requireAuth, requireAdmin, async (req, res) => 
       ? `Approx. dimensions: ${variant.lengthMm} × ${variant.widthMm} × ${variant.heightMm} mm.` : ''
   ].filter(Boolean).join('\n\n').slice(0, 1000);
   const requestedDescription = String(req.body?.description || '').trim();
-  const description = (requestedDescription || generatedDescription).slice(0, 1000);
+  const description = customerSafeSupplierText((requestedDescription || generatedDescription).slice(0, 1000));
   const actualMarkupPercent = Math.round(((retailCents / costCents) - 1) * 1000) / 10;
 
   const item = {
@@ -1670,7 +1761,7 @@ app.post('/api/admin/cj/import', requireAuth, requireAdmin, async (req, res) => 
     title, category, condition: 'New in box',
     price: retailCents, cost: costCents, margin: retailCents - costCents,
     stock: variant.stock,
-    location: variant.fromCountryCode === 'US' ? 'CJ US warehouse' : 'CJ warehouse',
+    location: variant.fromCountryCode === 'US' ? 'United States' : 'International fulfillment',
     description, photos,
     supplierId: supplier.id, supplierSku: variant.vid, dropship: true,
     cjPid: pid, cjVid: variant.vid, cjVariantSku: variant.sku,
@@ -1773,7 +1864,7 @@ app.post('/api/admin/supplier-orders/:id/check-cj-status', requireAuth, requireA
   so.updatedAt = new Date().toISOString();
   await saveDB(req.db);
   if (justShipped && so.buyerEmail) {
-    mailer.sendShippedNotice(so.buyerEmail, so.buyerName, so.title, so.tracking).catch(e => console.error('[mail]', e.message));
+    mailer.sendShippedNotice(so.buyerEmail, so.buyerName, customerSafeSupplierText(so.title), so.tracking).catch(e => console.error('[mail]', e.message));
   }
   res.json({ order: so, cjStatus: info.status });
 });
@@ -1782,9 +1873,11 @@ app.post('/api/admin/supplier-orders/:id/check-cj-status', requireAuth, requireA
 app.get('/api/orders/:id/tracking', requireAuth, async (req, res) => {
   const order = req.db.orders.find(o => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: 'Not found.' });
-  if (order.buyerId !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Not your order.' });
+  const admin = isShopAdmin(req.user);
+  if (order.buyerId !== req.user.id && !admin) return res.status(403).json({ error: 'Not your order.' });
   const so = req.db.supplierOrders.find(s => s.orderId === order.id);
-  res.json({ order, fulfilment: so || null });
+  if (admin) return res.json({ order, fulfilment: so || null });
+  res.json({ order: publicShopOrder(order), fulfilment: publicFulfilmentStatus(so) });
 });
 
 // Catches anything thrown or rejected in any route above (see the
