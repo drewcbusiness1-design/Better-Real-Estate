@@ -351,6 +351,22 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .tier .d{font-size:14.5px;font-weight:600;margin-bottom:5px;}
 .tier .p{font-family:'Bricolage Grotesque',sans-serif;font-size:26px;color:var(--accent-text);}
 
+.tiergrid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:10px;}
+.tiercard{border:1px solid var(--line);border-radius:16px;padding:22px 20px;background:var(--surface);box-shadow:var(--shadow-sm);position:relative;display:flex;flex-direction:column;}
+.tiercard.featured{border-color:var(--accent);border-width:2px;box-shadow:var(--shadow);background:linear-gradient(180deg,var(--accent-soft) 0%,var(--surface) 22%);}
+.tierribbon{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;font-size:10px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.06em;white-space:nowrap;}
+.tiercard-name{font-size:19px;margin:4px 0 2px;}
+.tiercard-tagline{font-size:12.5px;color:var(--ink-soft);margin-bottom:12px;min-height:32px;}
+.tiercard-price{font-family:'Bricolage Grotesque',sans-serif;font-size:19px;font-weight:700;margin-bottom:14px;}
+.tiercard-perks{list-style:none;padding:0;margin:0;flex:1;}
+.tiercard-perks li{font-size:12.5px;line-height:1.55;color:var(--ink-2);padding-left:18px;position:relative;margin-bottom:8px;}
+.tiercard-perks li::before{content:'✓';position:absolute;left:0;color:var(--moss-text);font-weight:700;}
+.tiercard.featured .tiercard-perks li::before{color:var(--accent);}
+@media(max-width:760px){
+  .tiergrid3{grid-template-columns:1fr;}
+  .tiercard.featured{order:-1;}
+}
+
 /* ================= footer / static ================= */
 #sitefooter{border-top:1px solid var(--line);margin-top:48px;background:var(--bg-elev);}
 .footinner{max-width:780px;margin:0 auto;padding:30px 20px 36px;}

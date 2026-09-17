@@ -77,21 +77,33 @@ async function detachPaymentMethod(pmId) {
   await stripe.paymentMethods.detach(pmId);
 }
 
-/* ---------------- subscriptions (Better Pro) ---------------- */
-async function createSubscriptionCheckout(user, priceId, appUrl) {
+/* ---------------- subscriptions (Better Pro) ----------------
+   Builds the price inline instead of requiring a Product/Price to be
+   pre-created in the Stripe dashboard — one less manual setup step. */
+async function createSubscriptionCheckout(user, { amountCents, interval, label, tier }, appUrl) {
   if (!stripe) throw new Error('Stripe is not configured.');
   const customerId = await ensureCustomer(user);
   return stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: [{
+      price_data: {
+        currency: 'usd',
+        unit_amount: amountCents,
+        recurring: { interval }, // 'month' or 'year'
+        product_data: { name: label }
+      },
+      quantity: 1
+    }],
     success_url: `${appUrl}/?checkout=success`,
     cancel_url: `${appUrl}/?checkout=cancelled`,
-    metadata: { userId: user.id, purpose: 'pro_subscription' }
+    metadata: { userId: user.id, purpose: 'pro_subscription', period: interval === 'year' ? 'annual' : 'monthly', tier: tier || 'pro' }
   });
 }
 async function cancelSubscription(subscriptionId) {
   if (!stripe) return;
+  // Cancels at the end of the period already paid for, not instantly —
+  // the person keeps what they paid for, the card just isn't charged again.
   await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
 }
 

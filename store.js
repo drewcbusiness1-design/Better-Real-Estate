@@ -28,7 +28,7 @@ try { ({ Pool } = require('pg')); } catch {}
 const COLLECTIONS = [
   'users','listings','saves','follows','messages','ledger','unlocks',
   'shopItems','orders','offers','reviews','views','promotions','payouts',
-  'alerts','tokens','suppliers','supplierOrders'
+  'alerts','tokens','suppliers','supplierOrders','reports','dealNotes'
 ];
 
 const CONN = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;

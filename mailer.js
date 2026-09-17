@@ -103,4 +103,22 @@ exports.sendOfferNotice = (to, name, amount, address) =>
       `<p>Hi ${name}, someone offered <b>$${Number(amount).toLocaleString()}</b> on ${address}.</p>${button(APP_URL, 'Review the offer')}`),
     `New offer of $${amount} on ${address}. ${APP_URL}`);
 
+exports.sendShippedNotice = (to, name, itemTitle, tracking) =>
+  send(to, `Your order has shipped — ${itemTitle}`,
+    shell('On its way',
+      `<p>Hi ${name}, "${itemTitle}" has been marked shipped.</p>
+       ${tracking ? `<p style="font-size:15px"><b>Tracking number:</b> ${tracking}</p>` : '<p style="font-size:13.5px;color:#40474F">No tracking number was provided.</p>'}
+       ${button(APP_URL, 'View your orders')}`),
+    `${itemTitle} has shipped.${tracking ? ' Tracking: ' + tracking : ''} ${APP_URL}`);
+
+exports.sendMatchAlert = (to, name, listing) =>
+  send(to, `First look: ${listing.address} matches your buy box`,
+    shell('A new listing just matched — Platinum first look',
+      `<p>Hi ${name}, this just went up and fits what you're looking for:</p>
+       <p style="font-size:17px;font-weight:600;margin:14px 0 2px">${listing.address}</p>
+       <p style="font-size:13.5px;color:#40474F;margin:0 0 12px">${listing.city} · $${Number(listing.asking).toLocaleString()}${listing.arv ? ' · Est. ARV $' + Number(listing.arv).toLocaleString() : ''}</p>
+       ${button(APP_URL, 'View it now')}
+       <p style="font-size:12px;color:#40474F">You're seeing this before it's visible to anyone else — that's the Platinum first-look alert.</p>`),
+    `New match: ${listing.address}, ${listing.city}, $${listing.asking}. ${APP_URL}`);
+
 exports.configured = () => !!RESEND_KEY;

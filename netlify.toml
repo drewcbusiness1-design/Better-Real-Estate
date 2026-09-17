@@ -13,7 +13,7 @@
   # once esbuild has bundled it for the cloud, which is invisible until
   # it's actually deployed. Marking them external is the standard fix.
   external_node_modules = ["express", "bcryptjs", "cookie-session", "serverless-http", "@neondatabase/serverless", "pg", "stripe", "@netlify/blobs"]
-  included_files = ["mailer.js", "store.js", "storage.js", "dropship.js", "policy.js", "payments.js", "server.js"]
+  included_files = ["mailer.js", "store.js", "storage.js", "dropship.js", "cj-adapter.js", "policy.js", "payments.js", "server.js"]
 
 [[redirects]]
   from = "/api/*"

@@ -2,15 +2,16 @@
   "name": "better-real-estate",
   "version": "2.0.0",
   "private": true,
-  "description": "Better Real Estate — social feed for off-market property, with marketplace, wallet, promotions and subscriptions. Deploys to Netlify.",
+  "description": "Better Real Estate \u2014 social feed for off-market property, with marketplace, wallet, promotions and subscriptions. Deploys to Netlify.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "netlify dev",
-    "build": "echo 'no build step — static assets served from public/'",
+    "build": "echo 'no build step \u2014 static assets served from public/'",
     "seed": "node seed.js",
     "seed:clear": "node seed.js --clear",
-    "preflight": "node preflight.js"
+    "preflight": "node preflight.js",
+    "test": "node tests/cj-adapter.test.js && node tests/dropship.test.js && node tests/integration-wiring.test.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

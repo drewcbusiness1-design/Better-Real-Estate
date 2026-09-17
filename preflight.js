@@ -43,6 +43,11 @@ else {
   if (!process.env.STRIPE_WEBHOOK_SECRET) bad('STRIPE_WEBHOOK_SECRET missing. Without webhook verification, anyone can call your endpoints and get paid features for free.');
 }
 
+head('CJdropshipping');
+if (!process.env.CJ_API_KEY) soft('CJ_API_KEY not set — CJ catalog browsing, live freight quotes and order creation will stay disabled.');
+else if (String(process.env.CJ_API_KEY).trim().length < 20) bad('CJ_API_KEY looks too short to be a real CJ API key.');
+else ok('CJ API key present (server-side only).');
+
 head('App');
 if (!process.env.APP_URL) bad('APP_URL not set. Confirmation and reset links in emails will point at localhost.');
 else if (!/^https:\/\//.test(process.env.APP_URL) && !/localhost/.test(process.env.APP_URL)) bad('APP_URL is not https. Sessions and payment tokens must not cross plain HTTP.');

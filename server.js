@@ -9,6 +9,7 @@ const mailer = require('./mailer');
 const { loadDB, saveDB } = require('./store');
 const { writeImage, readImage } = require('./storage');
 const dropship = require('./dropship');
+const cjAdapter = require('./cj-adapter');
 const policy = require('./policy');
 const payments = require('./payments');
 const app = express();
@@ -40,6 +41,9 @@ const PRICING = {
   unlockCredit: 199,              // $1.99 to unlock one listing's details
   unlockPack: { qty: 10, price: 1499 }, // $14.99 for 10
   pro: { monthly: 3000, annual: 32000, label: 'Better Pro' },  // $30/mo or $320/yr
+  platinum: { monthly: 5000, annual: 50000, label: 'Better Platinum' },  // $50/mo or $500/yr
+  platinumFeeBps: 400,             // marketplace fee for Platinum sellers (vs 700 = 7% standard)
+  maxBuyBoxes: { free: 1, seller: 1, buyer: 1, admin: 1, pro: 1, platinum: 5 },
   promotions: {
     boost24:   { id: 'boost24',   label: 'Boost — 24 hours',  hours: 24,  price: 900,  weight: 1000 },
     boost3d:   { id: 'boost3d',   label: 'Boost — 3 days',    hours: 72,  price: 1900, weight: 1000 },
@@ -97,12 +101,27 @@ function balanceOf(db, userId) {
   return db.ledger.filter(l => l.userId === userId).reduce((s, l) => s + l.amount, 0);
 }
 function isPro(user) {
-  return user.plan === 'pro' && user.planUntil && new Date(user.planUntil) > new Date();
+  return (user.plan === 'pro' || user.plan === 'platinum') && user.planUntil && new Date(user.planUntil) > new Date();
+}
+function isPlatinum(user) {
+  return user.plan === 'platinum' && user.planUntil && new Date(user.planUntil) > new Date();
 }
 function inTrial(user) {
   return user.trialUntil && new Date(user.trialUntil) > new Date();
 }
 function hasFullAccess(user) { return isPro(user) || inTrial(user) || user.role === 'admin'; }
+function maxBuyBoxesFor(user) {
+  if (isPlatinum(user)) return PRICING.maxBuyBoxes.platinum;
+  return PRICING.maxBuyBoxes[user.role] || 1;
+}
+// Buy boxes moved from a single object to an array (Platinum can have
+// several). This reads either shape so accounts created before the
+// change keep working without a migration step.
+function getBuyBoxes(user) {
+  if (Array.isArray(user.buyBoxes) && user.buyBoxes.length) return user.buyBoxes;
+  if (user.buyBox) return [user.buyBox];
+  return [defaultBuyBox()];
+}
 
 
 /* ============================ AUTH ============================ */
@@ -122,7 +141,7 @@ app.post('/api/signup', async (req, res) => {
     passwordHash: bcrypt.hashSync(password, 10),
     role: policy.resolveRole(cleanEmail, role),
     bio: '', phone: '', avatarUrl: null, points: 0,
-    buyBox: defaultBuyBox(), settings: defaultSettings(),
+    buyBoxes: [defaultBuyBox()], settings: defaultSettings(),
     plan: 'free', planUntil: null, trialUntil,
     unlockCredits: PRICING.freeUnlocks,
     verified: false,
@@ -162,7 +181,7 @@ app.get('/api/me', async (req, res) => {
     user: publicUser(u),
     pricing: PRICING,
     balance: u ? balanceOf(db, u.id) : 0,
-    access: u ? { pro: isPro(u), trial: inTrial(u), full: hasFullAccess(u) } : null
+    access: u ? { pro: isPro(u), platinum: isPlatinum(u), trial: inTrial(u), full: hasFullAccess(u) } : null
   });
 });
 app.get('/api/pricing', async (req, res) => res.json({ pricing: PRICING }));
@@ -245,14 +264,43 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
 });
 app.patch('/api/me/buybox', requireAuth, async (req, res) => {
   const b = req.body || {};
-  req.user.buyBox = {
-    ...defaultBuyBox(), ...req.user.buyBox,
+  const boxes = getBuyBoxes(req.user);
+  const idx = Number.isInteger(b.index) ? b.index : 0;
+  const built = {
+    ...defaultBuyBox(), ...(boxes[idx] || {}),
+    label: (b.label !== undefined ? String(b.label).slice(0, 40) : boxes[idx]?.label) || null,
     minPrice: Number(b.minPrice) || 0, maxPrice: Number(b.maxPrice) || 2000000,
     cities: Array.isArray(b.cities) ? b.cities : String(b.cities || '').split(',').map(s => s.trim()).filter(Boolean),
     propertyTypes: Array.isArray(b.propertyTypes) ? b.propertyTypes : [],
     minSpread: Number(b.minSpread) || 0, active: b.active !== false
   };
-  await saveDB(req.db); res.json({ buyBox: req.user.buyBox });
+  boxes[idx] = built;
+  req.user.buyBoxes = boxes;
+  delete req.user.buyBox; // fully migrated to the array now that it's been touched
+  await saveDB(req.db);
+  res.json({ buyBoxes: req.user.buyBoxes });
+});
+app.post('/api/me/buybox/add', requireAuth, async (req, res) => {
+  const boxes = getBuyBoxes(req.user);
+  const max = maxBuyBoxesFor(req.user);
+  if (boxes.length >= max) {
+    return res.status(403).json({ error: max === 1 ? 'Free and Pro accounts get one buy box — upgrade to Platinum for up to 5.' : `You're at your limit of ${max} buy boxes.` });
+  }
+  boxes.push({ ...defaultBuyBox(), label: `Buy box ${boxes.length + 1}` });
+  req.user.buyBoxes = boxes;
+  delete req.user.buyBox;
+  await saveDB(req.db);
+  res.json({ buyBoxes: req.user.buyBoxes });
+});
+app.delete('/api/me/buybox/:index', requireAuth, async (req, res) => {
+  const boxes = getBuyBoxes(req.user);
+  const idx = Number(req.params.index);
+  if (boxes.length <= 1) return res.status(400).json({ error: 'You need at least one buy box.' });
+  if (idx < 0 || idx >= boxes.length) return res.status(404).json({ error: 'Not found.' });
+  boxes.splice(idx, 1);
+  req.user.buyBoxes = boxes;
+  await saveDB(req.db);
+  res.json({ buyBoxes: req.user.buyBoxes });
 });
 
 /* ============================ WALLET & PAYMENTS ============================
@@ -377,23 +425,52 @@ function maybePayReferral(db, user) {
 
 /* ============================ SUBSCRIPTION & UNLOCKS ============================ */
 app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
+  const period = req.body?.period === 'annual' ? 'annual' : 'monthly';
+  const tier = req.body?.tier === 'platinum' ? 'platinum' : 'pro';
+  const tierConfig = PRICING[tier];
   try {
-    const period = req.body?.period === 'annual' ? 'annual' : 'monthly';
-    const amount = period === 'annual' ? PRICING.pro.annual : PRICING.pro.monthly;
-    const days = period === 'annual' ? 365 : 30;
-    const result = await chargeOrIntent(req.db, req.user, amount, 'pro_subscription', `Better Pro — ${period === 'annual' ? '1 year' : '1 month'}`, { period });
-    if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
-    const base = isPro(req.user) ? new Date(req.user.planUntil).getTime() : Date.now();
-    req.user.plan = 'pro';
-    req.user.planPeriod = period;
-    req.user.planUntil = new Date(base + days * 86400000).toISOString();
-    maybePayReferral(req.db, req.user);
-    await saveDB(req.db);
-    res.json({ user: publicUser(req.user) });
+    if (!payments.enabled()) {
+      // Stripe not configured yet — fall back to a one-time simulated
+      // grant so the app stays testable. No real recurring charge exists
+      // in this mode; see below for how real auto-renewal works.
+      const amount = period === 'annual' ? tierConfig.annual : tierConfig.monthly;
+      const days = period === 'annual' ? 365 : 30;
+      const base = (req.user.plan === tier && isPro(req.user)) ? new Date(req.user.planUntil).getTime() : Date.now();
+      req.user.plan = tier; req.user.planPeriod = period;
+      req.user.planUntil = new Date(base + days * 86400000).toISOString();
+      ledgerAdd(req.db, req.user.id, 'purchase', 0, `${tierConfig.label} — ${period} (simulated — Stripe not configured)`, { simulated: true });
+      maybePayReferral(req.db, req.user);
+      await saveDB(req.db);
+      return res.json({ user: publicUser(req.user) });
+    }
+    // Real Stripe subscription: Stripe itself charges the card again
+    // automatically at the end of every period, with zero code running
+    // here to make that happen. Redirect the browser to Stripe's own
+    // checkout page to collect the card.
+    const appUrl = process.env.APP_URL || 'http://localhost:8888';
+    const amount = period === 'annual' ? tierConfig.annual : tierConfig.monthly;
+    const session = await payments.createSubscriptionCheckout(
+      req.user,
+      { amountCents: amount, interval: period === 'annual' ? 'year' : 'month', label: tierConfig.label + ' — ' + (period === 'annual' ? 'Annual' : 'Monthly'), tier },
+      appUrl
+    );
+    await saveDB(req.db); // persists stripeCustomerId if it was just created
+    res.json({ checkoutUrl: session.url });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.post('/api/billing/cancel', requireAuth, async (req, res) => {
-  req.user.plan = 'free'; await saveDB(req.db); res.json({ user: publicUser(req.user) });
+  try {
+    if (req.user.stripeSubscriptionId && payments.enabled()) {
+      // Stops the next auto-charge. Access continues until the period
+      // already paid for runs out — Stripe tells us when via webhook.
+      await payments.cancelSubscription(req.user.stripeSubscriptionId);
+      await saveDB(req.db);
+      return res.json({ user: publicUser(req.user), cancelsAtPeriodEnd: true });
+    }
+    req.user.plan = 'free';
+    await saveDB(req.db);
+    res.json({ user: publicUser(req.user) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.post('/api/billing/unlock-pack', requireAuth, async (req, res) => {
   try {
@@ -426,8 +503,30 @@ app.post('/api/listings', requireAuth, async (req, res) => {
     createdAt: new Date().toISOString()
   };
   req.db.listings.push(listing); await saveDB(req.db);
+  notifyPlatinumMatches(req.db, listing).catch(e => console.error('[alerts]', e.message));
   res.json({ listing });
 });
+
+// Platinum: email a match the instant a new listing goes up, before
+// anyone else sees it — the actual thing "early access" always should
+// have meant. A hard price/city/type check, not the full ranking
+// algorithm — a real estate alert should be simple to reason about.
+async function notifyPlatinumMatches(db, listing) {
+  const candidates = db.users.filter(u =>
+    isPlatinum(u) && u.id !== listing.ownerId && u.settings?.notifyOnMatch !== false
+  );
+  for (const u of candidates) {
+    const boxes = getBuyBoxes(u);
+    const hit = boxes.find(bb => {
+      if (!bb.active) return false;
+      if (listing.asking < bb.minPrice || listing.asking > bb.maxPrice) return false;
+      if (bb.cities.length && !bb.cities.some(c => listing.city.toLowerCase().includes(c.toLowerCase()))) return false;
+      if (bb.propertyTypes.length && !bb.propertyTypes.includes(listing.propertyType)) return false;
+      return true;
+    });
+    if (hit) mailer.sendMatchAlert(u.email, u.name, listing).catch(e => console.error('[mail]', e.message));
+  }
+}
 
 function gateListing(listing, user, db) {
   // Free users see everything EXCEPT exact address, contact and notes until unlocked.
@@ -457,7 +556,7 @@ app.get('/api/listings/:id', async (req, res) => {
     owner: owner ? { ...publicUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone } : null,
     otherListings: others,
     unlockCredits: viewer ? viewer.unlockCredits : 0,
-    access: viewer ? { pro: isPro(viewer), trial: inTrial(viewer), full: hasFullAccess(viewer) } : null,
+    access: viewer ? { pro: isPro(viewer), platinum: isPlatinum(viewer), trial: inTrial(viewer), full: hasFullAccess(viewer) } : null,
     reviews: db.reviews.filter(r => r.aboutUserId === listing.ownerId)
   });
 });
@@ -502,23 +601,39 @@ app.get('/api/users/:id/listings', async (req, res) => {
 });
 
 /* ============================ FEED ALGORITHM ============================ */
+function scoreOneBuyBox(bb, listing) {
+  let score = 0; const reasons = [];
+  if (!bb?.active) return { score, reasons };
+  if (listing.asking >= bb.minPrice && listing.asking <= bb.maxPrice) { score += 220; reasons.push('In your price range'); }
+  else { const d = listing.asking < bb.minPrice ? bb.minPrice - listing.asking : listing.asking - bb.maxPrice; score -= Math.min(200, d / 2000); }
+  if (bb.cities.length) {
+    if (bb.cities.some(c => listing.city.toLowerCase().includes(c.toLowerCase()))) { score += 180; reasons.push('In a market you follow'); }
+    else score -= 60;
+  }
+  if (bb.propertyTypes.length && bb.propertyTypes.includes(listing.propertyType)) { score += 90; reasons.push('Property type match'); }
+  const sp = listing.arv ? listing.arv - listing.asking : 0;
+  if (bb.minSpread && sp >= bb.minSpread) { score += 140; reasons.push('Spread above your minimum'); }
+  return { score, reasons };
+}
+
 function scoreListing(listing, viewer, db) {
   let score = 0; const reasons = []; const now = Date.now();
   const promoActive = listing.boostUntil && new Date(listing.boostUntil).getTime() > now;
   if (promoActive) { score += (listing.boostWeight || 1000); reasons.push('Promoted'); }
   if (listing.spotlightUntil && new Date(listing.spotlightUntil).getTime() > now) score += 300;
 
-  if (viewer?.buyBox?.active) {
-    const bb = viewer.buyBox;
-    if (listing.asking >= bb.minPrice && listing.asking <= bb.maxPrice) { score += 220; reasons.push('In your price range'); }
-    else { const d = listing.asking < bb.minPrice ? bb.minPrice - listing.asking : listing.asking - bb.maxPrice; score -= Math.min(200, d / 2000); }
-    if (bb.cities.length) {
-      if (bb.cities.some(c => listing.city.toLowerCase().includes(c.toLowerCase()))) { score += 180; reasons.push('In a market you follow'); }
-      else score -= 60;
+  if (viewer) {
+    // Platinum can run several buy boxes at once — score against all of
+    // them and use whichever one this listing fits best, so a match on
+    // ANY saved box surfaces the listing, not just the first one.
+    const boxes = getBuyBoxes(viewer);
+    let best = { score: 0, reasons: [] };
+    for (const bb of boxes) {
+      const r = scoreOneBuyBox(bb, listing);
+      if (r.score > best.score) best = r;
     }
-    if (bb.propertyTypes.length && bb.propertyTypes.includes(listing.propertyType)) { score += 90; reasons.push('Property type match'); }
-    const sp = listing.arv ? listing.arv - listing.asking : 0;
-    if (bb.minSpread && sp >= bb.minSpread) { score += 140; reasons.push('Spread above your minimum'); }
+    score += best.score;
+    reasons.push(...best.reasons);
   }
   const spread = listing.arv ? listing.arv - listing.asking : 0;
   if (spread > 0) score += Math.min(150, spread / 1000);
@@ -555,7 +670,7 @@ app.get('/api/feed', async (req, res) => {
       demo: !!l.demo
     };
   }).sort((a, b) => b._score - a._score);
-  res.json({ feed, access: viewer ? { pro: isPro(viewer), trial: inTrial(viewer), full: hasFullAccess(viewer) } : null });
+  res.json({ feed, access: viewer ? { pro: isPro(viewer), platinum: isPlatinum(viewer), trial: inTrial(viewer), full: hasFullAccess(viewer) } : null });
 });
 
 /* ============================ PROMOTIONS ============================ */
@@ -567,10 +682,21 @@ app.post('/api/promotions/buy', requireAuth, async (req, res) => {
   if (listing.ownerId !== req.user.id) return res.status(403).json({ error: 'Not your listing.' });
   const tier = PRICING.promotions[tierId];
   if (!tier) return res.status(400).json({ error: 'Unknown promotion.' });
-  let result;
-  try { result = await chargeOrIntent(req.db, req.user, tier.price, 'promotion', tier.label + ' — ' + listing.address, { listingId, tierId }); }
-  catch (e) { return res.status(400).json({ error: e.message }); }
-  if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
+
+  // Platinum: one Super Boost included free per calendar month.
+  const thisMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+  const freeBoostAvailable = tierId === 'superboost' && isPlatinum(req.user) && req.user.lastFreeBoostMonth !== thisMonth;
+
+  let usedFreeBoost = false;
+  if (freeBoostAvailable) {
+    usedFreeBoost = true;
+    req.user.lastFreeBoostMonth = thisMonth;
+  } else {
+    let result;
+    try { result = await chargeOrIntent(req.db, req.user, tier.price, 'promotion', tier.label + ' — ' + listing.address, { listingId, tierId }); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
+  }
 
   if (tierId === 'bump') {
     listing.freshAt = new Date().toISOString();
@@ -582,10 +708,10 @@ app.post('/api/promotions/buy', requireAuth, async (req, res) => {
     listing.boostUntil = new Date(base + tier.hours * 3600000).toISOString();
     listing.boostWeight = Math.max(listing.boostWeight || 0, tier.weight);
   }
-  req.db.promotions.push({ id: crypto.randomUUID(), listingId, userId: req.user.id, tierId, price: tier.price, at: new Date().toISOString() });
-  maybePayReferral(req.db, req.user);
+  req.db.promotions.push({ id: crypto.randomUUID(), listingId, userId: req.user.id, tierId, price: usedFreeBoost ? 0 : tier.price, freeWithPlatinum: usedFreeBoost, at: new Date().toISOString() });
+  if (!usedFreeBoost) maybePayReferral(req.db, req.user);
   await saveDB(req.db);
-  res.json({ listing });
+  res.json({ listing, usedFreeBoost });
 });
 
 /* ============================ SELLER ANALYTICS ============================ */
@@ -656,6 +782,13 @@ app.post('/api/reviews', requireAuth, async (req, res) => {
 /* ============================ VERIFICATION ============================ */
 app.post('/api/verify/request', requireAuth, async (req, res) => {
   if (req.user.verified) return res.status(409).json({ error: 'Already verified.' });
+  if (isPlatinum(req.user)) {
+    // Included free with Platinum — still goes through the same admin
+    // review before the badge is actually granted, just no charge.
+    req.user.verificationPending = true;
+    await saveDB(req.db);
+    return res.json({ ok: true, waived: true });
+  }
   let result;
   try { result = await chargeOrIntent(req.db, req.user, PRICING.verificationFee, 'verification', 'Seller verification'); }
   catch (e) { return res.status(400).json({ error: e.message }); }
@@ -719,13 +852,15 @@ app.get('/api/shop/items', async (req, res) => {
 // happen in one place instead of being duplicated and risking drift.
 function fulfilShopPurchase(db, item, buyer, shipping) {
   const isDropship = !!item.dropship;
-  const fee = isDropship ? 0 : Math.round(item.price * PRICING.marketplaceFeeBps / 10000);
+  const seller = db.users.find(u => u.id === item.sellerId);
+  const feeBps = (seller && isPlatinum(seller)) ? PRICING.platinumFeeBps : PRICING.marketplaceFeeBps;
+  const fee = isDropship ? 0 : Math.round(item.price * feeBps / 10000);
   const net = item.price - fee;
   if (!isDropship) {
-    ledgerAdd(db, item.sellerId, 'sale', net, 'Sold — ' + item.title + ' (after ' + (PRICING.marketplaceFeeBps / 100) + '% fee)', { itemId: item.id, gross: item.price, fee });
+    ledgerAdd(db, item.sellerId, 'sale', net, 'Sold — ' + item.title + ' (after ' + (feeBps / 100) + '% fee)', { itemId: item.id, gross: item.price, fee });
   }
   item.stock -= 1; if (item.stock < 1) item.active = false;
-  const order = { id: crypto.randomUUID(), itemId: item.id, title: item.title, buyerId: buyer.id, buyerName: buyer.name, sellerId: item.sellerId, price: item.price, fee, net, status: 'paid', shipping, dropship: isDropship, at: new Date().toISOString() };
+  const order = { id: crypto.randomUUID(), itemId: item.id, title: item.title, buyerId: buyer.id, buyerName: buyer.name, buyerEmail: buyer.email, sellerId: item.sellerId, sellerName: item.sellerName, price: item.price, fee, net, status: 'paid', shipStatus: isDropship ? null : 'pending', tracking: null, shipping, dropship: isDropship, at: new Date().toISOString() };
   db.orders.push(order);
   if (isDropship) {
     const supplier = db.suppliers.find(s => s.id === item.supplierId) || null;
@@ -757,6 +892,55 @@ app.get('/api/shop/orders', requireAuth, async (req, res) => {
   });
 });
 
+// Seller marks their own (non-dropship) sale shipped, with tracking.
+app.post('/api/orders/:id/ship', requireAuth, async (req, res) => {
+  const order = req.db.orders.find(o => o.id === req.params.id);
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (order.sellerId !== req.user.id) return res.status(403).json({ error: 'Not your sale.' });
+  if (order.dropship) return res.status(400).json({ error: 'Dropship orders ship from the Fulfilment queue.' });
+  const tracking = String(req.body?.tracking || '').slice(0, 120);
+  order.shipStatus = 'shipped';
+  order.tracking = tracking || null;
+  order.shippedAt = new Date().toISOString();
+  await saveDB(req.db);
+  const buyer = req.db.users.find(u => u.id === order.buyerId);
+  if (buyer) mailer.sendShippedNotice(buyer.email, buyer.name, order.title, tracking).catch(e => console.error('[mail]', e.message));
+  res.json({ order });
+});
+
+// Buyer reports an order that never shipped. Visible to admins to review.
+app.post('/api/orders/:id/report', requireAuth, async (req, res) => {
+  const order = req.db.orders.find(o => o.id === req.params.id);
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (order.buyerId !== req.user.id) return res.status(403).json({ error: 'Not your order.' });
+  if (req.db.reports.some(r => r.orderId === order.id && r.status === 'open')) {
+    return res.status(409).json({ error: 'Already reported — an admin will review it.' });
+  }
+  const reason = String(req.body?.reason || '').slice(0, 500);
+  const report = {
+    id: crypto.randomUUID(), orderId: order.id, itemTitle: order.title,
+    buyerId: req.user.id, buyerName: req.user.name, buyerEmail: req.user.email,
+    sellerId: order.sellerId, sellerName: order.sellerName,
+    reason, status: 'open', at: new Date().toISOString()
+  };
+  req.db.reports.push(report);
+  await saveDB(req.db);
+  res.json({ report });
+});
+
+app.get('/api/admin/reports', requireAuth, requireAdmin, async (req, res) => {
+  res.json({ reports: req.db.reports.sort((a, b) => new Date(b.at) - new Date(a.at)) });
+});
+app.post('/api/admin/reports/:id/resolve', requireAuth, requireAdmin, async (req, res) => {
+  const report = req.db.reports.find(r => r.id === req.params.id);
+  if (!report) return res.status(404).json({ error: 'Not found.' });
+  report.status = req.body?.status === 'dismissed' ? 'dismissed' : 'resolved';
+  report.note = String(req.body?.note || '').slice(0, 500);
+  report.resolvedAt = new Date().toISOString();
+  await saveDB(req.db);
+  res.json({ report });
+});
+
 /* ============================ SOCIAL ============================ */
 app.post('/api/saves/toggle', requireAuth, async (req, res) => {
   const { listingId } = req.body || {};
@@ -771,6 +955,28 @@ app.get('/api/saves/mine', requireAuth, async (req, res) => {
     .map(l => gateListing(l, req.user, req.db));
   res.json({ listings });
 });
+
+/* ---- Investor workspace (Platinum): compare saved properties, keep notes ---- */
+app.get('/api/workspace', requireAuth, async (req, res) => {
+  if (!isPlatinum(req.user)) return res.status(403).json({ error: 'The investor workspace is a Platinum feature.' });
+  const listings = req.db.saves.filter(s => s.userId === req.user.id)
+    .map(s => req.db.listings.find(l => l.id === s.listingId)).filter(Boolean)
+    .map(l => gateListing(l, req.user, req.db));
+  const notes = req.db.dealNotes.filter(n => n.userId === req.user.id);
+  res.json({ listings, notes });
+});
+app.post('/api/workspace/notes', requireAuth, async (req, res) => {
+  if (!isPlatinum(req.user)) return res.status(403).json({ error: 'The investor workspace is a Platinum feature.' });
+  const { listingId, notes } = req.body || {};
+  if (!listingId) return res.status(400).json({ error: 'Missing listingId.' });
+  let entry = req.db.dealNotes.find(n => n.userId === req.user.id && n.listingId === listingId);
+  if (!entry) { entry = { id: crypto.randomUUID(), userId: req.user.id, listingId }; req.db.dealNotes.push(entry); }
+  entry.notes = String(notes || '').slice(0, 2000);
+  entry.updatedAt = new Date().toISOString();
+  await saveDB(req.db);
+  res.json({ note: entry });
+});
+
 app.post('/api/follow', requireAuth, async (req, res) => {
   const { userId } = req.body || {};
   if (userId === req.user.id) return res.status(400).json({ error: "You can't follow yourself." });
@@ -972,24 +1178,36 @@ app.post('/api/payments/webhook',
         const sess = event.data.object;
         const user = db.users.find(u => u.id === sess.metadata?.userId);
         if (user && sess.mode === 'subscription') {
-          // TODO(stripe): once real monthly and annual Price objects exist in
-          // your Stripe dashboard, read the period back off sess.metadata
-          // (set it when creating the Checkout session) and extend by 30 vs
-          // 365 days accordingly, same as /api/billing/subscribe above.
-          user.plan = 'pro';
+          const period = sess.metadata?.period === 'annual' ? 'annual' : 'monthly';
+          const tier = sess.metadata?.tier === 'platinum' ? 'platinum' : 'pro';
+          user.plan = tier;
+          user.planPeriod = period;
           user.stripeSubscriptionId = sess.subscription;
-          user.planUntil = new Date(Date.now() + 31 * 86400000).toISOString();
+          // Approximate for right now — the invoice.payment_succeeded event
+          // below fires moments later with Stripe's exact period end and
+          // corrects this. Good enough as a starting value in the meantime.
+          user.planUntil = new Date(Date.now() + (period === 'annual' ? 365 : 30) * 86400000).toISOString();
           maybePayReferral(db, user);
           await saveDB(db);
         }
       }
 
       if (event.type === 'invoice.payment_succeeded') {
+        // Fires on the very first payment AND every automatic renewal
+        // after that — this is the event that makes auto-renewal actually
+        // work with zero further action from anyone. Stripe's own
+        // period-end timestamp is used directly rather than adding days
+        // ourselves, so it's exact regardless of month lengths or leap years.
         const inv = event.data.object;
         const user = db.users.find(u => u.stripeSubscriptionId === inv.subscription);
+        const periodEnd = inv.lines?.data?.[0]?.period?.end;
         if (user) {
-          user.plan = 'pro';
-          user.planUntil = new Date(Date.now() + 31 * 86400000).toISOString();
+          // plan/tier was already set correctly by checkout.session.completed
+          // above (or stays whatever it already was on a renewal) — this
+          // event only needs to correct the exact expiry timestamp.
+          user.planUntil = periodEnd ? new Date(periodEnd * 1000).toISOString() : new Date(Date.now() + 31 * 86400000).toISOString();
+          const isRenewal = db.ledger.some(l => l.userId === user.id && l.description?.startsWith('Better Pro'));
+          ledgerAdd(db, user.id, 'purchase', 0, isRenewal ? 'Better Pro — renewed automatically' : 'Better Pro — subscribed', { invoiceId: inv.id, charged: inv.amount_paid });
           await saveDB(db);
         }
       }
@@ -1092,11 +1310,53 @@ app.post('/api/admin/supplier-orders/:id/status', requireAuth, requireAdmin, asy
   if (!so) return res.status(404).json({ error: 'Not found.' });
   const { status, tracking } = req.body || {};
   if (!dropship.STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status.' });
+  const justShipped = status === 'shipped' && so.status !== 'shipped';
   so.status = status;
   if (tracking) so.tracking = String(tracking).slice(0, 120);
   so.updatedAt = new Date().toISOString();
   await saveDB(req.db);
+  if (justShipped && so.buyerEmail) {
+    mailer.sendShippedNotice(so.buyerEmail, so.buyerName, so.title, so.tracking).catch(e => console.error('[mail]', e.message));
+  }
   res.json({ order: so });
+});
+
+/* ---- CJdropshipping: real automated order placement + status check ---- */
+app.get('/api/admin/cj/status', requireAuth, requireAdmin, async (req, res) => {
+  res.json({ connected: cjAdapter.configured() });
+});
+app.post('/api/admin/supplier-orders/:id/send-to-cj', requireAuth, requireAdmin, async (req, res) => {
+  if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected. Set CJ_EMAIL and CJ_API_KEY.' });
+  const so = req.db.supplierOrders.find(o => o.id === req.params.id);
+  if (!so) return res.status(404).json({ error: 'Not found.' });
+  if (so.cjOrderId) return res.status(409).json({ error: 'Already sent to CJ — order ' + so.cjOrderId });
+  try {
+    const result = await cjAdapter.placeOrder(so);
+    so.cjOrderId = result.cjOrderId;
+    so.status = 'ordered';
+    so.updatedAt = new Date().toISOString();
+    await saveDB(req.db);
+    res.json({ order: so });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post('/api/admin/supplier-orders/:id/check-cj-status', requireAuth, requireAdmin, async (req, res) => {
+  if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected.' });
+  const so = req.db.supplierOrders.find(o => o.id === req.params.id);
+  if (!so) return res.status(404).json({ error: 'Not found.' });
+  if (!so.cjOrderId) return res.status(400).json({ error: "Hasn't been sent to CJ yet." });
+  try {
+    const info = await cjAdapter.getOrderStatus(so.cjOrderId);
+    if (!info) return res.json({ order: so, cjStatus: null });
+    const justShipped = !!info.trackingNumber && so.status !== 'shipped';
+    if (info.trackingNumber) { so.tracking = info.trackingNumber; so.status = 'shipped'; }
+    so.cjRawStatus = info.status;
+    so.updatedAt = new Date().toISOString();
+    await saveDB(req.db);
+    if (justShipped && so.buyerEmail) {
+      mailer.sendShippedNotice(so.buyerEmail, so.buyerName, so.title, so.tracking).catch(e => console.error('[mail]', e.message));
+    }
+    res.json({ order: so, cjStatus: info.status });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // Buyer-facing tracking

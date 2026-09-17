@@ -48,6 +48,7 @@ APP_URL             = https://yourdomain.com
 RESEND_API_KEY      = re_xxxxxxxxxxxx
 MAIL_FROM           = Better Real Estate <noreply@yourdomain.com>
 MAIL_REPLY_TO       = drewcbusiness1@gmail.com
+CJ_API_KEY          = <CJdropshipping API key>
 ```
 
 `NETLIFY_DATABASE_URL` is injected automatically by `netlify db init` — don't set it by hand.
@@ -91,6 +92,8 @@ Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Preflight fails if you set 
 ---
 
 ## 6. Dropshipping
+
+**CJdropshipping API 2.0 is integrated.** Add `CJ_API_KEY`, redeploy, then use Profile → Admin — suppliers → CJdropshipping → Import catalog. See `CJ-DROPSHIPPING.md` for the exact flow.
 
 The supplier system is built and tested. Flow: register a supplier → import their catalog with a markup → items appear in the shop flagged as dropship → a purchase creates a row in your fulfilment queue with the customer's address and your cost → you place the order and paste the tracking number back.
 

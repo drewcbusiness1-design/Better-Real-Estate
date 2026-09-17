@@ -18,6 +18,11 @@ Runs on Netlify: static site + serverless function, Netlify DB for data, Netlify
 
 `npm run seed:clear` removes demo listings before launch.
 
+
+## CJdropshipping
+
+This build includes a server-side CJdropshipping API 2.0 integration: admin catalog search, variant import, live freight quotes at checkout, CJ order creation, payment-link handoff, and tracking/status sync. Set only `CJ_API_KEY` in Netlify; the credential is never exposed to the browser. Full setup: `CJ-DROPSHIPPING.md`.
+
 ## What's new in this build
 
 - **Email verification** on signup, with resend. Unverified accounts can't post listings.

@@ -65,6 +65,7 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   state.verifyToken = params.get('verify');
   state.resetToken = params.get('reset');
+  const checkoutResult = params.get('checkout');
   try {
     const d = await api('GET', '/api/me');
     state.user = d.user; state.pricing = d.pricing; state.access = d.access;
@@ -75,6 +76,16 @@ async function boot() {
     if (pc.enabled && pc.publishableKey && window.Stripe) state.stripe = window.Stripe(pc.publishableKey);
   } catch {}
   applyTheme(state.user?.settings?.theme || localStorage.getItem('bre_theme') || 'light');
+  if (checkoutResult) {
+    // Returning from Stripe's own checkout page. Clean the confusing
+    // query string off the URL either way, and if it succeeded, give the
+    // webhook a moment to land before refreshing — Stripe redirects the
+    // browser back slightly before the webhook always arrives.
+    history.replaceState({}, '', location.pathname);
+    if (checkoutResult === 'success') {
+      setTimeout(async () => { await refreshMe(); toast('Pro is active — thanks!', 'ok'); render(); }, 1800);
+    }
+  }
   if (state.verifyToken) state.view = 'verify';
   else if (state.resetToken) state.view = 'reset';
   else if (state.user) state.view = 'feed';
@@ -105,6 +116,7 @@ function renderTop() {
   }, document.documentElement.getAttribute('data-theme') === 'dark' ? '☀' : '☾'));
   if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Inbox', onclick: () => go('messages') }, '✉'));
+  nav.appendChild(el('button', { class: 'iconbtn', title: 'Boost a listing', onclick: () => go('boostpicker') }, '⚡'));
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Wallet', onclick: () => go('wallet') }, '▤'));
   nav.appendChild(el('button', { onclick: () => go('settings'), class: state.view === 'settings' ? 'active' : '' }, 'Settings'));
 }
@@ -128,7 +140,8 @@ async function renderApp() {
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin,
     wallet: renderWallet, shop: renderShop, sellitem: renderSellItem, offers: renderOffers,
-    upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment,
+    upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
+    boostpicker: renderBoostPicker, workspace: renderWorkspace,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
@@ -255,12 +268,20 @@ function renderAuth() {
 /* ================= TRIAL / UPGRADE BAR ================= */
 function trialBar() {
   if (!state.user || !state.access) return null;
-  if (state.access.pro) return null;
+  if (state.access.platinum) return null;
   if (state.access.trial) {
     const daysLeft = Math.max(0, Math.ceil((new Date(state.user.trialUntil) - Date.now()) / 86400000));
     return el('div', { class: 'trialbar' }, [
       el('div', {}, `Free trial — ${daysLeft} day${daysLeft === 1 ? '' : 's'} left. Full access to every listing.`),
       el('button', { onclick: () => go('upgrade') }, 'See plans')
+    ]);
+  }
+  if (state.access.pro) {
+    // Already paying — the nudge here is upward to Platinum, not a
+    // generic "upgrade" (they're already upgraded once).
+    return el('div', { class: 'trialbar' }, [
+      el('div', {}, 'Get matching listings emailed to you before anyone else sees them — that\'s Platinum.'),
+      el('button', { onclick: () => go('upgrade') }, 'See Platinum')
     ]);
   }
   return el('div', { class: 'trialbar' }, [
@@ -629,48 +650,68 @@ function renderUpgrade() {
   const p = state.pricing;
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Plans'));
-  wrap.appendChild(el('div', { class: 'sub' }, 'Browse the feed free forever. Pay when you want the address and the seller\'s number.'));
+  wrap.appendChild(el('div', { class: 'sub' }, 'Browse the feed free forever. Upgrade when you want unlimited unlocks — or the full toolkit.'));
 
   const st = el('div', { class: 'okmsg' });
-  const proCard = el('div', { class: 'card', style: 'padding:22px;margin-bottom:14px' }, [
-    el('h3', { style: 'margin:0 0 4px;font-size:20px' }, p.pro.label),
-    el('div', { class: 'row2' }, [
-      el('div', { class: 'card', style: 'padding:16px;text-align:center' }, [
-        el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:700" }, [
-          cents(p.pro.monthly), el('span', { style: 'font-size:13px;font-weight:500;color:var(--ink-soft)' }, '/mo')
-        ]),
-        el('div', { class: 'hint', style: 'margin:6px 0 10px' }, 'billed monthly'),
-        el('button', {
-          class: 'submitbtn', style: 'margin-top:0', onclick: async () => {
-            try {
-              const r = await api('POST', '/api/billing/subscribe', { period: 'monthly' });
-              await handlePurchaseResponse(r, 'Pro active — billed monthly.', async () => { await refreshMe(); render(); });
-            } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
-          }
-        }, 'Choose monthly')
-      ]),
-      el('div', { class: 'card', style: 'padding:16px;text-align:center;border-color:var(--accent)' }, [
-        el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:700" }, [
-          cents(p.pro.annual), el('span', { style: 'font-size:13px;font-weight:500;color:var(--ink-soft)' }, '/yr')
-        ]),
-        el('div', { class: 'hint', style: 'margin:6px 0 10px;color:var(--accent-text);font-weight:600' }, `save ${cents(p.pro.monthly * 12 - p.pro.annual)}/yr`),
-        el('button', {
-          class: 'submitbtn', style: 'margin-top:0', onclick: async () => {
-            try {
-              const r = await api('POST', '/api/billing/subscribe', { period: 'annual' });
-              await handlePurchaseResponse(r, 'Pro active — billed annually.', async () => { await refreshMe(); render(); });
-            } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
-          }
-        }, 'Choose annual')
-      ])
-    ]),
-    el('div', { class: 'dnotes', style: 'margin-top:14px' }, 'Unlimited listing unlocks · seller analytics on your own listings · early access to new listings in your buy box · Pro badge on your profile.')
-  ]);
-  wrap.appendChild(proCard);
+  const currentTier = state.access?.platinum ? 'platinum' : state.access?.pro ? 'pro' : 'free';
 
+  wrap.appendChild(el('div', { class: 'tiergrid3' }, [
+    tierCard({
+      key: 'free', name: 'Free', tagline: '7-day trial, then pay as you browse',
+      priceLine: 'Free',
+      perks: ['Browse the whole feed, always', '5 free listing unlocks', `${cents(p.unlockCredit)} per unlock after that`],
+      current: currentTier === 'free'
+    }),
+    tierCard({
+      key: 'pro', name: p.pro.label, tagline: 'For anyone unlocking regularly',
+      priceLine: cents(p.pro.monthly) + '/mo or ' + cents(p.pro.annual) + '/yr',
+      perks: ['Unlimited listing unlocks', 'Analytics on your own listings', 'Pro badge on your profile'],
+      current: currentTier === 'pro',
+      onMonthly: () => subscribeTo('pro', 'monthly', st),
+      onAnnual: () => subscribeTo('pro', 'annual', st)
+    }),
+    tierCard({
+      key: 'platinum', name: p.platinum.label, tagline: 'The full toolkit for active investors',
+      priceLine: cents(p.platinum.monthly) + '/mo or ' + cents(p.platinum.annual) + '/yr',
+      featured: true,
+      perks: [
+        'Everything in Pro, plus:',
+        'First-look alerts — emailed the instant a match posts, before anyone else sees it',
+        'Up to 5 buy boxes running at once',
+        'Seller verification included free (normally ' + cents(p.verificationFee) + ')',
+        'One free Super Boost every month (normally ' + cents(p.promotions.superboost.price) + ')',
+        'Marketplace fee cut to ' + (p.platinumFeeBps / 100) + '% (from ' + (p.marketplaceFeeBps / 100) + '%)',
+        'Investor workspace — compare saved properties, keep deal notes'
+      ],
+      current: currentTier === 'platinum',
+      onMonthly: () => subscribeTo('platinum', 'monthly', st),
+      onAnnual: () => subscribeTo('platinum', 'annual', st)
+    })
+  ]));
+  wrap.appendChild(st);
+
+  if (currentTier !== 'free') {
+    const cst = el('div', { class: 'okmsg' });
+    const cancelBtn = el('button', { class: 'btn-ghost' }, 'Cancel auto-renewal');
+    cancelBtn.onclick = async () => {
+      if (!confirm(`Stop future automatic charges? You keep ${currentTier === 'platinum' ? 'Platinum' : 'Pro'} until ${new Date(state.user.planUntil).toLocaleDateString()}, then it won't renew.`)) return;
+      try {
+        const r = await api('POST', '/api/billing/cancel');
+        await refreshMe();
+        cst.textContent = r.cancelsAtPeriodEnd ? `Won't renew — stays active until ${new Date(state.user.planUntil).toLocaleDateString()}.` : 'Cancelled.';
+        render();
+      } catch (e) { cst.className = 'errmsg'; cst.textContent = e.message; }
+    };
+    wrap.appendChild(el('div', { class: 'card', style: 'padding:16px;margin:18px 0' }, [
+      el('div', { class: 'hint', style: 'margin-bottom:10px' }, `You're on ${currentTier === 'platinum' ? 'Platinum' : 'Pro'}, renewing automatically until ${new Date(state.user.planUntil).toLocaleDateString()}.`),
+      cancelBtn, cst
+    ]));
+  }
+
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Or just buy unlocks'));
   wrap.appendChild(el('div', { class: 'card', style: 'padding:22px' }, [
     el('h3', { style: 'margin:0 0 4px;font-size:18px' }, `${p.unlockPack.qty} unlock pack`),
-    el('div', { style: "font-family:'Fraunces',serif;font-size:26px;font-weight:600" }, cents(p.unlockPack.price)),
+    el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:700" }, cents(p.unlockPack.price)),
     el('div', { class: 'sub' }, `${cents(Math.round(p.unlockPack.price / p.unlockPack.qty))} each vs ${cents(p.unlockCredit)} one at a time`),
     el('button', {
       class: 'submitbtn', onclick: async () => {
@@ -681,9 +722,35 @@ function renderUpgrade() {
       }
     }, 'Buy pack')
   ]));
-  wrap.appendChild(st);
-  wrap.appendChild(el('div', { class: 'hint' }, 'No payment processor is connected in this build — purchases draw from your wallet balance or record a simulated card charge so the flow is testable. See the README for the Stripe integration points.'));
   return wrap;
+}
+
+async function subscribeTo(tier, period, st) {
+  try {
+    const r = await api('POST', '/api/billing/subscribe', { period, tier });
+    if (r.checkoutUrl) { window.location.href = r.checkoutUrl; return; }
+    await handlePurchaseResponse(r, `${tier === 'platinum' ? 'Platinum' : 'Pro'} active — billed ${period}.`, async () => { await refreshMe(); render(); });
+  } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
+}
+
+function tierCard({ name, tagline, priceLine, perks, current, featured, onMonthly, onAnnual }) {
+  const card = el('div', { class: 'tiercard' + (featured ? ' featured' : '') });
+  if (featured) card.appendChild(el('div', { class: 'tierribbon' }, 'MOST POWERFUL'));
+  card.appendChild(el('h3', { class: 'tiercard-name' }, name));
+  card.appendChild(el('div', { class: 'tiercard-tagline' }, tagline));
+  card.appendChild(el('div', { class: 'tiercard-price' }, priceLine));
+  const list = el('ul', { class: 'tiercard-perks' });
+  perks.forEach(p => list.appendChild(el('li', {}, p)));
+  card.appendChild(list);
+  if (current) {
+    card.appendChild(el('div', { class: 'pill good', style: 'display:inline-block;margin-top:10px' }, 'Your current plan'));
+  } else if (onMonthly) {
+    card.appendChild(el('div', { class: 'row2', style: 'margin-top:14px' }, [
+      el('button', { class: featured ? 'submitbtn' : 'btn-ghost', style: 'width:100%', onclick: onMonthly }, 'Monthly'),
+      el('button', { class: featured ? 'submitbtn' : 'btn-ghost', style: 'width:100%', onclick: onAnnual }, 'Annual')
+    ]));
+  }
+  return card;
 }
 
 /* ================= WALLET ================= */
@@ -825,16 +892,27 @@ async function renderShop() {
     const btn = el('button', {}, 'Buy ' + cents(i.price));
     btn.onclick = async () => {
       let shipping = null;
+      let expectedTotalCents = i.price;
+      let quote = null;
       if (i.dropship) {
         const line1 = prompt(`Shipping address for "${i.title}"\n\nStreet address:`);
         if (!line1) return;
         const city = prompt('City:'); if (!city) return;
-        const stzip = prompt('State and ZIP (e.g. NJ 08520):'); if (!stzip) return;
-        shipping = { name: state.user.name, line1, city, state: stzip };
+        const stateCode = prompt('State / province (e.g. NJ):'); if (!stateCode) return;
+        const zip = prompt('ZIP / postal code (e.g. 08520):'); if (!zip) return;
+        const phone = prompt('Phone number for the carrier (optional):') || '';
+        shipping = { name: state.user.name, line1, city, state: stateCode, zip, phone, country: 'United States', countryCode: 'US' };
+        try {
+          quote = await api('POST', '/api/shop/shipping-quote', { itemId: i.id, shipping });
+          expectedTotalCents = quote.totalCents;
+        } catch (e) { toast(e.message, 'err'); return; }
       }
-      if (!confirm(`Buy "${i.title}" for ${cents(i.price)}?`)) return;
+      const shippingLine = quote && quote.shippingCostCents
+        ? `\nShipping: ${cents(quote.shippingCostCents)}${quote.days ? ` (${quote.days} days)` : ''}`
+        : '';
+      if (!confirm(`Buy "${i.title}"?\n\nItem: ${cents(i.price)}${shippingLine}\nTotal: ${cents(expectedTotalCents)}`)) return;
       try {
-        const r = await api('POST', '/api/shop/buy', { itemId: i.id, shipping });
+        const r = await api('POST', '/api/shop/buy', { itemId: i.id, shipping, expectedTotalCents });
         await handlePurchaseResponse(r, 'Purchased — see Profile → Orders', async () => render());
       } catch (e) { toast(e.message, 'err'); }
     };
@@ -915,21 +993,59 @@ async function renderOrders() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('me') }, '← Back'));
   wrap.appendChild(el('h2', {}, 'Orders'));
+
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Purchases'));
   const b = el('div', { class: 'card' });
   if (!bought.length) b.appendChild(el('div', { class: 'ledrow' }, el('div', { class: 'dt' }, 'Nothing bought yet.')));
-  bought.forEach(o => b.appendChild(el('div', { class: 'ledrow' }, [
-    el('div', { class: 'grow' }, [el('div', { class: 'd' }, o.title), el('div', { class: 'dt' }, new Date(o.at).toLocaleDateString())]),
-    el('div', { class: 'amt neg' }, cents(o.price))
-  ])));
+  bought.forEach(o => {
+    const statusPill = o.dropship
+      ? el('span', { class: 'pill warn' }, 'ships direct')
+      : el('span', { class: 'pill ' + (o.shipStatus === 'shipped' ? 'good' : 'warn') }, o.shipStatus === 'shipped' ? 'shipped' : 'pending');
+    const row = el('div', { class: 'ledrow' }, [
+      el('div', { class: 'grow' }, [
+        el('div', { class: 'd' }, o.title),
+        el('div', { class: 'dt' }, new Date(o.at).toLocaleDateString() + (o.tracking ? ' · tracking: ' + o.tracking : '')),
+      ]),
+      statusPill,
+      el('div', { class: 'amt neg' }, cents(o.price))
+    ]);
+    b.appendChild(row);
+    // Peer-to-peer purchases that have sat unshipped can be reported.
+    if (!o.dropship && o.shipStatus !== 'shipped') {
+      const reportBtn = el('button', { style: 'margin:0 16px 12px;font-size:12px' }, 'Report — never shipped');
+      reportBtn.onclick = async () => {
+        const reason = prompt(`What happened with "${o.title}"?`, 'Paid but item was never shipped.');
+        if (!reason) return;
+        try { await api('POST', `/api/orders/${o.id}/report`, { reason }); toast('Reported — an admin will review it.', 'ok'); }
+        catch (e) { toast(e.message, 'err'); }
+      };
+      b.appendChild(reportBtn);
+    }
+  });
   wrap.appendChild(b);
+
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Sales'));
   const s = el('div', { class: 'card' });
   if (!sold.length) s.appendChild(el('div', { class: 'ledrow' }, el('div', { class: 'dt' }, 'Nothing sold yet.')));
-  sold.forEach(o => s.appendChild(el('div', { class: 'ledrow' }, [
-    el('div', { class: 'grow' }, [el('div', { class: 'd' }, o.title + ' → ' + o.buyerName), el('div', { class: 'dt' }, 'Fee ' + cents(o.fee))]),
-    el('div', { class: 'amt pos' }, '+' + cents(o.net))
-  ])));
+  sold.forEach(o => {
+    s.appendChild(el('div', { class: 'ledrow' }, [
+      el('div', { class: 'grow' }, [
+        el('div', { class: 'd' }, o.title + ' → ' + o.buyerName),
+        el('div', { class: 'dt' }, 'Fee ' + cents(o.fee) + (o.tracking ? ' · tracking: ' + o.tracking : ''))
+      ]),
+      o.dropship ? el('span', { class: 'pill warn' }, 'dropship') : el('span', { class: 'pill ' + (o.shipStatus === 'shipped' ? 'good' : 'warn') }, o.shipStatus === 'shipped' ? 'shipped' : 'pending'),
+      el('div', { class: 'amt pos' }, '+' + cents(o.net))
+    ]));
+    if (!o.dropship && o.shipStatus !== 'shipped') {
+      const trackInput = el('input', { placeholder: 'Tracking number (optional)', style: 'max-width:200px' });
+      const shipBtn = el('button', {}, 'Mark shipped');
+      shipBtn.onclick = async () => {
+        try { await api('POST', `/api/orders/${o.id}/ship`, { tracking: trackInput.value }); toast('Marked shipped — buyer notified.', 'ok'); render(); }
+        catch (e) { toast(e.message, 'err'); }
+      };
+      s.appendChild(el('div', { style: 'display:flex;gap:8px;margin:0 16px 12px' }, [trackInput, shipBtn]));
+    }
+  });
   wrap.appendChild(s);
   return wrap;
 }
@@ -1151,7 +1267,7 @@ async function renderMe() {
   const d = await api('GET', '/api/users/' + state.user.id + '/listings');
   const w = await api('GET', '/api/wallet');
   wrap.appendChild(el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]));
-  wrap.appendChild(el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${state.user.points} pts · ${state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`));
+  wrap.appendChild(el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${state.user.points} pts · ${state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`));
 
   wrap.appendChild(el('div', { class: 'statgrid' }, [
     stat(cents(w.balance), 'Wallet'), stat(state.user.unlockCredits, 'Unlocks'), stat(d.listings.length, 'Listings')
@@ -1159,11 +1275,14 @@ async function renderMe() {
 
   const nav = el('div', { class: 'card' });
   [['Wallet & payouts', () => go('wallet')], ['Offers', () => go('offers')], ['Orders', () => go('orders')],
-   ['Saved properties', () => go('saved')], ['Buy box', () => go('buybox')], ['Plans & billing', () => go('upgrade')],
+   ['Saved properties', () => go('saved')], ['Buy box', () => go('buybox')],
+   ['Investor workspace' + (state.access?.platinum ? '' : ' 🔒'), () => go('workspace')],
+   ['Plans & billing', () => go('upgrade')],
    ...(state.user.role === 'admin' ? [
      ['Admin — verify deals', () => go('admin')],
      ['Admin — suppliers', () => go('suppliers')],
-     ['Admin — fulfilment queue', () => go('fulfilment')]
+     ['Admin — fulfilment queue', () => go('fulfilment')],
+     ['Admin — reports', () => go('reports')]
    ] : [])]
     .forEach(([t, fn]) => nav.appendChild(el('div', { class: 'listrow' }, [
       el('div', { class: 'grow' }, el('div', { class: 't' }, t)),
@@ -1175,7 +1294,7 @@ async function renderMe() {
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Refer a friend'));
   wrap.appendChild(el('div', { class: 'card', style: 'padding:16px' }, [
     el('div', { class: 'dnotes' }, `Share your code — you both get ${cents(state.pricing.referralBonus)} in wallet credit when they make their first purchase.`),
-    el('div', { style: "font-family:'Fraunces',serif;font-size:28px;font-weight:600;margin-top:10px;letter-spacing:.08em" }, state.user.referralCode)
+    el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:28px;font-weight:700;margin-top:10px;letter-spacing:.08em" }, state.user.referralCode)
   ]));
 
   // verification
@@ -1250,11 +1369,38 @@ async function renderProfile() {
 
 /* ================= BUY BOX / SETTINGS ================= */
 function renderBuyBox() {
-  const bb = state.user.buyBox || {};
+  const boxes = state.user.buyBoxes || (state.user.buyBox ? [state.user.buyBox] : [{ minPrice: 0, maxPrice: 2000000, cities: [], propertyTypes: [], minSpread: 0, active: true }]);
+  if (state.buyBoxIndex === undefined || state.buyBoxIndex >= boxes.length) state.buyBoxIndex = 0;
+  const idx = state.buyBoxIndex;
+  const bb = boxes[idx] || {};
+  const maxBoxes = state.access?.platinum ? 5 : 1;
+
   const wrap = el('div', { class: 'panel' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
   wrap.appendChild(el('h2', {}, 'Your buy box'));
   wrap.appendChild(el('div', { class: 'sub' }, 'The feed ranks around this. Nothing is hidden — matches rise to the top.'));
+
+  if (boxes.length > 1 || maxBoxes > 1) {
+    const tabs = el('div', { class: 'roletabs', style: 'margin-bottom:16px;flex-wrap:wrap' });
+    boxes.forEach((b, i) => {
+      const t = el('button', { class: i === idx ? 'selected' : '' }, b.label || `Box ${i + 1}`);
+      t.onclick = () => { state.buyBoxIndex = i; render(); };
+      tabs.appendChild(t);
+    });
+    if (boxes.length < maxBoxes) {
+      const addBtn = el('button', { onclick: async () => {
+        try { const r = await api('POST', '/api/me/buybox/add'); state.user.buyBoxes = r.buyBoxes; state.buyBoxIndex = r.buyBoxes.length - 1; render(); }
+        catch (e) { toast(e.message, 'err'); }
+      } }, '+ Add');
+      tabs.appendChild(addBtn);
+    }
+    wrap.appendChild(tabs);
+    if (maxBoxes === 1) {
+      wrap.appendChild(el('div', { class: 'hint', style: 'margin-bottom:14px' }, 'Free and Pro get one buy box. Platinum runs up to 5 at once.'));
+    }
+  }
+
+  const label = el('input', { placeholder: 'e.g. Flips under 200k', value: bb.label || '' });
   const minPrice = el('input', { type: 'number', value: bb.minPrice ?? 0 });
   const maxPrice = el('input', { type: 'number', value: bb.maxPrice ?? 2000000 });
   const cities = el('input', { placeholder: 'Austin, San Antonio', value: (bb.cities || []).join(', ') });
@@ -1266,22 +1412,34 @@ function renderBuyBox() {
     sw.onclick = () => { sel.has(t) ? (sel.delete(t), sw.classList.remove('on')) : (sel.add(t), sw.classList.add('on')); };
     typeWrap.appendChild(el('div', { class: 'togglerow' }, [el('div', { class: 'grow' }, el('div', { class: 'tl' }, t)), sw]));
   });
+  if (boxes.length > 1) { wrap.appendChild(el('label', {}, 'Name this buy box')); wrap.appendChild(label); }
   wrap.appendChild(twoUp('Min price ($)', minPrice, 'Max price ($)', maxPrice));
   wrap.appendChild(el('label', {}, 'Markets (comma separated)')); wrap.appendChild(cities);
   wrap.appendChild(el('label', {}, 'Minimum spread ($)')); wrap.appendChild(minSpread);
   wrap.appendChild(el('label', {}, 'Property types')); wrap.appendChild(typeWrap);
   const st = el('div', { class: 'okmsg' });
+  const btnRow = el('div', { class: 'row2' });
   const save = el('button', { class: 'submitbtn' }, 'Save buy box');
   save.onclick = async () => {
     try {
-      const { buyBox } = await api('PATCH', '/api/me/buybox', {
-        minPrice: minPrice.value, maxPrice: maxPrice.value, cities: cities.value,
+      const { buyBoxes } = await api('PATCH', '/api/me/buybox', {
+        index: idx, label: label.value, minPrice: minPrice.value, maxPrice: maxPrice.value, cities: cities.value,
         minSpread: minSpread.value, propertyTypes: [...sel], active: true
       });
-      state.user.buyBox = buyBox; st.textContent = 'Saved — feed re-ranked.';
+      state.user.buyBoxes = buyBoxes; st.textContent = 'Saved — feed re-ranked.';
     } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
   };
-  wrap.appendChild(save); wrap.appendChild(st);
+  btnRow.appendChild(save);
+  if (boxes.length > 1) {
+    const del = el('button', { class: 'btn-ghost' }, 'Delete this one');
+    del.onclick = async () => {
+      if (!confirm('Delete this buy box?')) return;
+      try { const r = await api('DELETE', '/api/me/buybox/' + idx); state.user.buyBoxes = r.buyBoxes; state.buyBoxIndex = 0; render(); }
+      catch (e) { toast(e.message, 'err'); }
+    };
+    btnRow.appendChild(del);
+  }
+  wrap.appendChild(btnRow); wrap.appendChild(st);
   return wrap;
 }
 
@@ -1637,6 +1795,14 @@ async function renderSuppliers() {
     importArea.innerHTML = '';
     importArea.appendChild(el('div', { class: 'sectiontitle' }, 'Add products from ' + s.name));
 
+    if (s.kind === 'cj') {
+      const cjHost = el('div');
+      importArea.appendChild(cjHost);
+      cjCatalogBrowser(s).then(node => cjHost.appendChild(node)).catch(e => {
+        cjHost.appendChild(el('div', { class: 'errmsg' }, e.message));
+      });
+    }
+
     let mode = 'form';
     const tabs = el('div', { class: 'roletabs', style: 'margin-bottom:14px' });
     const formBtn = el('button', { class: 'selected' }, 'Add one item');
@@ -1658,6 +1824,146 @@ async function renderSuppliers() {
     drawBody();
   }
 
+  async function cjCatalogBrowser(supplier) {
+    const panel = el('div', { class: 'card', style: 'padding:18px;margin-bottom:16px' });
+    const status = await api('GET', '/api/admin/cj/status');
+    panel.appendChild(el('div', { class: 't', style: 'font-size:16px;margin-bottom:6px' }, 'CJdropshipping catalog'));
+
+    if (!status.connected) {
+      panel.appendChild(el('div', { class: 'policybox' }, [
+        el('b', {}, 'CJ is not connected yet.'),
+        document.createTextNode(' Add CJ_API_KEY in Netlify → Site configuration → Environment variables, redeploy, then come back here. Your key stays on the server and is never sent to the browser.')
+      ]));
+      return panel;
+    }
+
+    const controls = el('div', { style: 'display:grid;grid-template-columns:minmax(180px,1fr) 120px auto auto;gap:8px;align-items:end' });
+    const q = el('input', { placeholder: 'Search CJ — faucet, cabinet pull, smart lock…' });
+    const country = el('select', {}, [
+      el('option', { value: '' }, 'All stock'),
+      el('option', { value: 'US' }, 'US stock'),
+      el('option', { value: 'CN' }, 'China stock')
+    ]);
+    const freeWrap = el('label', { style: 'display:flex;align-items:center;gap:6px;margin:0 0 9px' });
+    const free = el('input', { type: 'checkbox', style: 'width:auto;margin:0' });
+    freeWrap.appendChild(free); freeWrap.appendChild(document.createTextNode('Free shipping only'));
+    const searchBtn = el('button', { class: 'btn-primary', style: 'border:none;margin-bottom:0' }, 'Search CJ');
+    controls.appendChild(q); controls.appendChild(country); controls.appendChild(freeWrap); controls.appendChild(searchBtn);
+    panel.appendChild(controls);
+
+    const note = el('div', { class: 'hint', style: 'margin-top:8px' }, 'Importing a variant automatically saves its real CJ product/variant IDs and adds the product to My Products on CJ. Freight is quoted live to each buyer at checkout, so you do not have to guess shipping cost.');
+    panel.appendChild(note);
+    const results = el('div', { style: 'margin-top:14px' });
+    panel.appendChild(results);
+
+    async function showVariants(productSummary) {
+      results.innerHTML = '';
+      results.appendChild(el('div', { class: 'hint' }, 'Loading variants…'));
+      try {
+        const { product } = await api('GET', `/api/admin/cj/products/${encodeURIComponent(productSummary.pid)}`);
+        const { categories } = await api('GET', '/api/shop/categories');
+        results.innerHTML = '';
+        const header = el('div', { class: 'listrow', style: 'align-items:flex-start' }, [
+          product.image ? el('img', { src: product.image, style: 'width:84px;height:84px;object-fit:cover;border-radius:10px' }) : null,
+          el('div', { class: 'grow' }, [
+            el('div', { class: 't' }, product.name),
+            el('div', { class: 's' }, product.categoryName || 'CJ product'),
+            el('div', { class: 's' }, `${product.variants?.length || 0} variant(s)`)
+          ]),
+          el('button', { onclick: () => doSearch(1) }, '← Results')
+        ]);
+        results.appendChild(header);
+
+        const markup = el('input', { type: 'number', value: supplier.markupPercent, min: 0, max: 1000 });
+        const categorySel = el('select', {}, categories.map(c => el('option', { value: c }, c)));
+        results.appendChild(el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0' }, [
+          el('div', {}, [el('label', {}, 'Markup (%)'), markup]),
+          el('div', {}, [el('label', {}, 'Marketplace category'), categorySel])
+        ]));
+
+        const live = (product.variants || []).filter(v => v.stock > 0);
+        if (!live.length) {
+          results.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No in-stock variants'), el('p', {}, 'Try another product or remove the warehouse filter.') ]));
+          return;
+        }
+        const rows = el('div', { class: 'card' });
+        live.slice(0, 30).forEach(v => {
+          const origin = v.fromCountryCode === 'US' ? 'US stock' : (v.fromCountryCode ? `${v.fromCountryCode} stock` : 'CJ stock');
+          const importBtn = el('button', { class: 'btn-primary', style: 'border:none' }, 'Import');
+          importBtn.onclick = async () => {
+            importBtn.disabled = true; importBtn.textContent = 'Importing…';
+            try {
+              const r = await api('POST', '/api/admin/cj/import', {
+                supplierId: supplier.id, pid: product.pid, vid: v.vid,
+                markupPercent: markup.value, category: categorySel.value
+              });
+              importBtn.textContent = 'Imported';
+              toast(`${r.item.title} is live at ${cents(r.item.price)} + live CJ shipping`, 'ok');
+            } catch (e) {
+              importBtn.disabled = false; importBtn.textContent = 'Import'; toast(e.message, 'err');
+            }
+          };
+          rows.appendChild(el('div', { class: 'listrow' }, [
+            v.image ? el('img', { src: v.image, style: 'width:58px;height:58px;object-fit:cover;border-radius:8px' }) : null,
+            el('div', { class: 'grow' }, [
+              el('div', { class: 't' }, v.option || v.name || 'Variant'),
+              el('div', { class: 's' }, `${v.sku || v.vid} · CJ cost ${cents(Math.round(v.price * 100))}`),
+              el('div', { class: 's' }, `${origin} · ${v.stock.toLocaleString()} in stock`)
+            ]),
+            importBtn
+          ]));
+        });
+        results.appendChild(rows);
+        if (live.length > 30) results.appendChild(el('div', { class: 'hint' }, `Showing the first 30 of ${live.length} in-stock variants.`));
+      } catch (e) {
+        results.innerHTML = '';
+        results.appendChild(el('div', { class: 'errmsg' }, e.message));
+      }
+    }
+
+    async function doSearch(page = 1) {
+      searchBtn.disabled = true; searchBtn.textContent = 'Searching…';
+      results.innerHTML = '';
+      results.appendChild(el('div', { class: 'hint' }, 'Searching CJ…'));
+      try {
+        const r = await api('GET', `/api/admin/cj/products?q=${encodeURIComponent(q.value.trim())}&country=${encodeURIComponent(country.value)}&freeShipping=${free.checked ? '1' : '0'}&page=${page}&size=16`);
+        results.innerHTML = '';
+        results.appendChild(el('div', { class: 'hint', style: 'margin-bottom:8px' }, `${r.total.toLocaleString()} CJ result(s)`));
+        if (!r.products.length) {
+          results.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No CJ products found'), el('p', {}, 'Try a broader search or remove the stock filter.') ]));
+          return;
+        }
+        const list = el('div', { class: 'card' });
+        r.products.forEach(prod => {
+          list.appendChild(el('div', { class: 'listrow' }, [
+            prod.image ? el('img', { src: prod.image, style: 'width:64px;height:64px;object-fit:cover;border-radius:8px' }) : null,
+            el('div', { class: 'grow' }, [
+              el('div', { class: 't' }, prod.name),
+              el('div', { class: 's' }, `${prod.categoryName || 'CJ product'} · from ${cents(Math.round(prod.price * 100))}`),
+              prod.freeShipping ? el('div', { class: 's' }, 'CJ marks this product free-shipping eligible') : null
+            ]),
+            el('button', { onclick: () => showVariants(prod) }, 'Variants')
+          ]));
+        });
+        results.appendChild(list);
+        const pager = el('div', { style: 'display:flex;justify-content:space-between;gap:8px;margin-top:10px' });
+        const prev = el('button', { disabled: r.page <= 1 ? 'disabled' : null, onclick: () => doSearch(r.page - 1) }, '← Previous');
+        const next = el('button', { disabled: r.page * r.size >= r.total ? 'disabled' : null, onclick: () => doSearch(r.page + 1) }, 'Next →');
+        pager.appendChild(prev); pager.appendChild(el('span', { class: 'hint' }, `Page ${r.page}`)); pager.appendChild(next);
+        results.appendChild(pager);
+      } catch (e) {
+        results.innerHTML = '';
+        results.appendChild(el('div', { class: 'errmsg' }, e.message));
+      } finally {
+        searchBtn.disabled = false; searchBtn.textContent = 'Search CJ';
+      }
+    }
+
+    searchBtn.onclick = () => doSearch(1);
+    q.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(1); });
+    return panel;
+  }
+
   async function singleItemForm(supplier) {
     const { categories } = await api('GET', '/api/shop/categories');
     const wrap = el('div', { class: 'card', style: 'padding:18px' });
@@ -1669,7 +1975,9 @@ async function renderSuppliers() {
     const title = el('input', { placeholder: 'Matte black pendant light' });
     const category = el('select', {}, categories.map(c => el('option', { value: c }, c)));
     const cost = el('input', { type: 'number', placeholder: '18.50' });
-    const shipping = el('input', { type: 'number', placeholder: '4.00' });
+    const shipping = el('input', supplier.kind === 'cj'
+      ? { type: 'number', value: 0, disabled: 'disabled', title: 'CJ freight is quoted live at checkout.' }
+      : { type: 'number', placeholder: '4.00' });
     const markup = el('input', { type: 'number', value: supplier.markupPercent });
     const stock = el('input', { type: 'number', value: 25 });
     const sku = el('input', { placeholder: 'Optional — their product code' });
@@ -1705,9 +2013,10 @@ async function renderSuppliers() {
 
     wrap.appendChild(el('label', {}, 'Title')); wrap.appendChild(title);
     wrap.appendChild(el('label', {}, 'Category')); wrap.appendChild(category);
-    wrap.appendChild(twoUp('Your cost ($)', cost, 'Shipping cost ($)', shipping));
+    wrap.appendChild(twoUp('Your cost ($)', cost, supplier.kind === 'cj' ? 'Shipping — live CJ quote' : 'Shipping cost ($)', shipping));
     wrap.appendChild(twoUp('Markup (%)', markup, 'Stock quantity', stock));
     wrap.appendChild(el('label', {}, 'Their product code (SKU)')); wrap.appendChild(sku);
+    if (supplier.kind === 'cj') wrap.appendChild(el('div', { class: 'hint' }, 'CJ freight is quoted live at buyer checkout. The catalog browser above is recommended because it fills the real product/variant IDs and adds the product to My Products automatically. If you use this manual form, the product code must be a real CJ variant ID (vid).'));
     wrap.appendChild(el('label', {}, 'Description')); wrap.appendChild(desc);
     wrap.appendChild(el('label', {}, 'Photos')); wrap.appendChild(picker); wrap.appendChild(fileInput); wrap.appendChild(previewRow);
     wrap.appendChild(preview);
@@ -1768,6 +2077,13 @@ async function renderFulfilment() {
   wrap.appendChild(el('h2', {}, 'Fulfilment queue'));
   wrap.appendChild(el('div', { class: 'sub' }, 'Every dropship sale lands here. Place the order with the supplier, then paste the tracking number back in.'));
 
+  try {
+    const { connected } = await api('GET', '/api/admin/cj/status');
+    wrap.appendChild(el('div', { class: connected ? 'trialbar' : 'policybox' }, connected
+      ? 'CJdropshipping is connected. Buyer freight is quoted live, and \"Create on CJ\" sends the order to CJ. CJ returns a payment link so you can finish supplier payment without re-entering it.'
+      : 'CJdropshipping isn\'t connected yet — set CJ_API_KEY in Netlify environment variables, then redeploy.'));
+  } catch {}
+
   const { orders } = await api('GET', '/api/admin/supplier-orders');
   const pending = orders.filter(o => o.status === 'pending').length;
   const profit = orders.reduce((s, o) => s + (o.chargedCents - o.costCents), 0);
@@ -1787,15 +2103,44 @@ async function renderFulfilment() {
       el('div', { class: 'grow' }, [
         el('div', { class: 't' }, o.title),
         el('div', { class: 's' }, `${o.supplierName}${o.supplierSku ? ' · ' + o.supplierSku : ''} · cost ${cents(o.costCents)} → charged ${cents(o.chargedCents)} · profit ${cents(o.chargedCents - o.costCents)}`),
-        el('div', { class: 's' }, sh ? `Ship to ${o.buyerName}, ${sh.line1}, ${sh.city}, ${sh.state}` : 'No shipping address captured'),
+        el('div', { class: 's' }, sh ? `Ship to ${o.buyerName}, ${sh.line1}, ${sh.city}, ${sh.state}${sh.zip ? ' ' + sh.zip : ''}` : 'No shipping address captured'),
+        o.supplierKind === 'cj' && o.cjLogisticName ? el('div', { class: 's' }, `CJ shipping: ${o.cjLogisticName}${o.cjQuotedDays ? ' · ' + o.cjQuotedDays + ' days' : ''}${o.shippingCostCents ? ' · ' + cents(o.shippingCostCents) : ''}`) : null,
+        o.cjRawStatus ? el('div', { class: 's' }, `CJ status: ${o.cjRawStatus}${o.cjOrderId ? ' · order ' + o.cjOrderId : ''}`) : null,
         el('div', { class: 's' }, o.buyerEmail)
       ]),
       el('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap' }, [
+        el('button', { onclick: () => {
+          const text = `${o.title}${o.supplierSku ? ' (SKU ' + o.supplierSku + ')' : ''}\nQty: 1\nShip to:\n${o.buyerName}\n${sh ? sh.line1 + '\n' + sh.city + ', ' + sh.state + (sh.zip ? ' ' + sh.zip : '') : 'No address captured'}`;
+          navigator.clipboard.writeText(text).then(() => toast('Copied — paste into your supplier\'s order form', 'ok')).catch(() => toast('Could not copy', 'err'));
+        } }, '📋 Copy for supplier'),
+        o.supplierKind === 'cj' ? (o.cjOrderId
+          ? el('span', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [
+              el('button', { onclick: async () => {
+                try {
+                  const r = await api('POST', `/api/admin/supplier-orders/${o.id}/check-cj-status`);
+                  toast('CJ status: ' + (r.cjStatus || 'unknown') + (r.order.tracking ? ' · tracking added' : ''), 'ok');
+                  render();
+                } catch (e) { toast(e.message, 'err'); }
+              } }, '🔄 Check CJ status'),
+              o.cjPayUrl ? el('button', { class: 'btn-primary', style: 'border:none', onclick: () => window.open(o.cjPayUrl, '_blank', 'noopener') }, 'Pay on CJ ↗') : null
+            ])
+          : el('button', { class: 'btn-primary', style: 'border:none', onclick: async () => {
+              try {
+                const q = await api('GET', `/api/admin/supplier-orders/${o.id}/cj-quote`);
+                const ship = q.selected;
+                const newProfit = q.order.chargedCents - q.order.costCents;
+                if (!confirm(`Create this order on CJdropshipping now?\n\nItem: ${o.title}\nCJ shipping: ${ship.logisticName} — ${cents(Math.round(ship.price * 100))}${ship.days ? ` (${ship.days} days)` : ''}\nCurrent gross profit after CJ cost: ${cents(newProfit)}\n\nCJ will return a payment link. No CJ balance is charged automatically.`)) return;
+                const r = await api('POST', `/api/admin/supplier-orders/${o.id}/send-to-cj`);
+                toast(r.payUrl ? 'Created on CJ — use the Pay on CJ button to finish supplier payment.' : 'Created on CJ.', 'ok');
+                render();
+              } catch (e) { toast(e.message, 'err'); }
+            } }, '⚡ Create on CJ')
+        ) : null,
         trackInput, sel,
         el('button', { onclick: async () => {
           try {
             await api('POST', `/api/admin/supplier-orders/${o.id}/status`, { status: sel.value, tracking: trackInput.value });
-            toast('Updated', 'ok'); render();
+            toast(sel.value === 'shipped' ? 'Updated — buyer emailed automatically' : 'Updated', 'ok'); render();
           } catch (e) { toast(e.message, 'err'); }
         } }, 'Save')
       ])
@@ -1803,4 +2148,146 @@ async function renderFulfilment() {
   });
   wrap.appendChild(box);
   return wrap;
+}
+
+/* ================= ADMIN: REPORTS ================= */
+async function renderReports() {
+  const wrap = el('div', { class: 'page' });
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('me') }, '← Back'));
+  wrap.appendChild(el('h2', {}, 'Reports'));
+  wrap.appendChild(el('div', { class: 'sub' }, 'Buyers who say a peer-to-peer purchase never shipped. Dropship orders you fulfil yourself never show up here.'));
+
+  const { reports } = await api('GET', '/api/admin/reports');
+  const open = reports.filter(r => r.status === 'open');
+  const closed = reports.filter(r => r.status !== 'open');
+
+  wrap.appendChild(el('div', { class: 'statgrid' }, [stat(open.length, 'Open'), stat(closed.length, 'Resolved')]));
+
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Open'));
+  const openBox = el('div', { class: 'card' });
+  if (!open.length) openBox.appendChild(el('div', { class: 'listrow' }, el('div', { class: 's' }, 'Nothing open.')));
+  open.forEach(r => {
+    const noteInput = el('input', { placeholder: 'Note (optional)', style: 'max-width:220px' });
+    openBox.appendChild(el('div', { class: 'listrow' }, [
+      el('div', { class: 'grow' }, [
+        el('div', { class: 't' }, r.itemTitle),
+        el('div', { class: 's' }, `Buyer: ${r.buyerName} (${r.buyerEmail}) · Seller: ${r.sellerName}`),
+        el('div', { class: 's' }, '"' + r.reason + '"'),
+        el('div', { class: 's' }, new Date(r.at).toLocaleDateString())
+      ]),
+      el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;align-items:center' }, [
+        noteInput,
+        el('button', { onclick: async () => { await api('POST', `/api/admin/reports/${r.id}/resolve`, { status: 'resolved', note: noteInput.value }); toast('Marked resolved', 'ok'); render(); } }, 'Resolve'),
+        el('button', { onclick: async () => { await api('POST', `/api/admin/reports/${r.id}/resolve`, { status: 'dismissed', note: noteInput.value }); toast('Dismissed', 'ok'); render(); } }, 'Dismiss')
+      ])
+    ]));
+  });
+  wrap.appendChild(openBox);
+
+  if (closed.length) {
+    wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Resolved / dismissed'));
+    const closedBox = el('div', { class: 'card' });
+    closed.forEach(r => closedBox.appendChild(el('div', { class: 'listrow' }, [
+      el('div', { class: 'grow' }, [
+        el('div', { class: 't' }, r.itemTitle + ' — ' + r.sellerName),
+        el('div', { class: 's' }, r.note ? r.note : '(no note)')
+      ]),
+      el('span', { class: 'pill ' + (r.status === 'resolved' ? 'good' : 'bad') }, r.status)
+    ])));
+    wrap.appendChild(closedBox);
+  }
+  return wrap;
+}
+
+/* ================= BOOST PICKER ================= */
+// Previously the only way to find promotions was to open a listing and
+// scroll to the bottom — easy to miss entirely. This is a direct,
+// unmissable entry point: tap the lightning bolt in the top bar, land
+// straight on a page to buy one.
+async function renderBoostPicker() {
+  const wrap = el('div', { class: 'page' });
+  wrap.appendChild(el('h2', {}, '⚡ Boost a listing'));
+  wrap.appendChild(el('div', { class: 'sub' }, 'Pin one of your listings above organic results for a set window, or grab the one-hour Super Boost top slot.'));
+
+  const { listings } = await api('GET', '/api/users/' + state.user.id + '/listings');
+  if (!listings.length) {
+    wrap.appendChild(el('div', { class: 'empty' }, [
+      el('h3', {}, "You don't have a listing yet"),
+      el('p', {}, 'Post one first, then come back here to boost it.'),
+      el('button', { class: 'btn-primary', style: 'margin-top:16px', onclick: () => go('compose') }, 'Post a property')
+    ]));
+    return wrap;
+  }
+
+  const box = el('div', { class: 'card' });
+  listings.forEach(l => {
+    const boosted = l.boostUntil && new Date(l.boostUntil) > new Date();
+    box.appendChild(el('div', { class: 'listrow' }, [
+      el('div', { class: 'grow' }, [
+        el('div', { class: 't' }, l.address),
+        el('div', { class: 's' }, l.city + (boosted ? ' · currently promoted' : ' · not promoted right now'))
+      ]),
+      el('button', { class: boosted ? '' : 'btn-primary', style: boosted ? '' : 'border:none', onclick: () => go('promote', { detailId: l.id }) }, boosted ? 'Extend' : '⚡ Boost')
+    ]));
+  });
+  wrap.appendChild(box);
+  return wrap;
+}
+
+/* ================= INVESTOR WORKSPACE (Platinum) ================= */
+async function renderWorkspace() {
+  const wrap = el('div', { class: 'page' });
+  wrap.appendChild(el('h2', {}, 'Investor workspace'));
+  wrap.appendChild(el('div', { class: 'sub' }, 'Compare your saved properties side by side and keep notes on each.'));
+
+  if (!state.access?.platinum) {
+    wrap.appendChild(el('div', { class: 'empty' }, [
+      el('h3', {}, 'Platinum feature'),
+      el('p', {}, 'Compare saved properties and keep deal notes across all of them — included with Platinum.'),
+      el('button', { class: 'btn-primary', style: 'margin-top:16px', onclick: () => go('upgrade') }, 'See Platinum')
+    ]));
+    return wrap;
+  }
+
+  let data;
+  try { data = await api('GET', '/api/workspace'); }
+  catch (e) { wrap.appendChild(el('div', { class: 'empty' }, el('p', {}, e.message))); return wrap; }
+
+  const { listings, notes } = data;
+  if (!listings.length) {
+    wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Nothing saved yet'), el('p', {}, 'Save a few properties from the feed and they\'ll line up here for comparison.')]));
+    return wrap;
+  }
+
+  const table = el('div', { style: 'overflow-x:auto' });
+  const grid = el('div', { style: `display:grid;grid-template-columns:repeat(${listings.length},minmax(200px,1fr));gap:12px;` });
+  listings.forEach(l => {
+    const spread = l.arv ? l.arv - l.asking : null;
+    const noteEntry = notes.find(n => n.listingId === l.id);
+    const noteBox = el('textarea', { placeholder: 'Deal notes…', style: 'min-height:80px;font-size:13px' });
+    noteBox.value = noteEntry?.notes || '';
+    let saveTimer = null;
+    noteBox.oninput = () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => api('POST', '/api/workspace/notes', { listingId: l.id, notes: noteBox.value }).catch(() => {}), 700);
+    };
+    grid.appendChild(el('div', { class: 'card', style: 'padding:14px;cursor:default' }, [
+      el('div', { class: 't', style: 'font-weight:700;margin-bottom:2px;cursor:pointer', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, l.address),
+      el('div', { class: 's', style: 'margin-bottom:10px' }, l.city),
+      dealRow('Asking', money(l.asking)),
+      l.arv ? dealRow('Est. ARV', money(l.arv)) : null,
+      spread ? dealRow('Spread', money(spread)) : null,
+      l.beds ? dealRow('Beds/Baths', `${l.beds} / ${l.baths || '—'}`) : null,
+      el('div', { class: 'hint', style: 'margin:10px 0 6px' }, 'Your notes'),
+      noteBox
+    ]));
+  });
+  table.appendChild(grid);
+  wrap.appendChild(table);
+  return wrap;
+}
+function dealRow(label, value) {
+  return el('div', { style: 'display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line)' }, [
+    el('span', { class: 'hint' }, label), el('span', { style: 'font-weight:600' }, value)
+  ]);
 }
