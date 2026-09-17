@@ -132,6 +132,17 @@ Tested: refrigerators, light fixtures, drills, TVs and anything in a banned cate
 
 For CJdropshipping, set `CJ_API_KEY` in Netlify and redeploy. Then Profile → Admin — suppliers → add/select CJdropshipping → Import catalog. The CJ browser searches products/variants directly, imports the real IDs, quotes freight live at buyer checkout, and creates the CJ supplier order from the fulfilment queue. See `CJ-DROPSHIPPING.md`.
 
+### Optional checkout address type-ahead
+
+Browser saved-address autofill is built in automatically. To also show street-address suggestions while a buyer types:
+
+1. In Google Cloud, enable **Places API (New)** for your project.
+2. Create an API key and restrict the key to **Places API (New)**.
+3. Add `GOOGLE_MAPS_API_KEY` in Netlify → Environment variables.
+4. Deploy once after the variable is set.
+
+The API key is used only by the server. Buyers see Google Maps attribution beside Google-provided suggestions, and the site Terms/Privacy pages contain the corresponding disclosures.
+
 For other suppliers, Profile → Admin — suppliers. Register a supplier, paste a JSON catalog, markup and categories are applied automatically. Sales land in Profile → Admin — fulfilment queue with the customer's address, your cost and your profit. Place the order with the supplier, paste tracking back in.
 
 Tested: a $22.50 landed-cost pendant priced to $36.99 at 65% markup, auto-categorized as Lighting, with $14.49 profit tracked on sale.

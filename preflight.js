@@ -48,6 +48,11 @@ if (!process.env.CJ_API_KEY) soft('CJ_API_KEY not set — CJ catalog browsing, l
 else if (String(process.env.CJ_API_KEY).trim().length < 20) bad('CJ_API_KEY looks too short to be a real CJ API key.');
 else ok('CJ API key present (server-side only).');
 
+head('Address autocomplete');
+if (!process.env.GOOGLE_MAPS_API_KEY) soft('GOOGLE_MAPS_API_KEY not set — browser saved-address autofill still works, but typed address suggestions stay disabled.');
+else if (String(process.env.GOOGLE_MAPS_API_KEY).trim().length < 20) bad('GOOGLE_MAPS_API_KEY looks too short to be a real Google API key.');
+else ok('Google Maps Places key present (server-side only).');
+
 head('App');
 if (!process.env.APP_URL) bad('APP_URL not set. Confirmation and reset links in emails will point at localhost.');
 else if (!/^https:\/\//.test(process.env.APP_URL) && !/localhost/.test(process.env.APP_URL)) bad('APP_URL is not https. Sessions and payment tokens must not cross plain HTTP.');

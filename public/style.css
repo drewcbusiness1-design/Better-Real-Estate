@@ -441,6 +441,14 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .quoteeta{color:var(--ink-soft);font-size:12px;padding-top:5px;}
 .quotetotal{border-top:1px solid var(--line);margin-top:6px;padding-top:10px!important;font-size:15px;}
 .productcheckout .submitbtn[disabled]{opacity:.48;cursor:not-allowed;}
+.addressautocomplete{position:relative;}
+.addresssuggestions{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 6px);border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 12px 32px rgba(0,0,0,.14);overflow:hidden;}
+.addresssuggestions[hidden]{display:none;}
+.addresssuggestion{display:flex;width:100%;flex-direction:column;align-items:flex-start;gap:2px;padding:11px 12px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;text-align:left;color:var(--ink);cursor:pointer;}
+.addresssuggestion:hover,.addresssuggestion:focus{background:var(--surface-2);}
+.addresssuggestion-main{font-size:13px;font-weight:650;}
+.addresssuggestion-sub{font-size:12px;color:var(--ink-soft);}
+.gmaps-attribution{padding:7px 12px;text-align:right;font-family:Roboto,Sans-Serif;font-style:normal;font-weight:400;font-size:12px;letter-spacing:normal;white-space:nowrap;color:#5e5e5e;background:var(--surface);}
 @media(max-width:720px){
   .productdetail{grid-template-columns:1fr;gap:20px;}
   .productinfo h1{font-size:26px;}

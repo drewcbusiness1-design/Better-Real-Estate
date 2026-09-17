@@ -64,4 +64,23 @@ assert.ok(server.includes('publicFulfilmentStatus(so)'), 'Buyer tracking must no
 assert.ok(!server.includes("error: 'CJ shipping quotes are temporarily unavailable.'"), 'Customer shipping errors must not name CJ');
 assert.ok(!server.includes("error: 'CJdropshipping is not connected right now.'"), 'Customer checkout errors must not name CJ');
 
+
+// Checkout address autofill/autocomplete + legal/privacy disclosure.
+for (const route of [
+  "app.get('/api/address/config'",
+  "app.post('/api/address/autocomplete'",
+  "app.post('/api/address/details'"
+]) assert.ok(server.includes(route), 'Missing address-autocomplete route ' + route);
+assert.ok(server.includes("includedRegionCodes: ['us']"), 'Address suggestions should be restricted to the United States for current shipping support');
+assert.ok(server.includes("'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY"), 'Google Places key must stay server-side');
+assert.ok(!client.includes('GOOGLE_MAPS_API_KEY'), 'Google Maps API key name must not be referenced by browser code');
+assert.ok(client.includes("autocomplete: 'shipping address-line1'"), 'Checkout street field must support browser saved-address autofill');
+assert.ok(client.includes("'/api/address/autocomplete'"), 'Checkout must request typed address suggestions');
+assert.ok(client.includes("'/api/address/details'"), 'Checkout must fill structured address fields after a suggestion is selected');
+assert.ok(client.includes("'Google Maps'"), 'Google-provided suggestions must display Google Maps attribution');
+assert.ok(env.includes('GOOGLE_MAPS_API_KEY='), '.env.example must document optional Google Places configuration');
+assert.ok(client.includes('Google Maps Platform'), 'Terms/privacy must disclose Google Maps address autocomplete');
+assert.ok(client.includes('Stripe processes card payments'), 'Privacy policy must disclose Stripe payment processing');
+assert.ok(client.includes('shipping, supplier and fulfilment providers'), 'Privacy policy must disclose shipping/fulfilment sharing');
+
 console.log('✓ CJ integration wiring tests passed');

@@ -4,6 +4,8 @@ A social feed for off-market property, with a marketplace, wallet, promotions an
 
 **Launching? `GOLIVE.md` is the full sequence. Netlify specifics: `NETLIFY.md`. First users: `MARKETING.md`.**
 
+Checkout shipping forms support browser saved-address autofill by default. Optional typed address suggestions use Google Places API (New) through the server; set `GOOGLE_MAPS_API_KEY` to enable them. The API key is never sent to the browser.
+
 ## Quick start
 
 ```

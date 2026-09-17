@@ -86,6 +86,58 @@ const requireAdmin = (req, res, next) =>
     ? next()
     : res.status(403).json({ error: 'Admin only' });
 
+/* ---------- shipping-address autocomplete ----------
+   Browser autofill always works without this. If GOOGLE_MAPS_API_KEY is set,
+   signed-in shoppers also get type-ahead US street-address suggestions via
+   Google's Places API (New). The key never reaches public/app.js. */
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || '';
+const addressRate = new Map();
+function addressAutocompleteConfigured() { return !!GOOGLE_MAPS_API_KEY; }
+function checkAddressRate(userId) {
+  const now = Date.now();
+  const key = String(userId || 'anon');
+  const bucket = addressRate.get(key);
+  if (!bucket || now - bucket.startedAt > 60_000) {
+    addressRate.set(key, { startedAt: now, count: 1 });
+    return true;
+  }
+  bucket.count += 1;
+  // Plenty for normal typing with debounce, low enough to limit key abuse.
+  return bucket.count <= 80;
+}
+function googleAddressComponent(components, type, preferShort = false) {
+  const c = (components || []).find(x => Array.isArray(x.types) && x.types.includes(type));
+  if (!c) return '';
+  return String((preferShort ? c.shortText : c.longText) || c.longText || c.shortText || '').trim();
+}
+function normalizeGoogleAddress(place = {}) {
+  const c = Array.isArray(place.addressComponents) ? place.addressComponents : [];
+  const streetNumber = googleAddressComponent(c, 'street_number');
+  const route = googleAddressComponent(c, 'route');
+  const premise = googleAddressComponent(c, 'premise');
+  const subpremise = googleAddressComponent(c, 'subpremise');
+  const city =
+    googleAddressComponent(c, 'locality') ||
+    googleAddressComponent(c, 'postal_town') ||
+    googleAddressComponent(c, 'sublocality_level_1') ||
+    googleAddressComponent(c, 'administrative_area_level_2');
+  const state = googleAddressComponent(c, 'administrative_area_level_1', true);
+  const postal = googleAddressComponent(c, 'postal_code');
+  const suffix = googleAddressComponent(c, 'postal_code_suffix');
+  const countryCode = googleAddressComponent(c, 'country', true).toUpperCase();
+  const line1 = [streetNumber, route].filter(Boolean).join(' ') || premise || '';
+  return {
+    line1,
+    line2: subpremise,
+    city,
+    state,
+    zip: suffix && postal ? `${postal}-${suffix}` : postal,
+    country: googleAddressComponent(c, 'country') || 'United States',
+    countryCode: countryCode || 'US',
+    formattedAddress: String(place.formattedAddress || '').trim()
+  };
+}
+
 const defaultBuyBox = () => ({ minPrice: 0, maxPrice: 2000000, cities: [], propertyTypes: [], minSpread: 0, active: true });
 const defaultSettings = () => ({ theme: 'light', feedDensity: 'comfortable', notifyOnMessage: true, notifyOnMatch: true });
 const badgeFor = p => p >= 500 ? 'Gold' : p >= 200 ? 'Silver' : p >= 100 ? 'Bronze' : null;
@@ -804,6 +856,97 @@ app.post('/api/admin/verify-user', requireAuth, requireAdmin, async (req, res) =
   const u = req.db.users.find(x => x.id === req.body?.userId);
   if (!u) return res.status(404).json({ error: 'Not found.' });
   u.verified = true; u.verificationPending = false; await saveDB(req.db); res.json({ ok: true });
+});
+
+
+/* ====================== ADDRESS AUTOCOMPLETE ====================== */
+app.get('/api/address/config', async (req, res) => {
+  res.json({ enabled: addressAutocompleteConfigured() });
+});
+
+app.post('/api/address/autocomplete', requireAuth, async (req, res) => {
+  if (!addressAutocompleteConfigured()) {
+    return res.status(503).json({ error: 'Address suggestions are not configured.' });
+  }
+  if (!checkAddressRate(req.user.id)) {
+    return res.status(429).json({ error: 'Too many address lookups. Please wait a moment.' });
+  }
+  const input = String(req.body?.input || '').trim().slice(0, 180);
+  const sessionToken = String(req.body?.sessionToken || '').trim().slice(0, 120);
+  if (input.length < 3) return res.json({ suggestions: [] });
+
+  const body = {
+    input,
+    includedRegionCodes: ['us'],
+    languageCode: 'en',
+    regionCode: 'us',
+    includeQueryPredictions: false
+  };
+  if (sessionToken) body.sessionToken = sessionToken;
+
+  try {
+    const upstream = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat.mainText.text,suggestions.placePrediction.structuredFormat.secondaryText.text'
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      console.error('[address autocomplete]', upstream.status, data?.error?.message || 'Google Places error');
+      return res.status(502).json({ error: 'Address suggestions are temporarily unavailable.' });
+    }
+    const suggestions = (data.suggestions || []).map(x => x.placePrediction).filter(Boolean).slice(0, 5).map(pred => ({
+      placeId: pred.placeId,
+      text: pred.text?.text || '',
+      mainText: pred.structuredFormat?.mainText?.text || pred.text?.text || '',
+      secondaryText: pred.structuredFormat?.secondaryText?.text || ''
+    })).filter(x => x.placeId && x.text);
+    res.json({ suggestions });
+  } catch (e) {
+    console.error('[address autocomplete]', e.message);
+    res.status(502).json({ error: 'Address suggestions are temporarily unavailable.' });
+  }
+});
+
+app.post('/api/address/details', requireAuth, async (req, res) => {
+  if (!addressAutocompleteConfigured()) {
+    return res.status(503).json({ error: 'Address suggestions are not configured.' });
+  }
+  if (!checkAddressRate(req.user.id)) {
+    return res.status(429).json({ error: 'Too many address lookups. Please wait a moment.' });
+  }
+  const placeId = String(req.body?.placeId || '').trim();
+  const sessionToken = String(req.body?.sessionToken || '').trim().slice(0, 120);
+  if (!/^[A-Za-z0-9_-]{8,300}$/.test(placeId)) return res.status(400).json({ error: 'Invalid address selection.' });
+
+  const q = new URLSearchParams({ languageCode: 'en', regionCode: 'us' });
+  if (sessionToken) q.set('sessionToken', sessionToken);
+  try {
+    const upstream = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?${q.toString()}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+        'X-Goog-FieldMask': 'formattedAddress,addressComponents'
+      }
+    });
+    const data = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      console.error('[address details]', upstream.status, data?.error?.message || 'Google Places error');
+      return res.status(502).json({ error: 'That address could not be completed automatically.' });
+    }
+    const address = normalizeGoogleAddress(data);
+    if (address.countryCode && address.countryCode !== 'US') {
+      return res.status(400).json({ error: 'Shipping is currently available only within the United States.' });
+    }
+    res.json({ address });
+  } catch (e) {
+    console.error('[address details]', e.message);
+    res.status(502).json({ error: 'That address could not be completed automatically.' });
+  }
 });
 
 /* ============================ SHOP / MARKETPLACE ============================ */

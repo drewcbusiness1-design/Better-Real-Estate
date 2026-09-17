@@ -923,6 +923,9 @@ async function renderShopItem() {
   }
 
   const { item } = await api('GET', `/api/shop/items/${encodeURIComponent(state.shopItemId)}`);
+  const addressAuto = item.dropship && state.user
+    ? await api('GET', '/api/address/config').catch(() => ({ enabled: false }))
+    : { enabled: false };
   const photos = Array.isArray(item.photos) ? item.photos.filter(Boolean) : [];
   const mainMedia = el('div', { class: 'productmainphoto' });
   let mainImg = null;
@@ -966,13 +969,22 @@ async function renderShopItem() {
   const checkoutStatus = el('div', { class: 'errmsg' });
 
   if (item.dropship) {
-    checkout.appendChild(el('div', { class: 'checkoutnote' }, 'Enter the delivery address to calculate shipping before payment.'));
-    const line1 = el('input', { placeholder: 'Street address', autocomplete: 'street-address' });
-    const line2 = el('input', { placeholder: 'Apartment, suite, unit (optional)', autocomplete: 'address-line2' });
-    const city = el('input', { placeholder: 'City', autocomplete: 'address-level2' });
-    const stateCode = el('input', { placeholder: 'State (e.g. NJ)', autocomplete: 'address-level1', maxlength: '30' });
-    const zip = el('input', { placeholder: 'ZIP code', autocomplete: 'postal-code' });
-    const phone = el('input', { placeholder: 'Phone (optional)', autocomplete: 'tel' });
+    checkout.appendChild(el('div', { class: 'checkoutnote' }, 'Enter the delivery address to calculate shipping before payment. Saved browser addresses can fill these fields automatically.'));
+    const line1 = el('input', {
+      placeholder: 'Start typing your street address',
+      name: 'shipping-address-line1',
+      autocomplete: 'shipping address-line1',
+      inputmode: 'text'
+    });
+    const line2 = el('input', {
+      placeholder: 'Apartment, suite, unit (optional)',
+      name: 'shipping-address-line2',
+      autocomplete: 'shipping address-line2'
+    });
+    const city = el('input', { placeholder: 'City', name: 'shipping-city', autocomplete: 'shipping address-level2' });
+    const stateCode = el('input', { placeholder: 'State (e.g. NJ)', name: 'shipping-state', autocomplete: 'shipping address-level1', maxlength: '30' });
+    const zip = el('input', { placeholder: 'ZIP code', name: 'shipping-postal-code', autocomplete: 'shipping postal-code', inputmode: 'numeric' });
+    const phone = el('input', { placeholder: 'Phone (optional)', name: 'shipping-phone', autocomplete: 'shipping tel', inputmode: 'tel' });
     const quoteBox = el('div', { class: 'quotesummary muted' }, 'Shipping has not been calculated yet.');
     const quoteBtn = el('button', { class: 'btn-ghost productquote' }, 'Calculate shipping');
     const buyBtn = el('button', { class: 'submitbtn', disabled: 'disabled' }, 'Continue to payment');
@@ -991,13 +1003,85 @@ async function renderShopItem() {
     };
     [line1, line2, city, stateCode, zip, phone].forEach(input => input.addEventListener('input', invalidateQuote));
 
-    checkout.appendChild(el('label', {}, 'Street address')); checkout.appendChild(line1);
+    const addressWrap = el('div', { class: 'addressautocomplete' }, line1);
+    const suggestionBox = el('div', { class: 'addresssuggestions', hidden: 'hidden' });
+    addressWrap.appendChild(suggestionBox);
+    let addressTimer = null;
+    let addressSeq = 0;
+    let addressSessionToken = (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now());
+    const hideAddressSuggestions = () => {
+      suggestionBox.hidden = true;
+      suggestionBox.innerHTML = '';
+    };
+    const renderAddressSuggestions = suggestions => {
+      suggestionBox.innerHTML = '';
+      if (!Array.isArray(suggestions) || !suggestions.length) {
+        hideAddressSuggestions();
+        return;
+      }
+      suggestions.forEach(suggestion => {
+        const btn = el('button', { type: 'button', class: 'addresssuggestion' }, [
+          el('span', { class: 'addresssuggestion-main' }, suggestion.mainText || suggestion.text),
+          suggestion.secondaryText ? el('span', { class: 'addresssuggestion-sub' }, suggestion.secondaryText) : null
+        ]);
+        btn.onclick = async () => {
+          hideAddressSuggestions();
+          line1.value = suggestion.text || line1.value;
+          try {
+            const r = await api('POST', '/api/address/details', {
+              placeId: suggestion.placeId,
+              sessionToken: addressSessionToken
+            });
+            const a = r.address || {};
+            if (a.line1) line1.value = a.line1;
+            if (a.line2) line2.value = a.line2;
+            if (a.city) city.value = a.city;
+            if (a.state) stateCode.value = a.state;
+            if (a.zip) zip.value = a.zip;
+            invalidateQuote();
+            addressSessionToken = (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now());
+            city.focus();
+          } catch {
+            // Keep the selected suggestion text even if details are temporarily unavailable.
+          }
+        };
+        suggestionBox.appendChild(btn);
+      });
+      suggestionBox.appendChild(el('div', { class: 'gmaps-attribution', translate: 'no' }, 'Google Maps'));
+      suggestionBox.hidden = false;
+    };
+    if (addressAuto.enabled) {
+      line1.addEventListener('input', () => {
+        clearTimeout(addressTimer);
+        const q = line1.value.trim();
+        if (q.length < 3) {
+          addressSeq += 1;
+          hideAddressSuggestions();
+          return;
+        }
+        const seq = ++addressSeq;
+        addressTimer = setTimeout(async () => {
+          try {
+            const r = await api('POST', '/api/address/autocomplete', { input: q, sessionToken: addressSessionToken });
+            if (seq === addressSeq) renderAddressSuggestions(r.suggestions || []);
+          } catch {
+            if (seq === addressSeq) hideAddressSuggestions();
+          }
+        }, 280);
+      });
+      line1.addEventListener('blur', () => setTimeout(hideAddressSuggestions, 180));
+      line1.addEventListener('focus', () => {
+        if (suggestionBox.children.length) suggestionBox.hidden = false;
+      });
+    }
+
+    checkout.appendChild(el('label', {}, 'Street address')); checkout.appendChild(addressWrap);
     checkout.appendChild(el('label', {}, 'Apartment, suite, unit (optional)')); checkout.appendChild(line2);
     checkout.appendChild(el('div', { class: 'checkoutgrid' }, [
       el('div', {}, [el('label', {}, 'City'), city]),
       el('div', {}, [el('label', {}, 'State'), stateCode]),
       el('div', {}, [el('label', {}, 'ZIP code'), zip]),
-      el('div', {}, [el('label', {}, 'Country'), el('input', { value: 'United States', disabled: 'disabled' })])
+      el('div', {}, [el('label', {}, 'Country'), el('input', { value: 'United States', name: 'shipping-country', autocomplete: 'shipping country-name', disabled: 'disabled' })])
     ]));
     checkout.appendChild(el('label', {}, 'Phone (optional)')); checkout.appendChild(phone);
     checkout.appendChild(quoteBtn);
@@ -1931,34 +2015,51 @@ function pageFaq() {
 }
 
 function pageTerms() {
-  return staticPage('Terms of Service', 'Last updated ' + new Date().toLocaleDateString() + '. Plain-English summary, not a substitute for legal review.', [
+  return staticPage('Terms of Service', 'Last updated September 17, 2026. Plain-English summary, not a substitute for legal review.', [
     [null, 'By creating an account you agree to these terms. If you do not agree, do not use the site.'],
     ['1. What this service is', 'Better Real Estate is an online platform where users post property listings and items for sale, and communicate with each other. We are not a real estate brokerage, agent, escrow holder, lender, or party to any transaction between users. We do not verify property ownership, condition, title, valuation, or any statement a user makes.'],
     ['2. Your account', 'You must be 18 or older and provide accurate information. You are responsible for everything that happens under your account and for keeping your password secure. One account per person.'],
     ['3. What you may not post', 'Do not post property you have no legal right to sell or market. Do not post false, misleading, or fabricated listings. Do not post items you do not have. Do not harass other users, scrape the site, or attempt to circumvent payment. We remove content and terminate accounts for any of the above, without refund.'],
-    ['3a. No electronics or appliances', 'Users may not list any item that runs on mains power or a battery. This includes but is not limited to appliances, HVAC equipment, water heaters, power tools, light fixtures, lamps, bulbs, wiring, breakers, outlets, switches, smart-home devices, alarms, detectors, generators, batteries and consumer electronics. This is not a formality: electrical goods sold in the United States require a UL or ETL listing, we have no way to verify certification on a private listing, and an uncertified item that causes a fire or shock injury exposes both the seller and this platform. Listings that appear to be electrical are rejected automatically and accounts that repeatedly attempt to evade this are terminated. Any electrical goods offered in the Better Real Estate shop are supplied by Better Real Estate from vendors who have provided certification documents in writing.'],
+    ['3a. No electronics or appliances', 'Users may not list any item that runs on mains power or a battery. This includes but is not limited to appliances, HVAC equipment, water heaters, power tools, light fixtures, lamps, bulbs, wiring, breakers, outlets, switches, smart-home devices, alarms, detectors, generators, batteries and consumer electronics. Listings that appear to be electrical may be rejected automatically and accounts that repeatedly attempt to evade this rule may be terminated.'],
     ['4. Transactions between users', 'Any deal you reach with another user is strictly between you and them. We do not guarantee that a listed property exists, is available, is priced accurately, or that any user will perform. You are solely responsible for your own due diligence, contracts, inspections, title work, and compliance with the laws of your jurisdiction.'],
-    ['5. Payments, subscriptions, and promotions', 'Promotions, unlocks, verification, and subscription fees are charged when purchased. Promotions run for the stated window and are non-refundable once they begin. Subscriptions renew until cancelled and can be cancelled anytime, effective at the end of the current period. Marketplace sales are subject to the platform fee stated at listing.'],
+    ['5. Payments, subscriptions, and promotions', 'Payments may be processed by Stripe or another disclosed payment provider. Promotions, unlocks, verification, subscriptions and marketplace purchases are charged when purchased. Promotions run for the stated window and are non-refundable once they begin. Subscriptions renew until cancelled and can be cancelled anytime, effective at the end of the current period. Marketplace sales are subject to the platform fee stated at listing.'],
+    ['5a. Address autocomplete', el('span', {}, [
+      'Checkout may offer browser autofill and Google Maps address suggestions to help you enter a shipping address. Google Maps suggestions are subject to the ',
+      el('a', { href: 'https://cloud.google.com/maps-platform/terms', target: '_blank', rel: 'noopener noreferrer' }, 'Google Maps Platform Terms of Service'),
+      ' and ',
+      el('a', { href: 'https://policies.google.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Google Privacy Policy'),
+      '. You remain responsible for reviewing the selected address before placing an order.'
+    ])],
     ['6. Wallet and payouts', 'Wallet balances are a record of amounts owed to you from platform activity. They are not a bank deposit, are not insured, and earn no interest. Payouts are sent to the account you connect, subject to the stated minimum and to identity verification where required by law.'],
     ['7. No warranty', 'The service is provided as-is. We do not promise it will be uninterrupted, error-free, or that any listing or user is legitimate.'],
     ['8. Limitation of liability', 'To the maximum extent the law allows, our total liability to you for any claim relating to the service is limited to the amount you paid us in the twelve months before the claim arose.'],
     ['9. Changes and termination', 'We may update these terms; continued use after an update means you accept it. We may suspend or terminate accounts that violate these terms.'],
     ['10. Contact', 'Questions about these terms: drewcbusiness1@gmail.com'],
-    ['A necessary note', 'This document is a working template written for a small platform. Before you take real payments from real users, have a lawyer in your state review it alongside your privacy policy. Taking a cut of marketplace sales and holding user balances can trigger money-transmission and payment-facilitator rules that vary considerably by state.']
+    ['A necessary note', 'This document is a working template for a small platform. Before scaling real payments, marketplace payouts, or regulated transaction services, have a lawyer review these terms and the privacy policy for the states and countries where you operate.']
   ]);
 }
 
 function pagePrivacy() {
-  return staticPage('Privacy Policy', 'Last updated ' + new Date().toLocaleDateString() + '.', [
-    [null, 'This explains what we collect, why, and what you can do about it.'],
-    ['What we collect', 'Account information you give us: name, email address, phone number if you add one, profile photo and bio. Content you post: listings including property addresses, photos, notes, and marketplace items. Activity: what you view, save, unlock, and offer on, and messages you send through the site. Payment information: the brand, last four digits and expiry of a card, plus a token from our payment processor. We never receive or store your full card number.'],
-    ['Why we collect it', 'To run your account, rank your feed against your buy box, connect buyers and sellers, process payments and payouts, prevent fraud and abuse, and send you transactional email such as confirmations and password resets.'],
-    ['What other users can see', 'Your name, role, bio, profile photo, listing count, follower count, points, verification status and reviews are public. Your email address and phone number are shown to a user only after they unlock one of your listings, or if you message them. Exact property addresses are hidden from users who have not unlocked that listing.'],
-    ['Who we share it with', 'Our payment processor, to take payments and send payouts. Our email provider, to deliver transactional messages. Hosting and storage providers that run the site. Law enforcement where we are legally required. We do not sell your personal information.'],
-    ['Cookies', 'We use a single session cookie to keep you signed in. We do not run third-party advertising trackers.'],
-    ['Your choices', 'Edit or remove your profile information and listings at any time from Settings. Turn off non-essential notifications in Settings. To request a copy of your data or deletion of your account, email drewcbusiness1@gmail.com. Depending on where you live you may have additional rights under laws such as the GDPR or CCPA — write to the same address and we will honour them.'],
-    ['Retention and security', 'We keep account and transaction records while your account is open and for as long as tax and anti-fraud rules require afterwards. Passwords are stored as bcrypt hashes and never in readable form. No system is perfectly secure; do not post information you could not tolerate becoming public.'],
-    ['Children', 'This service is not for anyone under 18 and we do not knowingly collect their information.'],
+  return staticPage('Privacy Policy', 'Last updated September 17, 2026.', [
+    [null, 'This policy explains what Better Real Estate collects, why we use it, which service providers may receive it, and the choices available to you.'],
+    ['What we collect', 'Account information you give us, including your name, email address, phone number if you add one, profile photo and bio. Content you post, including property listings, addresses, photos, notes and marketplace items. Activity such as what you view, save, unlock, offer on, buy or sell, plus messages you send through the site. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
+    ['Address autofill and autocomplete', el('span', {}, [
+      'Your browser may offer its own saved-address autofill. When typed address suggestions are enabled, partial address text and an autocomplete session identifier are sent through our server to Google Maps Platform so suggestions can be returned. If you select a suggestion, Google may return address components such as street, city, state and ZIP to fill the checkout form. We do not use device geolocation for this feature. We keep the shipping address needed for the order, but we do not intentionally store the list of autocomplete suggestions. Google handles its data under the ',
+      el('a', { href: 'https://policies.google.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Google Privacy Policy'),
+      ' and Google Maps Platform terms.'
+    ])],
+    ['Payments and payouts', el('span', {}, [
+      'Stripe processes card payments, subscriptions and seller payout onboarding when those features are enabled. Our server does not receive or store your full card number or full bank-account number. We may receive and store limited payment metadata and processor identifiers, such as card brand, last four digits, expiration date, Stripe customer/payment identifiers, payment status and transaction amount. Stripe may also process transaction, browser, device, IP-address and fraud-prevention signals under its own ',
+      el('a', { href: 'https://stripe.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Privacy Policy'),
+      '.'
+    ])],
+    ['Why we collect it', 'To run your account, rank your feed against your buy box, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, and send transactional messages such as confirmations, shipping notices and password resets.'],
+    ['What other users can see', 'Your name, role, bio, profile photo, listing count, follower count, points, verification status and reviews may be public. Your email address and phone number are shown to another user only where the product requires it, such as after a listing unlock or when you message them. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
+    ['Who we share it with', 'We share information only as needed to operate the service: Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; email providers for transactional messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising.'],
+    ['Cookies and similar technology', 'We use a session cookie to keep you signed in. Payment providers such as Stripe may use cookies, browser/device information and similar signals for payment security and fraud prevention. We do not operate third-party advertising trackers on the site.'],
+    ['Your choices', 'You can edit your profile and manage your marketplace listings from the site. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. To request a copy of your data, correction, or account deletion, email drewcbusiness1@gmail.com. Additional legal rights may apply depending on where you live.'],
+    ['Retention and security', 'We keep account, order, payment and transaction records for as long as reasonably needed to provide the service, resolve disputes, prevent fraud, and meet tax, accounting or other legal obligations. Shipping information may remain with the related order record for those purposes. Passwords are stored as bcrypt hashes and never in readable form. No system is perfectly secure, so avoid posting sensitive information that is not necessary for a transaction.'],
+    ['Children', 'This service is not for anyone under 18 and we do not knowingly collect personal information from children.'],
     ['Contact', 'drewcbusiness1@gmail.com']
   ]);
 }
