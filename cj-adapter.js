@@ -135,10 +135,10 @@ function normalizeProduct(p, includeVariants = false) {
     image: p.productImage || p.bigImage || p.bigimg || '',
     images: Array.isArray(p.productImageSet) ? p.productImageSet.filter(Boolean).slice(0, 6) : [],
     price: Number(p.sellPrice ?? p.sellprice ?? p.totalPrice ?? 0) || 0,
-    categoryName: p.categoryName || p.category || '',
+    categoryName: p.categoryName || p.threeCategoryName || p.twoCategoryName || p.oneCategoryName || p.category || '',
     description: cleanHtml(p.description || '').slice(0, 1800),
     listedNum: Number(p.listedNum || 0) || 0,
-    freeShipping: p.isFreeShipping === true || p.addMarkStatus === 1,
+    freeShipping: p.isFreeShipping === true || Number(p.addMarkStatus) === 1,
     customizationVersion: p.customizationVersion || null,
     supplierName: p.supplierName || '',
     status: p.status ?? p.saleStatus ?? null
@@ -153,9 +153,16 @@ async function searchProducts({ query = '', page = 1, size = 16, countryCode = '
   qs.set('size', String(Math.min(50, Math.max(1, Number(size) || 16))));
   if (query) qs.set('keyWord', String(query).slice(0, 160));
   if (countryCode) qs.set('countryCode', String(countryCode).toUpperCase().slice(0, 2));
-  if (freeShipping) qs.set('isFreeShipping', '1');
+  if (freeShipping) qs.set('addMarkStatus', '1');
   const data = await cjCall(`/product/listV2?${qs.toString()}`);
-  const list = data?.list || data?.content || [];
+
+  // CJ Product List V2 does NOT return products directly in `content`.
+  // Each content row is a search bucket with a nested `productList` array.
+  // Older/alternate responses may still expose `list`, so support both shapes.
+  const content = Array.isArray(data?.content) ? data.content : [];
+  const v2Products = content.flatMap(row => Array.isArray(row?.productList) ? row.productList : []);
+  const list = Array.isArray(data?.list) ? data.list : v2Products;
+
   return {
     page: Number(data?.pageNum ?? data?.page ?? data?.pageNumber ?? page) || 1,
     size: Number(data?.pageSize ?? data?.size ?? size) || size,

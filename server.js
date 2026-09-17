@@ -850,17 +850,29 @@ app.get('/api/shop/items', async (req, res) => {
 // webhook, so a card-paid marketplace order is fulfilled exactly the same
 // way as a wallet-paid one — fee split, stock, and dropship routing all
 // happen in one place instead of being duplicated and risking drift.
-function fulfilShopPurchase(db, item, buyer, shipping) {
+function fulfilShopPurchase(db, item, buyer, shipping, pricing = {}) {
   const isDropship = !!item.dropship;
   const seller = db.users.find(u => u.id === item.sellerId);
   const feeBps = (seller && isPlatinum(seller)) ? PRICING.platinumFeeBps : PRICING.marketplaceFeeBps;
   const fee = isDropship ? 0 : Math.round(item.price * feeBps / 10000);
+  const shippingCostCents = isDropship ? Math.max(0, Number(pricing.shippingCostCents || 0) || 0) : 0;
+  const totalPrice = isDropship ? item.price + shippingCostCents : item.price;
   const net = item.price - fee;
   if (!isDropship) {
     ledgerAdd(db, item.sellerId, 'sale', net, 'Sold — ' + item.title + ' (after ' + (feeBps / 100) + '% fee)', { itemId: item.id, gross: item.price, fee });
   }
   item.stock -= 1; if (item.stock < 1) item.active = false;
-  const order = { id: crypto.randomUUID(), itemId: item.id, title: item.title, buyerId: buyer.id, buyerName: buyer.name, buyerEmail: buyer.email, sellerId: item.sellerId, sellerName: item.sellerName, price: item.price, fee, net, status: 'paid', shipStatus: isDropship ? null : 'pending', tracking: null, shipping, dropship: isDropship, at: new Date().toISOString() };
+  const order = {
+    id: crypto.randomUUID(), itemId: item.id, title: item.title,
+    buyerId: buyer.id, buyerName: buyer.name, buyerEmail: buyer.email,
+    sellerId: item.sellerId, sellerName: item.sellerName,
+    price: totalPrice, productPrice: item.price, shippingCostCents,
+    fee, net, status: 'paid', shipStatus: isDropship ? null : 'pending', tracking: null,
+    shipping, dropship: isDropship,
+    cjLogisticName: pricing.cjLogisticName || null,
+    cjQuotedDays: pricing.cjQuotedDays || null,
+    at: new Date().toISOString()
+  };
   db.orders.push(order);
   if (isDropship) {
     const supplier = db.suppliers.find(s => s.id === item.supplierId) || null;
@@ -869,17 +881,90 @@ function fulfilShopPurchase(db, item, buyer, shipping) {
   return order;
 }
 
+async function quoteDropshipShipping(item, shipping) {
+  if (!item?.dropship) return null;
+  if (!item.cjVid && !item.supplierSku) return null;
+  const sh = cjAdapter.normalizeShipping(shipping || {});
+  if (!sh.line1 || !sh.city || !sh.state || !sh.zip) {
+    const err = new Error('Street, city, state and ZIP are required for CJ shipping.');
+    err.status = 400;
+    throw err;
+  }
+  const options = await cjAdapter.freightOptions({
+    vid: item.cjVid || item.supplierSku,
+    quantity: 1,
+    fromCountryCode: item.cjFromCountryCode || 'CN',
+    toCountryCode: sh.countryCode || 'US',
+    zip: sh.zip
+  });
+  if (!options.length) {
+    const err = new Error('CJ has no shipping method for this item to that address.');
+    err.status = 400;
+    throw err;
+  }
+  const best = options[0];
+  return {
+    logisticName: best.logisticName,
+    shippingCostCents: Math.round(best.price * 100),
+    days: best.days || '',
+    options: options.slice(0, 8)
+  };
+}
+
+app.post('/api/shop/shipping-quote', requireAuth, async (req, res) => {
+  const item = req.db.shopItems.find(i => i.id === req.body?.itemId);
+  if (!item || !item.active || item.stock < 1) return res.status(404).json({ error: 'Item unavailable.' });
+  if (!item.dropship) return res.json({ shippingCostCents: 0, totalCents: item.price, logisticName: null, days: '' });
+  const supplier = req.db.suppliers.find(s => s.id === item.supplierId);
+  if (supplier?.kind !== 'cj') return res.json({ shippingCostCents: 0, totalCents: item.price, logisticName: null, days: item.shipDays || '' });
+  if (!cjAdapter.configured()) return res.status(503).json({ error: 'CJ shipping quotes are temporarily unavailable.' });
+  const shipping = cjAdapter.normalizeShipping(req.body?.shipping || {});
+  const quote = await quoteDropshipShipping(item, shipping);
+  res.json({ ...quote, totalCents: item.price + quote.shippingCostCents });
+});
+
 app.post('/api/shop/buy', requireAuth, async (req, res) => {
   const item = req.db.shopItems.find(i => i.id === req.body?.itemId);
   if (!item || !item.active || item.stock < 1) return res.status(404).json({ error: 'Item unavailable.' });
   if (item.sellerId === req.user.id) return res.status(400).json({ error: "That's your own listing." });
-  const shipping = req.body?.shipping || null;
+
+  let shipping = req.body?.shipping || null;
+  let pricing = { shippingCostCents: 0, cjLogisticName: null, cjQuotedDays: null };
+  if (item.dropship) {
+    shipping = cjAdapter.normalizeShipping(shipping || {});
+    if (!shipping.line1 || !shipping.city || !shipping.state || !shipping.zip) {
+      return res.status(400).json({ error: 'Street, city, state and ZIP are required for shipped items.' });
+    }
+    const supplier = req.db.suppliers.find(s => s.id === item.supplierId);
+    if (supplier?.kind === 'cj') {
+      if (!cjAdapter.configured()) return res.status(503).json({ error: 'CJdropshipping is not connected right now.' });
+      const quote = await quoteDropshipShipping(item, shipping);
+      pricing = { shippingCostCents: quote.shippingCostCents, cjLogisticName: quote.logisticName, cjQuotedDays: quote.days };
+    }
+  }
+
+  const amount = item.price + pricing.shippingCostCents;
+  const expectedTotal = Number(req.body?.expectedTotalCents);
+  if (Number.isFinite(expectedTotal) && expectedTotal > 0 && Math.round(expectedTotal) !== amount) {
+    return res.status(409).json({
+      error: `Shipping changed before checkout. New total is ${money(amount)}. Please review and try again.`,
+      totalCents: amount,
+      shippingCostCents: pricing.shippingCostCents
+    });
+  }
   let result;
-  try { result = await chargeOrIntent(req.db, req.user, item.price, 'shop_purchase', 'Purchase — ' + item.title, { itemId: item.id, shipping: JSON.stringify(shipping || {}) }); }
-  catch (e) { return res.status(400).json({ error: e.message }); }
+  try {
+    result = await chargeOrIntent(req.db, req.user, amount, 'shop_purchase', 'Purchase — ' + item.title, {
+      itemId: item.id,
+      shipping: JSON.stringify(shipping || {}),
+      shippingCostCents: String(pricing.shippingCostCents || 0),
+      cjLogisticName: pricing.cjLogisticName || '',
+      cjQuotedDays: pricing.cjQuotedDays || ''
+    });
+  } catch (e) { return res.status(400).json({ error: e.message }); }
   if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
 
-  const order = fulfilShopPurchase(req.db, item, req.user, shipping);
+  const order = fulfilShopPurchase(req.db, item, req.user, shipping, pricing);
   maybePayReferral(req.db, req.user);
   await saveDB(req.db);
   res.json({ order, balance: balanceOf(req.db, req.user.id) });
@@ -1167,7 +1252,11 @@ app.post('/api/payments/webhook',
           if (item && item.stock > 0) {
             let shipping = null;
             try { shipping = JSON.parse(pi.metadata.shipping || 'null'); } catch {}
-            fulfilShopPurchase(db, item, user, shipping);
+            fulfilShopPurchase(db, item, user, shipping, {
+              shippingCostCents: Number(pi.metadata.shippingCostCents || 0) || 0,
+              cjLogisticName: pi.metadata.cjLogisticName || null,
+              cjQuotedDays: pi.metadata.cjQuotedDays || null
+            });
           }
         }
         maybePayReferral(db, user);
@@ -1280,7 +1369,10 @@ app.post('/api/admin/suppliers/:id/import', requireAuth, requireAdmin, async (re
 
   const created = [];
   for (const row of rows.slice(0, 200)) {
-    const priced = dropship.priceItem(row, supplier);
+    // CJ freight is quoted live at checkout. Never bake a manual CJ shipping
+    // estimate into the product markup and then charge live freight again.
+    const pricingRow = supplier.kind === 'cj' ? { ...row, shipping: 0, ship_cost: 0 } : row;
+    const priced = dropship.priceItem(pricingRow, supplier);
     if (!priced) continue;
     const item = {
       id: crypto.randomUUID(), sellerId: req.user.id, sellerName: 'Better Real Estate',
@@ -1288,9 +1380,15 @@ app.post('/api/admin/suppliers/:id/import', requireAuth, requireAdmin, async (re
       price: priced.retailCents, cost: priced.costCents, margin: priced.marginCents,
       stock: priced.stock, location: priced.shipsFrom || 'Ships direct',
       description: priced.description,
-      photos: Array.isArray(row.photos) ? row.photos.filter(p => typeof p === 'string' && p.startsWith('http')) : [],
+      photos: Array.isArray(row.photos) ? row.photos.filter(p => typeof p === 'string' && p.startsWith('http')).slice(0, 6) : [],
       supplierId: supplier.id, supplierSku: priced.sku, dropship: true,
-      shipDays: supplier.shipDays,
+      cjPid: row.cjPid || null,
+      cjVid: row.cjVid || (supplier.kind === 'cj' ? priced.sku : null),
+      cjVariantSku: row.cjVariantSku || null,
+      cjFromCountryCode: row.cjFromCountryCode || null,
+      cjProductSku: row.cjProductSku || null,
+      cjCategoryName: row.cjCategoryName || null,
+      shipDays: row.shipDays || supplier.shipDays,
       active: true, demo: false, createdAt: new Date().toISOString()
     };
     req.db.shopItems.push(item);
@@ -1321,42 +1419,180 @@ app.post('/api/admin/supplier-orders/:id/status', requireAuth, requireAdmin, asy
   res.json({ order: so });
 });
 
-/* ---- CJdropshipping: real automated order placement + status check ---- */
+/* ---- CJdropshipping API 2.0: catalog, freight, order placement + status ---- */
 app.get('/api/admin/cj/status', requireAuth, requireAdmin, async (req, res) => {
-  res.json({ connected: cjAdapter.configured() });
+  res.json({ connected: cjAdapter.configured(), apiVersion: '2.0' });
 });
+
+app.post('/api/admin/cj/test', requireAuth, requireAdmin, async (req, res) => {
+  if (!cjAdapter.configured()) return res.status(400).json({ error: 'Set CJ_API_KEY first.' });
+  await cjAdapter.getAccessToken();
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/cj/products', requireAuth, requireAdmin, async (req, res) => {
+  if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected. Set CJ_API_KEY.' });
+  const result = await cjAdapter.searchProducts({
+    query: String(req.query.q || '').trim(),
+    page: Number(req.query.page || 1),
+    size: Number(req.query.size || 16),
+    countryCode: String(req.query.country || '').trim(),
+    freeShipping: String(req.query.freeShipping || '') === '1'
+  });
+  res.json(result);
+});
+
+app.get('/api/admin/cj/products/:pid', requireAuth, requireAdmin, async (req, res) => {
+  if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected. Set CJ_API_KEY.' });
+  const product = await cjAdapter.getProduct(req.params.pid, String(req.query.country || '').trim());
+  res.json({ product });
+});
+
+app.post('/api/admin/cj/import', requireAuth, requireAdmin, async (req, res) => {
+  if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected. Set CJ_API_KEY.' });
+  const supplier = req.db.suppliers.find(s => s.id === req.body?.supplierId && s.kind === 'cj');
+  if (!supplier) return res.status(404).json({ error: 'CJdropshipping supplier not found. Add a CJ supplier first.' });
+
+  const pid = String(req.body?.pid || '').trim();
+  const vid = String(req.body?.vid || '').trim();
+  if (!pid || !vid) return res.status(400).json({ error: 'CJ product and variant are required.' });
+  if (req.db.shopItems.some(i => i.cjVid === vid && i.active)) {
+    return res.status(409).json({ error: 'That CJ variant is already live in your marketplace.' });
+  }
+
+  const product = await cjAdapter.getProduct(pid);
+  const variant = (product.variants || []).find(v => v.vid === vid);
+  if (!variant) return res.status(404).json({ error: 'CJ variant not found on that product.' });
+  if (!variant.price || variant.price <= 0) return res.status(400).json({ error: 'CJ did not return a valid price for that variant.' });
+  if (!variant.stock || variant.stock < 1) return res.status(400).json({ error: 'That CJ variant is currently out of stock.' });
+
+  await cjAdapter.addToMyProduct(pid);
+
+  const requestedMarkup = Number(req.body?.markupPercent);
+  const markupPercent = Number.isFinite(requestedMarkup) && requestedMarkup >= 0 && requestedMarkup <= 1000
+    ? requestedMarkup : supplier.markupPercent;
+  const customTitle = String(req.body?.title || '').trim();
+  const title = customTitle || variant.name || product.name;
+  const requestedCategory = String(req.body?.category || '');
+  const category = dropship.VALID_CATEGORIES.includes(requestedCategory)
+    ? requestedCategory : dropship.guessCategory(`${title} ${product.categoryName || ''}`);
+  const photos = [...new Set([variant.image, product.image, ...(product.images || [])].filter(Boolean))].slice(0, 6);
+  const descriptionParts = [product.description, variant.option ? `Variant: ${variant.option}` : ''].filter(Boolean);
+
+  const priced = dropship.priceItem({
+    title,
+    category,
+    cost: variant.price,
+    shipping: 0, // CJ freight is quoted live to the buyer at checkout.
+    markupPercent,
+    stock: variant.stock,
+    sku: variant.vid,
+    shipsFrom: variant.fromCountryCode === 'US' ? 'CJ US warehouse' : 'CJ warehouse',
+    description: descriptionParts.join('\n\n')
+  }, supplier);
+  if (!priced) return res.status(400).json({ error: 'Could not price that CJ variant.' });
+
+  const item = {
+    id: crypto.randomUUID(), sellerId: req.user.id, sellerName: 'Better Real Estate',
+    title: priced.title, category: priced.category, condition: 'New in box',
+    price: priced.retailCents, cost: priced.costCents, margin: priced.marginCents,
+    stock: priced.stock, location: priced.shipsFrom || 'Ships direct',
+    description: priced.description, photos,
+    supplierId: supplier.id, supplierSku: variant.vid, dropship: true,
+    cjPid: pid, cjVid: variant.vid, cjVariantSku: variant.sku,
+    cjFromCountryCode: variant.fromCountryCode || 'CN', cjProductSku: product.sku || null,
+    cjCategoryName: product.categoryName || null,
+    shipDays: supplier.shipDays,
+    active: true, demo: false, createdAt: new Date().toISOString()
+  };
+  req.db.shopItems.push(item);
+  await saveDB(req.db);
+  res.json({ item });
+});
+
+async function refreshSupplierOrderFreight(so) {
+  const sh = cjAdapter.normalizeShipping(so.shipping || {});
+  if (!sh.zip) throw new Error('This order has no ZIP code, so CJ freight cannot be quoted.');
+  const options = await cjAdapter.freightOptions({
+    vid: so.cjVid || so.supplierSku,
+    quantity: so.qty || 1,
+    fromCountryCode: so.cjFromCountryCode || 'CN',
+    toCountryCode: sh.countryCode || 'US',
+    zip: sh.zip
+  });
+  if (!options.length) throw new Error('CJ returned no available shipping methods for this order.');
+  const selected = options[0];
+  so.cjLogisticName = selected.logisticName;
+  so.cjQuotedDays = selected.days || null;
+  so.shippingCostCents = Math.round(selected.price * 100);
+  so.costCents = (Number(so.productCostCents ?? so.costCents ?? 0) || 0) + so.shippingCostCents;
+  so.updatedAt = new Date().toISOString();
+  return { selected, options };
+}
+
+app.get('/api/admin/supplier-orders/:id/cj-quote', requireAuth, requireAdmin, async (req, res) => {
+  if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected.' });
+  const so = req.db.supplierOrders.find(o => o.id === req.params.id);
+  if (!so) return res.status(404).json({ error: 'Not found.' });
+  if (so.supplierKind !== 'cj') return res.status(400).json({ error: 'This is not a CJ order.' });
+  const { selected, options } = await refreshSupplierOrderFreight(so);
+  await saveDB(req.db);
+  res.json({ order: so, selected, options: options.slice(0, 8) });
+});
+
 app.post('/api/admin/supplier-orders/:id/send-to-cj', requireAuth, requireAdmin, async (req, res) => {
-  if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected. Set CJ_EMAIL and CJ_API_KEY.' });
+  if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected. Set CJ_API_KEY.' });
   const so = req.db.supplierOrders.find(o => o.id === req.params.id);
   if (!so) return res.status(404).json({ error: 'Not found.' });
   if (so.cjOrderId) return res.status(409).json({ error: 'Already sent to CJ — order ' + so.cjOrderId });
-  try {
-    const result = await cjAdapter.placeOrder(so);
-    so.cjOrderId = result.cjOrderId;
-    so.status = 'ordered';
-    so.updatedAt = new Date().toISOString();
-    await saveDB(req.db);
-    res.json({ order: so });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  if (so.supplierKind !== 'cj') return res.status(400).json({ error: 'This is not a CJ order.' });
+
+  // Re-quote immediately before creating the CJ order so we do not submit a
+  // shipping method that disappeared since the customer checked out.
+  await refreshSupplierOrderFreight(so);
+  const result = await cjAdapter.placeOrder(so);
+  if (!result.cjOrderId) throw new Error('CJ created the request but did not return an order ID. Check the CJ dashboard before retrying.');
+  so.cjOrderId = result.cjOrderId;
+  so.cjPayUrl = result.cjPayUrl || null;
+  so.cjOrderAmountCents = result.orderAmount != null ? Math.round(result.orderAmount * 100) : null;
+  so.cjPostageAmountCents = result.postageAmount != null ? Math.round(result.postageAmount * 100) : null;
+  // Once CJ returns its own order total, use it as the authoritative supplier
+  // cost for margin reporting. This also catches a CJ product-price change that
+  // happened after the item was imported.
+  if (so.cjOrderAmountCents && so.cjOrderAmountCents > 0) {
+    so.costCents = so.cjOrderAmountCents;
+    if (so.cjPostageAmountCents != null) {
+      so.shippingCostCents = so.cjPostageAmountCents;
+      so.productCostCents = Math.max(0, so.cjOrderAmountCents - so.cjPostageAmountCents);
+    }
+  }
+  so.cjRawStatus = result.status || 'CREATED';
+  so.status = 'ordered';
+  so.updatedAt = new Date().toISOString();
+  await saveDB(req.db);
+  res.json({ order: so, payUrl: so.cjPayUrl });
 });
+
 app.post('/api/admin/supplier-orders/:id/check-cj-status', requireAuth, requireAdmin, async (req, res) => {
   if (!cjAdapter.configured()) return res.status(400).json({ error: 'CJdropshipping is not connected.' });
   const so = req.db.supplierOrders.find(o => o.id === req.params.id);
   if (!so) return res.status(404).json({ error: 'Not found.' });
   if (!so.cjOrderId) return res.status(400).json({ error: "Hasn't been sent to CJ yet." });
-  try {
-    const info = await cjAdapter.getOrderStatus(so.cjOrderId);
-    if (!info) return res.json({ order: so, cjStatus: null });
-    const justShipped = !!info.trackingNumber && so.status !== 'shipped';
-    if (info.trackingNumber) { so.tracking = info.trackingNumber; so.status = 'shipped'; }
-    so.cjRawStatus = info.status;
-    so.updatedAt = new Date().toISOString();
-    await saveDB(req.db);
-    if (justShipped && so.buyerEmail) {
-      mailer.sendShippedNotice(so.buyerEmail, so.buyerName, so.title, so.tracking).catch(e => console.error('[mail]', e.message));
-    }
-    res.json({ order: so, cjStatus: info.status });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  const info = await cjAdapter.getOrderStatus(so.cjOrderId);
+  if (!info) return res.json({ order: so, cjStatus: null });
+  const justShipped = !!info.trackingNumber && so.status !== 'shipped';
+  if (info.trackingNumber) { so.tracking = info.trackingNumber; so.status = 'shipped'; }
+  if (info.status === 'DELIVERED') so.status = 'delivered';
+  if (info.status === 'CANCELLED') so.status = 'cancelled';
+  so.cjRawStatus = info.status;
+  so.cjTrackingProvider = info.trackingProvider || so.cjTrackingProvider || null;
+  so.cjTrackingUrl = info.trackingUrl || so.cjTrackingUrl || null;
+  so.updatedAt = new Date().toISOString();
+  await saveDB(req.db);
+  if (justShipped && so.buyerEmail) {
+    mailer.sendShippedNotice(so.buyerEmail, so.buyerName, so.title, so.tracking).catch(e => console.error('[mail]', e.message));
+  }
+  res.json({ order: so, cjStatus: info.status });
 });
 
 // Buyer-facing tracking
