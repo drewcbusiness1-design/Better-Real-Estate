@@ -27,6 +27,29 @@ global.fetch = async (url, options = {}) => {
       }]
     }});
   }
+
+  if (String(url).includes('/product/query?')) {
+    return json({ result: true, data: {
+      pid: 'p-stock', productSku: 'P-STOCK', productNameEn: 'Stock Test Product',
+      bigImage: 'https://img/product.jpg', categoryName: 'Home & Garden',
+      variants: [{
+        vid: 'v-stock', pid: 'p-stock', variantSku: 'V-STOCK', variantNameEn: 'Stock Variant',
+        variantSellPrice: 10, variantImage: 'https://img/variant.jpg',
+        inventories: [{ countryCode: 'CN', totalInventory: 999 }]
+      }]
+    }});
+  }
+  if (String(url).includes('/product/stock/getInventoryByPid')) {
+    return json({ success: true, data: {
+      variantInventories: [{
+        vid: 'v-stock',
+        inventory: [
+          { countryCode: 'US', totalInventory: 17, cjInventory: 17, factoryInventory: 0, verifiedWarehouse: 1 },
+          { countryCode: 'CN', totalInventory: 23, cjInventory: 0, factoryInventory: 23, verifiedWarehouse: 2 }
+        ]
+      }]
+    }});
+  }
   if (String(url).endsWith('/logistic/freightCalculate')) {
     return json({ result: true, data: [
       { logisticName: 'Slow', logisticPrice: 2, taxesFee: 1, clearanceOperationFee: 0.5, logisticAging: '8-12' },
@@ -70,6 +93,18 @@ const cj = require('../cj-adapter');
   assert.equal(normalized.heightMm, 50);
   assert.equal(normalized.stock, 8);
   assert.equal(normalized.fromCountryCode, 'US');
+
+
+  const stockProduct = await cj.getProduct('p-stock');
+  assert.equal(stockProduct.variants.length, 1);
+  assert.equal(stockProduct.variants[0].stock, 40, 'dedicated stock endpoint must override embedded inventory');
+  assert.equal(stockProduct.variants[0].fromCountryCode, 'US');
+  assert.ok(calls.some(c => c.url.includes('/product/stock/getInventoryByPid?pid=p-stock')), 'must refresh inventory by PID');
+
+  const usOnly = await cj.getProduct('p-stock', 'US');
+  assert.equal(usOnly.variants[0].stock, 17, 'US warehouse filter must exclude CN stock');
+  assert.equal(usOnly.variants[0].inventories.length, 1);
+  assert.equal(usOnly.variants[0].inventories[0].countryCode, 'US');
 
   const freight = await cj.freightOptions({ vid: 'v1', fromCountryCode: 'CN', toCountryCode: 'US', zip: '08520' });
   assert.equal(freight[0].logisticName, 'Slow');

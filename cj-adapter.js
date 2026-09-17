@@ -95,13 +95,25 @@ function cleanHtml(value = '') {
     .trim();
 }
 
+function normalizeInventoryRows(rows) {
+  return (Array.isArray(rows) ? rows : []).map(r => ({
+    countryCode: String(r?.countryCode || '').toUpperCase(),
+    totalInventory: Math.max(0, Number(
+      r?.totalInventory ?? r?.totalInventoryNum ?? r?.storageNum ??
+      r?.cjInventory ?? r?.cjInventoryNum ?? r?.factoryInventory ?? r?.factoryInventoryNum ?? 0
+    ) || 0),
+    verifiedWarehouse: Number(r?.verifiedWarehouse || 0) || null
+  })).filter(r => r.countryCode || r.totalInventory > 0);
+}
+
 function parseInventory(variant) {
-  const rows = Array.isArray(variant?.inventories) ? variant.inventories : [];
-  return rows.map(r => ({
-    countryCode: String(r.countryCode || '').toUpperCase(),
-    totalInventory: Math.max(0, Number(r.totalInventory ?? r.cjInventory ?? r.factoryInventory ?? 0) || 0),
-    verifiedWarehouse: Number(r.verifiedWarehouse || 0) || null
-  }));
+  // Product Details currently returns `inventories`; CJ's dedicated stock APIs
+  // use `inventory` and slightly different quantity field names. Accept both so
+  // inventory does not silently normalize to zero when CJ changes response shape.
+  const rows = Array.isArray(variant?.inventories)
+    ? variant.inventories
+    : (Array.isArray(variant?.inventory) ? variant.inventory : []);
+  return normalizeInventoryRows(rows);
 }
 
 function normalizeVariant(v, product) {
@@ -186,10 +198,58 @@ async function searchProducts({ query = '', page = 1, size = 16, countryCode = '
 
 async function getProduct(pid, countryCode = '') {
   if (!pid) throw new Error('CJ product ID is required.');
+  const wantedCountry = String(countryCode || '').toUpperCase().slice(0, 2);
   const qs = new URLSearchParams({ pid: String(pid) });
-  if (countryCode) qs.set('countryCode', String(countryCode).toUpperCase().slice(0, 2));
+  if (wantedCountry) qs.set('countryCode', wantedCountry);
   const data = await cjCall(`/product/query?${qs.toString()}`);
-  return normalizeProduct(data || {}, true);
+  const product = normalizeProduct(data || {}, true);
+
+  // Treat CJ's dedicated inventory-by-PID endpoint as the authoritative stock
+  // source. Product Details can omit inventories or return stale/partial rows.
+  // Always merge fresh inventory by VID when variants exist.
+  if ((product.variants || []).length > 0) {
+    try {
+      const stockData = await cjCall(`/product/stock/getInventoryByPid?pid=${encodeURIComponent(String(pid))}`);
+      const byVid = new Map(
+        (Array.isArray(stockData?.variantInventories) ? stockData.variantInventories : [])
+          .filter(row => row?.vid)
+          .map(row => [String(row.vid), normalizeInventoryRows(row.inventory)])
+      );
+
+      product.variants = product.variants.map(v => {
+        const freshRows = byVid.has(String(v.vid)) ? byVid.get(String(v.vid)) : null;
+        // If CJ returned this VID, fresh inventory replaces embedded inventory.
+        // If the caller selected a country, stock must be limited to that country.
+        let inventories = freshRows !== null ? freshRows : (v.inventories || []);
+        if (wantedCountry) inventories = inventories.filter(r => r.countryCode === wantedCountry);
+        const stock = inventories.reduce((sum, row) => sum + row.totalInventory, 0);
+        const preferred = inventories.find(r => r.countryCode === 'US' && r.totalInventory > 0)
+          || inventories.find(r => r.countryCode === 'CN' && r.totalInventory > 0)
+          || inventories.find(r => r.totalInventory > 0)
+          || null;
+        return {
+          ...v,
+          inventories,
+          stock,
+          fromCountryCode: preferred?.countryCode || (wantedCountry || v.fromCountryCode || 'CN')
+        };
+      });
+    } catch (err) {
+      // Product detail is still useful if CJ's stock endpoint is temporarily down.
+      // Still enforce the selected-country filter on embedded inventory so a US
+      // filter can never show CN-only stock as available.
+      if (wantedCountry) {
+        product.variants = product.variants.map(v => {
+          const inventories = (v.inventories || []).filter(r => r.countryCode === wantedCountry);
+          const stock = inventories.reduce((sum, row) => sum + row.totalInventory, 0);
+          return { ...v, inventories, stock, fromCountryCode: wantedCountry };
+        });
+      }
+      console.warn('[cj] inventory refresh failed:', err.message);
+    }
+  }
+
+  return product;
 }
 
 async function addToMyProduct(pid) {
