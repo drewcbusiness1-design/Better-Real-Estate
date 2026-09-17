@@ -12,6 +12,8 @@ const dropship = require('./dropship');
 const cjAdapter = require('./cj-adapter');
 const policy = require('./policy');
 const payments = require('./payments');
+const ai = require('./ai');
+const marketing = require('./marketing');
 const app = express();
 
 /* Every app.get/post/patch/delete below is an async function. Express 4
@@ -72,7 +74,11 @@ app.use(cookieSession({
   maxAge: 30 * 24 * 60 * 60 * 1000
 }));
 
-const publicUser = u => { if (!u) return null; const { passwordHash, ...r } = u; return r; };
+const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, ...r } = u; return r; };
+const publicProfileUser = u => u ? ({
+  id: u.id, name: u.name, role: u.role, bio: u.bio || '', avatarUrl: u.avatarUrl || null,
+  points: Number(u.points || 0), verified: !!u.verified, createdAt: u.createdAt || null
+}) : null;
 async function requireAuth(req, res, next) {
   const db = await loadDB();
   const user = db.users.find(u => u.id === req.session.userId);
@@ -178,7 +184,7 @@ function getBuyBoxes(user) {
 
 /* ============================ AUTH ============================ */
 app.post('/api/signup', async (req, res) => {
-  const { name, email, password, role, referralCode } = req.body || {};
+  const { name, email, password, role, referralCode, marketingOptIn } = req.body || {};
   if (!name || !email || !password || !role) return res.status(400).json({ error: 'All fields are required.' });
   if (!policy.SIGNUP_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role.' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
@@ -199,6 +205,9 @@ app.post('/api/signup', async (req, res) => {
     verified: false,
     paymentMethods: [], payoutMethod: null,
     emailVerified: false,
+    marketingOptIn: marketingOptIn === true,
+    marketingConsentAt: marketingOptIn === true ? new Date().toISOString() : null,
+    marketingUnsubscribedAt: null, marketingLastSentAt: null, marketingSequence: 0,
     referralCode: crypto.randomBytes(3).toString('hex').toUpperCase(),
     referredBy: referrer ? referrer.id : null, referralPaid: false,
     createdAt: new Date().toISOString()
@@ -237,6 +246,22 @@ app.get('/api/me', async (req, res) => {
   });
 });
 app.get('/api/pricing', async (req, res) => res.json({ pricing: PRICING }));
+
+
+async function unsubscribeMarketing(req, res) {
+  const id = marketing.verifyToken(req.query?.token || req.body?.token);
+  if (!id) return res.status(400).type('html').send('<!doctype html><meta charset="utf-8"><title>Invalid link</title><p>This unsubscribe link is invalid or expired.</p>');
+  const db = await loadDB();
+  const user = db.users.find(u => u.id === id);
+  if (!user) return res.status(404).type('html').send('<!doctype html><meta charset="utf-8"><title>Not found</title><p>This account could not be found.</p>');
+  user.marketingOptIn = false;
+  user.marketingUnsubscribedAt = new Date().toISOString();
+  await saveDB(db);
+  if (req.method === 'POST') return res.status(200).send('ok');
+  return res.type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Unsubscribed</title><body style="font-family:system-ui;background:#faf9f6;color:#14181c;padding:40px"><main style="max-width:560px;margin:auto;background:white;border:1px solid #ddd8ce;border-radius:14px;padding:28px"><h1 style="font-size:24px">You’re unsubscribed</h1><p>You won’t receive Better Real Estate marketing emails unless you turn them back on in Settings. Transactional messages such as password resets, receipts and order updates are unaffected.</p><a href="${String(process.env.APP_URL || '/').replace(/\/$/, '')}/?view=settings">Open email preferences</a></main></body>`);
+}
+app.get('/api/marketing/unsubscribe', unsubscribeMarketing);
+app.post('/api/marketing/unsubscribe', unsubscribeMarketing);
 
 
 /* ============ EMAIL VERIFICATION & PASSWORD RESET ============ */
@@ -299,7 +324,7 @@ app.post('/api/reset-password', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/site/status', async (req, res) => res.json({ mailConfigured: mailer.configured() }));
+app.get('/api/site/status', async (req, res) => res.json({ mailConfigured: mailer.configured(), aiConfigured: ai.configured(), marketingConfigured: marketing.configured() }));
 
 /* ============================ PROFILE ============================ */
 app.patch('/api/me', requireAuth, async (req, res) => {
@@ -313,6 +338,22 @@ app.patch('/api/me', requireAuth, async (req, res) => {
 app.patch('/api/me/settings', requireAuth, async (req, res) => {
   req.user.settings = { ...defaultSettings(), ...req.user.settings, ...(req.body || {}) };
   await saveDB(req.db); res.json({ settings: req.user.settings });
+});
+
+app.get('/api/email-preferences', requireAuth, async (req, res) => {
+  res.json({ marketingOptIn: req.user.marketingOptIn === true, marketingConfigured: marketing.configured() });
+});
+app.patch('/api/email-preferences', requireAuth, async (req, res) => {
+  const optIn = req.body?.marketingOptIn === true;
+  req.user.marketingOptIn = optIn;
+  if (optIn) {
+    req.user.marketingConsentAt = new Date().toISOString();
+    req.user.marketingUnsubscribedAt = null;
+  } else {
+    req.user.marketingUnsubscribedAt = new Date().toISOString();
+  }
+  await saveDB(req.db);
+  res.json({ marketingOptIn: req.user.marketingOptIn });
 });
 app.patch('/api/me/buybox', requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -605,7 +646,7 @@ app.get('/api/listings/:id', async (req, res) => {
     .map(l => ({ id: l.id, address: gated.locked ? 'Address hidden' : l.address, asking: l.asking, photos: l.photos }));
   res.json({
     listing: gated,
-    owner: owner ? { ...publicUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone } : null,
+    owner: owner ? { ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone } : null,
     otherListings: others,
     unlockCredits: viewer ? viewer.unlockCredits : 0,
     access: viewer ? { pro: isPro(viewer), platinum: isPlatinum(viewer), trial: inTrial(viewer), full: hasFullAccess(viewer) } : null,
@@ -645,7 +686,7 @@ app.get('/api/users/:id/listings', async (req, res) => {
   if (!owner) return res.status(404).json({ error: 'User not found.' });
   const viewer = db.users.find(u => u.id === req.session.userId);
   res.json({
-    owner: publicUser(owner),
+    owner: publicProfileUser(owner),
     listings: db.listings.filter(l => l.ownerId === owner.id).map(l => gateListing(l, viewer, db)),
     followerCount: db.follows.filter(f => f.followingId === owner.id).length,
     reviews: db.reviews.filter(r => r.aboutUserId === owner.id)
@@ -951,6 +992,36 @@ app.post('/api/address/details', requireAuth, async (req, res) => {
 
 /* ============================ SHOP / MARKETPLACE ============================ */
 const SHOP_CATEGORIES = ['Appliances','HVAC','Plumbing','Electrical','Flooring','Doors & Windows','Lighting','Cabinets & Counters','Roofing','Tools','Fixtures','Other'];
+
+
+app.get('/api/ai/status', requireAuth, async (req, res) => {
+  res.json({ configured: ai.configured(), available: req.user.role === 'admin' || isPlatinum(req.user), model: ai.configured() ? ai.model() : null });
+});
+app.post('/api/ai/listing-copy', requireAuth, async (req, res) => {
+  const kind = ['shop','property','cj'].includes(req.body?.kind) ? req.body.kind : 'shop';
+  const isAdmin = req.user.role === 'admin' && policy.isAdminEmail(req.user.email);
+  if (kind === 'cj' && !isAdmin) return res.status(403).json({ error: 'Admin only.' });
+  if (!isAdmin && !isPlatinum(req.user)) return res.status(403).json({ error: 'AI listing assistance is a Platinum feature.' });
+  if (!ai.configured()) return res.status(503).json({ error: 'AI listing assistance is not configured yet.' });
+
+  const day = new Date().toISOString().slice(0, 10);
+  if (req.user.aiUsageDay !== day) { req.user.aiUsageDay = day; req.user.aiUsageCount = 0; }
+  const limit = isAdmin ? 200 : 30;
+  if (Number(req.user.aiUsageCount || 0) >= limit) return res.status(429).json({ error: 'Daily AI listing limit reached. Try again tomorrow.' });
+  req.user.aiUsageCount = Number(req.user.aiUsageCount || 0) + 1;
+  await saveDB(req.db);
+
+  const facts = req.body?.facts && typeof req.body.facts === 'object' ? req.body.facts : {};
+  const images = Array.isArray(req.body?.images) ? req.body.images.slice(0, 3) : [];
+  try {
+    const draft = await ai.generateListingCopy({ kind, facts, images, allowedCategories: kind === 'property' ? [] : SHOP_CATEGORIES });
+    if (draft.categorySuggestion && !SHOP_CATEGORIES.includes(draft.categorySuggestion) && kind !== 'property') draft.categorySuggestion = '';
+    res.json({ draft, remainingToday: Math.max(0, limit - req.user.aiUsageCount) });
+  } catch (e) {
+    console.error('[ai listing]', e.message);
+    res.status(502).json({ error: 'AI listing assistance is temporarily unavailable. ' + e.message });
+  }
+});
 function customerSafeSupplierText(value) {
   return String(value || '')
     .replace(/https?:\/\/(?:www\.)?cjdropshipping\.com\S*/gi, '')

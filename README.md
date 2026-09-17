@@ -160,3 +160,19 @@ Every integration point is marked `TODO(stripe)` in `server.js`:
 Signed-in marketplace sellers can open **Shop → My shop listings** (or Profile → My shop listings) to edit their own items after publishing. They can update title, category, condition, price, quantity, location, description, photos, publish/unpublish, or remove a listing. Photo order can be changed from the edit screen.
 
 Admins see **Manage shop listings** and can manage every marketplace item. Admin dropship/CJ rows additionally show private supplier cost and product spread; those internal values are not returned by the public marketplace API. Deleted items are soft-deleted so completed order and payout history keeps a stable item reference.
+
+## v11: AI listing assistant + opt-in engagement email
+
+Two optional systems are included and stay disabled until their server-side keys/settings are present.
+
+**AI listing assistant**
+- Set `OPENAI_API_KEY` in Netlify. `OPENAI_MODEL` defaults to `gpt-5.6-luna`.
+- Admin CJ reviews automatically request a cleaned title/description when AI is configured. Supplier identifiers are explicitly excluded from the prompt/output rules.
+- Platinum users get AI drafting on Shop listings, Shop edits, and property-post notes. The server re-checks Platinum/admin access and applies a daily request cap.
+- Up to three listing photos can be sent for context. AI drafts are never automatically published for regular users.
+
+**Engagement email**
+- Marketing consent is opt-in at signup and can be changed in Settings at any time.
+- The Netlify scheduled function `marketing-cron` runs daily and only emails a user if at least 48 hours have passed since the last marketing message.
+- Set `MARKETING_EMAILS_ENABLED=true` and `MARKETING_POSTAL_ADDRESS` before enabling sends. The postal address is included in every marketing footer.
+- Every marketing message has unsubscribe and email-preferences links. Transactional email remains separate.

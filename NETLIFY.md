@@ -143,3 +143,14 @@ Then, by hand:
 ## Scaling notes
 
 `loadDB()` reads all rows per request. That's fine into the low thousands and is a huge improvement over a rewritten JSON file, but it's not the end state. When the feed slows down, convert the hot paths (`GET /api/feed`, `GET /api/shop/items`) to targeted SQL. The tables are ordinary Postgres with JSONB columns and indexes already on email, owner, token and listing lookups — you can query them directly without migrating anything.
+
+## v11 optional environment variables
+
+```text
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-5.6-luna
+MARKETING_EMAILS_ENABLED=true
+MARKETING_POSTAL_ADDRESS=Your valid business mailing address
+```
+
+`marketing-cron` is configured in `netlify.toml` for `0 15 * * *` UTC. It runs daily but the application enforces a minimum 48-hour gap per opted-in user. Scheduled Functions only run automatically on published deploys.

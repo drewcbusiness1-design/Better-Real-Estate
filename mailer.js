@@ -44,11 +44,32 @@ function shell(title, bodyHtml) {
   </div>
 </div>`;
 }
+
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function marketingShell(title, bodyHtml, { unsubscribeUrl, preferencesUrl, postalAddress }) {
+  return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#FAF9F6;padding:32px 16px">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #DBD7CD;border-radius:14px;overflow:hidden">
+    <div style="background:#12222D;padding:20px 24px;color:#fff;font-size:18px;font-weight:600">${APP_NAME}</div>
+    <div style="padding:26px 24px;color:#14181C;font-size:15px;line-height:1.6">
+      <h2 style="margin:0 0 12px;font-size:20px">${esc(title)}</h2>
+      ${bodyHtml}
+    </div>
+    <div style="padding:16px 24px;border-top:1px solid #DBD7CD;color:#5A6168;font-size:11.5px;line-height:1.55;text-align:center">
+      <div>${esc(APP_NAME)} · ${esc(postalAddress)}</div>
+      <div style="margin-top:6px"><a href="${esc(preferencesUrl)}" style="color:#1F3B4D">Email preferences</a> · <a href="${esc(unsubscribeUrl)}" style="color:#1F3B4D">Unsubscribe</a></div>
+    </div>
+  </div>
+</div>`;
+}
+
 const button = (url, label) =>
   `<p style="margin:22px 0"><a href="${url}" style="background:#12222D;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;display:inline-block;font-weight:600">${label}</a></p>
    <p style="font-size:12.5px;color:#40474F">Or paste this link into your browser:<br><span style="word-break:break-all">${url}</span></p>`;
 
-async function send(to, subject, html, text) {
+async function send(to, subject, html, text, extra = {}) {
   if (!RESEND_KEY) {
     console.log('\n──────── EMAIL (not sent — RESEND_API_KEY not set) ────────');
     console.log('To:', to, '\nSubject:', subject);
@@ -59,7 +80,7 @@ async function send(to, subject, html, text) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: FROM, to: [to], subject, html, text, reply_to: REPLY_TO })
+    body: JSON.stringify({ from: FROM, to: [to], subject, html, text, reply_to: REPLY_TO, ...(extra.headers ? { headers: extra.headers } : {}) })
   });
   if (!res.ok) {
     const body = await res.text();
@@ -122,3 +143,16 @@ exports.sendMatchAlert = (to, name, listing) =>
     `New match: ${listing.address}, ${listing.city}, $${listing.asking}. ${APP_URL}`);
 
 exports.configured = () => !!RESEND_KEY;
+
+
+exports.sendMarketing = (to, name, { subject, headline, body, ctaLabel, ctaUrl, unsubscribeUrl, preferencesUrl, postalAddress }) => {
+  const safeName = esc(name || 'there');
+  const safeBody = esc(body || '');
+  const safeCta = esc(ctaLabel || 'Open Better Real Estate');
+  const safeUrl = esc(ctaUrl || APP_URL);
+  const html = marketingShell(headline || 'See what is new',
+    `<p>Hi ${safeName},</p><p>${safeBody}</p><p style="margin:22px 0"><a href="${safeUrl}" style="background:#12222D;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;display:inline-block;font-weight:600">${safeCta}</a></p>`,
+    { unsubscribeUrl, preferencesUrl, postalAddress });
+  const text = `${headline || 'See what is new'}\n\nHi ${name || 'there'},\n\n${body || ''}\n\n${ctaLabel || 'Open Better Real Estate'}: ${ctaUrl || APP_URL}\n\nEmail preferences: ${preferencesUrl}\nUnsubscribe: ${unsubscribeUrl}\n${APP_NAME} · ${postalAddress}`;
+  return send(to, subject || `What is new on ${APP_NAME}`, html, text, { headers: { 'List-Unsubscribe': `<${unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } });
+};

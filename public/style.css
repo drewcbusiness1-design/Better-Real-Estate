@@ -495,3 +495,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .editpv .pvmove{top:auto!important;bottom:3px!important;width:20px!important;height:20px!important;font-size:15px!important;}
 .editpv .pvleft{left:3px!important;right:auto!important;}
 .editpv .pvright{right:3px!important;}
+
+/* v11 — AI assistant + marketing consent */
+.aibox{margin:14px 0;padding:14px 15px;border:1px solid var(--line,#DBD7CD);border-radius:12px;background:var(--card,#fff);display:flex;flex-direction:column;gap:8px}
+.aibox .btn-ghost{align-self:flex-start}
+.marketingopt{display:flex!important;align-items:flex-start;gap:9px;margin:12px 0 4px!important;font-size:13px;line-height:1.4;color:var(--muted,#40474F);font-weight:400!important}
+.marketingopt input{margin-top:2px!important;flex:0 0 auto}

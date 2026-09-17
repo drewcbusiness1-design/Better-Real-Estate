@@ -189,3 +189,19 @@ Then by hand:
 ## Scaling note
 
 `loadDB()` reads all rows per request. Fine into the low thousands. When the feed slows, convert `GET /api/feed` and `GET /api/shop/items` to targeted SQL — the tables are ordinary Postgres with JSONB columns and indexes already on email, owner, token and listing lookups, so nothing needs migrating.
+
+## AI + marketing setup (v11)
+
+### AI listing assistant
+1. Create an OpenAI API key for this site/project.
+2. Add `OPENAI_API_KEY` in Netlify → Environment variables.
+3. Optional: set `OPENAI_MODEL`. If omitted, the app uses `gpt-5.6-luna`.
+4. Keep the key server-side. It must never be added to `public/app.js`.
+
+### Opt-in marketing email
+1. Use the same verified Resend sender already configured for transactional mail.
+2. Add a valid business postal address as `MARKETING_POSTAL_ADDRESS`.
+3. Set `MARKETING_EMAILS_ENABLED=true` only when you are ready to send.
+4. Deploy the published branch. Netlify will show `marketing-cron` as a Scheduled function.
+5. New users are **not** enrolled unless they check the marketing box. Existing users remain opted out until they turn it on in Settings.
+6. Test unsubscribe from a real marketing email before relying on the automation.

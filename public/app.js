@@ -66,6 +66,7 @@ async function boot() {
   state.verifyToken = params.get('verify');
   state.resetToken = params.get('reset');
   const checkoutResult = params.get('checkout');
+  const requestedView = params.get('view');
   try {
     const d = await api('GET', '/api/me');
     state.user = d.user; state.pricing = d.pricing; state.access = d.access;
@@ -88,7 +89,10 @@ async function boot() {
   }
   if (state.verifyToken) state.view = 'verify';
   else if (state.resetToken) state.view = 'reset';
-  else if (state.user) state.view = 'feed';
+  else if (state.user) {
+    const allowedDeepLinks = new Set(['feed','shop','shopmanage','orders','settings','me','saved','messages','workspace','upgrade']);
+    state.view = allowedDeepLinks.has(requestedView) ? requestedView : 'feed';
+  }
   render();
 }
 async function refreshMe() {
@@ -222,6 +226,7 @@ function renderAuth() {
   const email = el('input', { type: 'email', placeholder: 'you@email.com' });
   const pass = el('input', { type: 'password', placeholder: isSignup ? 'At least 6 characters' : 'Your password' });
   const ref = el('input', { placeholder: 'Optional' });
+  const marketingOpt = el('input', { type: 'checkbox', style: 'width:auto;margin:0' });
   const err = el('div', { class: 'errmsg' });
 
   if (isSignup) {
@@ -238,7 +243,11 @@ function renderAuth() {
   }
   wrap.appendChild(el('label', {}, 'Email')); wrap.appendChild(email);
   wrap.appendChild(el('label', {}, 'Password')); wrap.appendChild(pass);
-  if (isSignup) { wrap.appendChild(el('label', {}, 'Referral code')); wrap.appendChild(ref); }
+  if (isSignup) {
+    wrap.appendChild(el('label', {}, 'Referral code')); wrap.appendChild(ref);
+    const marketingRow = el('label', { class: 'marketingopt' }, [marketingOpt, el('span', {}, 'Email me new listings, marketplace updates and occasional activity reminders. I can unsubscribe anytime.')]);
+    wrap.appendChild(marketingRow);
+  }
   wrap.appendChild(err);
 
   const submit = el('button', { class: 'submitbtn' }, isSignup ? 'Create account' : 'Sign in');
@@ -246,7 +255,7 @@ function renderAuth() {
     err.textContent = '';
     try {
       const payload = isSignup
-        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role, referralCode: ref.value.trim() }
+        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role, referralCode: ref.value.trim(), marketingOptIn: marketingOpt.checked }
         : { email: email.value.trim(), password: pass.value };
       const d = await api('POST', isSignup ? '/api/signup' : '/api/login', payload);
       state.user = d.user; if (d.pricing) state.pricing = d.pricing;
@@ -682,6 +691,7 @@ function renderUpgrade() {
         'Up to 5 buy boxes running at once',
         'Seller verification included free (normally ' + cents(p.verificationFee) + ')',
         'One free Super Boost every month (normally ' + cents(p.promotions.superboost.price) + ')',
+        'AI listing assistant — titles, descriptions and photo-aware drafts',
         'Marketplace fee cut to ' + (p.platinumFeeBps / 100) + '% (from ' + (p.marketplaceFeeBps / 100) + '%)',
         'Investor workspace — compare saved properties, keep deal notes'
       ],
@@ -1160,7 +1170,10 @@ async function renderShopItem() {
 }
 
 async function renderSellItem() {
-  const { sellableCategories, bannedCategories, feeBps } = await api('GET', '/api/shop/categories');
+  const [{ sellableCategories, bannedCategories, feeBps }, aiStatus] = await Promise.all([
+    api('GET', '/api/shop/categories'),
+    api('GET', '/api/ai/status').catch(() => ({ configured: false, available: false }))
+  ]);
   const categories = sellableCategories;
   const wrap = el('div', { class: 'panel' });
   wrap.appendChild(el('h2', {}, 'Sell an item'));
@@ -1200,6 +1213,29 @@ async function renderSellItem() {
   wrap.appendChild(twoUp('Price ($)', price, 'Quantity', stock));
   wrap.appendChild(el('label', {}, 'Location')); wrap.appendChild(loc);
   wrap.appendChild(el('label', {}, 'Description')); wrap.appendChild(desc);
+
+  const aiMsg = el('div', { class: 'hint' });
+  if (aiStatus.available && aiStatus.configured) {
+    const aiBtn = el('button', { class: 'btn-ghost', type: 'button' }, '✨ Write listing with AI');
+    aiBtn.onclick = async () => {
+      aiBtn.disabled = true; aiBtn.textContent = 'Writing…'; aiMsg.textContent = '';
+      try {
+        const r = await api('POST', '/api/ai/listing-copy', {
+          kind: 'shop',
+          facts: { title: title.value, category: cat.value, condition: cond.value, price: price.value, quantity: stock.value, location: loc.value, description: desc.value },
+          images: state.shopPhotos.slice(0, 3)
+        });
+        if (r.draft.title) title.value = r.draft.title;
+        if (r.draft.description) desc.value = r.draft.description;
+        if (r.draft.categorySuggestion && [...cat.options].some(o => o.value === r.draft.categorySuggestion)) cat.value = r.draft.categorySuggestion;
+        aiMsg.textContent = r.draft.warnings?.length ? `AI draft applied. Review before posting. ${r.draft.warnings.join(' ')}` : 'AI draft applied. Review the facts before posting.';
+      } catch (e) { aiMsg.textContent = e.message; }
+      finally { aiBtn.disabled = false; aiBtn.textContent = '✨ Rewrite with AI'; }
+    };
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'Platinum AI Listing Assistant'), el('div', { class: 'hint' }, 'Uses your entered facts and up to three photos. It is instructed not to invent product details.'), aiBtn, aiMsg]));
+  } else if (!state.access?.platinum && state.user?.role !== 'admin') {
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI listing writing — Platinum'), el('div', { class: 'hint' }, 'Generate a polished title and description from your details and photos.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See Platinum')]));
+  }
 
   const err = el('div', { class: 'errmsg' });
   const sb = el('button', { class: 'submitbtn' }, 'List item');
@@ -1296,9 +1332,10 @@ async function renderShopEdit() {
     wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Listing not selected'), el('p', {}, 'Open Shop listings and choose Edit.') ]));
     return wrap;
   }
-  const [{ item }, cats] = await Promise.all([
+  const [{ item }, cats, aiStatus] = await Promise.all([
     api('GET', `/api/shop/manage/${encodeURIComponent(state.shopEditId)}`),
-    api('GET', '/api/shop/categories')
+    api('GET', '/api/shop/categories'),
+    api('GET', '/api/ai/status').catch(() => ({ configured: false, available: false }))
   ]);
   const admin = state.user?.role === 'admin';
   const categories = admin ? cats.categories : cats.sellableCategories;
@@ -1356,6 +1393,27 @@ async function renderShopEdit() {
     el('label', {}, 'Location / shipping origin'), loc,
     el('label', {}, 'Description'), desc
   ]));
+
+  if (aiStatus.available && aiStatus.configured) {
+    const aiMsg = el('div', { class: 'hint' });
+    const aiBtn = el('button', { class: 'btn-ghost', type: 'button' }, '✨ Improve with AI');
+    aiBtn.onclick = async () => {
+      aiBtn.disabled = true; aiBtn.textContent = 'Writing…'; aiMsg.textContent = '';
+      try {
+        const r = await api('POST', '/api/ai/listing-copy', {
+          kind: item.dropship && admin ? 'cj' : 'shop',
+          facts: { title: title.value, category: cat.value, condition: cond.value, price: price.value, quantity: stock.value, location: loc.value, description: desc.value, variant: item.cjVariantOption || null, weightGrams: item.cjWeightGrams || null, dimensionsMm: item.cjLengthMm && item.cjWidthMm && item.cjHeightMm ? [item.cjLengthMm,item.cjWidthMm,item.cjHeightMm] : null },
+          images: state.shopEditPhotos.slice(0, 3)
+        });
+        if (r.draft.title) title.value = r.draft.title;
+        if (r.draft.description) desc.value = r.draft.description;
+        if (r.draft.categorySuggestion && [...cat.options].some(o => o.value === r.draft.categorySuggestion)) cat.value = r.draft.categorySuggestion;
+        aiMsg.textContent = r.draft.warnings?.length ? `Review before saving. ${r.draft.warnings.join(' ')}` : 'AI draft applied. Review before saving.';
+      } catch (e) { aiMsg.textContent = e.message; }
+      finally { aiBtn.disabled = false; aiBtn.textContent = '✨ Improve with AI'; }
+    };
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, admin ? 'AI listing assistant' : 'Platinum AI Listing Assistant'), aiBtn, aiMsg]));
+  }
 
   const status = el('div', { class: 'errmsg' });
   const actionRow = el('div', { class: 'editactions' });
@@ -1545,7 +1603,7 @@ async function renderOffers() {
 }
 
 /* ================= COMPOSE ================= */
-function renderCompose() {
+async function renderCompose() {
   const wrap = el('div', { class: 'panel' });
   wrap.appendChild(el('h2', {}, 'Post a property'));
   wrap.appendChild(el('div', { class: 'sub' }, 'Appears in the feed immediately, ranked for the buyers it fits.'));
@@ -1592,6 +1650,26 @@ function renderCompose() {
   wrap.appendChild(el('label', {}, 'Seller timeline')); wrap.appendChild(f.timeline);
   wrap.appendChild(el('label', {}, 'Video walkthrough')); wrap.appendChild(f.videoUrl);
   wrap.appendChild(el('label', {}, 'Notes')); wrap.appendChild(f.notes);
+  if (state.access?.platinum || state.user?.role === 'admin') {
+    const aiMsg = el('div', { class: 'hint' });
+    const aiBtn = el('button', { class: 'btn-ghost', type: 'button' }, '✨ Draft property notes with AI');
+    aiBtn.onclick = async () => {
+      aiBtn.disabled = true; aiBtn.textContent = 'Writing…'; aiMsg.textContent = '';
+      try {
+        const r = await api('POST', '/api/ai/listing-copy', {
+          kind: 'property',
+          facts: { city: f.city.value, propertyType: f.propertyType.value, situation: f.situation.value, asking: f.asking.value, arv: f.arv.value, rehab: f.rehab.value, beds: f.beds.value, baths: f.baths.value, sqft: f.sqft.value, yearBuilt: f.year.value, timeline: f.timeline.value, existingNotes: f.notes.value },
+          images: state.composePhotos.slice(0, 3)
+        });
+        if (r.draft.description) f.notes.value = r.draft.description;
+        aiMsg.textContent = r.draft.warnings?.length ? `Draft applied. ${r.draft.warnings.join(' ')}` : 'Draft applied. Review it before posting.';
+      } catch (e) { aiMsg.textContent = e.message; }
+      finally { aiBtn.disabled = false; aiBtn.textContent = '✨ Rewrite property notes with AI'; }
+    };
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'Platinum AI Property Assistant'), el('div', { class: 'hint' }, 'Uses property facts and photos, with fair-housing-safe instructions. Exact street address is not sent to the AI.'), aiBtn, aiMsg]));
+  } else {
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI property writing — Platinum'), el('div', { class: 'hint' }, 'Turn your property facts and photos into clean listing notes.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See Platinum')]));
+  }
   const err = el('div', { class: 'errmsg' });
   const submit = el('button', { class: 'submitbtn' }, 'Post to feed');
   submit.onclick = async () => {
@@ -1737,7 +1815,7 @@ async function renderMe() {
 }
 
 async function renderProfile() {
-  const { owner, listings, followerCount, reviews } = await api('GET', '/api/users/' + state.profileId);
+  const { owner, listings, followerCount, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
   wrap.appendChild(el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]));
@@ -1846,7 +1924,7 @@ function renderBuyBox() {
   return wrap;
 }
 
-function renderSettings() {
+async function renderSettings() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Settings'));
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Profile'));
@@ -1888,6 +1966,17 @@ function renderSettings() {
     const { settings } = await api('PATCH', '/api/me/settings', { notifyOnMatch: on }); state.user.settings = settings;
   }));
   wrap.appendChild(sbox);
+
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Email preferences'));
+  const ep = await api('GET', '/api/email-preferences').catch(() => ({ marketingOptIn: false, marketingConfigured: false }));
+  const ebox = el('div', { class: 'card' });
+  ebox.appendChild(toggleRow('Product & activity emails', 'New listings, marketplace updates and occasional reminders. Never more than once every 48 hours. Transactional emails such as receipts and password resets are separate.', ep.marketingOptIn === true, async on => {
+    const r = await api('PATCH', '/api/email-preferences', { marketingOptIn: on });
+    ep.marketingOptIn = r.marketingOptIn;
+    toast(on ? 'Marketing emails turned on' : 'Marketing emails turned off', 'ok');
+  }));
+  ebox.appendChild(el('div', { class: 'hint', style: 'padding:0 16px 14px' }, 'You can also unsubscribe from the link in any marketing email.'));
+  wrap.appendChild(ebox);
 
   wrap.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%;margin-top:20px', onclick: async () => {
     await api('POST', '/api/logout'); state.user = null; go('home');
@@ -2030,6 +2119,8 @@ function pageTerms() {
       el('a', { href: 'https://policies.google.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Google Privacy Policy'),
       '. You remain responsible for reviewing the selected address before placing an order.'
     ])],
+    ['5b. AI-assisted listing tools', 'Some paid features use an AI service to draft or improve listing titles, descriptions and property notes from information and photos you choose to provide. AI output is a draft, may be incomplete or inaccurate, and must be reviewed before publishing. You remain responsible for the truth, legality and fair-housing compliance of anything you post. Do not use AI tools to create discriminatory housing content or to infer sensitive personal characteristics.'],
+    ['5c. Marketing emails', 'Marketing emails are optional. You may opt in at signup or in Settings and may opt out at any time through Settings or the unsubscribe link in each marketing email. Transactional messages such as password resets, receipts, security notices and order updates are separate and may still be sent when needed to provide the service.'],
     ['6. Wallet and payouts', 'Wallet balances are a record of amounts owed to you from platform activity. They are not a bank deposit, are not insured, and earn no interest. Payouts are sent to the account you connect, subject to the stated minimum and to identity verification where required by law.'],
     ['7. No warranty', 'The service is provided as-is. We do not promise it will be uninterrupted, error-free, or that any listing or user is legitimate.'],
     ['8. Limitation of liability', 'To the maximum extent the law allows, our total liability to you for any claim relating to the service is limited to the amount you paid us in the twelve months before the claim arose.'],
@@ -2048,16 +2139,22 @@ function pagePrivacy() {
       el('a', { href: 'https://policies.google.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Google Privacy Policy'),
       ' and Google Maps Platform terms.'
     ])],
+    ['AI-assisted listing tools', el('span', {}, [
+      'If you choose an AI writing feature, the listing facts, draft text and up to a limited number of photos needed for that request are sent through our server to OpenAI so a draft can be generated. We avoid sending an exact property street address for the property-notes assistant. OpenAI states that API inputs and outputs are not used to train its models by default unless the API customer explicitly opts in to data sharing. OpenAI may retain API content for abuse-monitoring purposes under its API data controls. Review OpenAI’s ',
+      el('a', { href: 'https://openai.com/policies/privacy-policy', target: '_blank', rel: 'noopener noreferrer' }, 'Privacy Policy'),
+      ' and business-data information for details. AI output is not automatically published; you are expected to review it first.'
+    ])],
+    ['Marketing email', 'If you affirmatively opt in, we use your email address, name and limited account/activity information to send product, listing and marketplace engagement emails. We currently limit these marketing messages to no more than one every 48 hours. Our email provider receives the information needed to deliver the message. Every marketing email includes an unsubscribe link and email-preferences link. Opting out of marketing does not stop transactional messages needed for your account, purchases, security or password resets.'],
     ['Payments and payouts', el('span', {}, [
       'Stripe processes card payments, subscriptions and seller payout onboarding when those features are enabled. Our server does not receive or store your full card number or full bank-account number. We may receive and store limited payment metadata and processor identifiers, such as card brand, last four digits, expiration date, Stripe customer/payment identifiers, payment status and transaction amount. Stripe may also process transaction, browser, device, IP-address and fraud-prevention signals under its own ',
       el('a', { href: 'https://stripe.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Privacy Policy'),
       '.'
     ])],
-    ['Why we collect it', 'To run your account, rank your feed against your buy box, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, and send transactional messages such as confirmations, shipping notices and password resets.'],
+    ['Why we collect it', 'To run your account, rank your feed against your buy box, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, send transactional messages such as confirmations, shipping notices and password resets, provide AI-assisted listing tools when you invoke them, and send optional marketing messages when you opt in.'],
     ['What other users can see', 'Your name, role, bio, profile photo, listing count, follower count, points, verification status and reviews may be public. Your email address and phone number are shown to another user only where the product requires it, such as after a listing unlock or when you message them. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
-    ['Who we share it with', 'We share information only as needed to operate the service: Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; email providers for transactional messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising.'],
+    ['Who we share it with', 'We share information only as needed to operate the service: Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; OpenAI for AI-assisted listing generation when you choose that feature; email providers for transactional and opted-in marketing messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising.'],
     ['Cookies and similar technology', 'We use a session cookie to keep you signed in. Payment providers such as Stripe may use cookies, browser/device information and similar signals for payment security and fraud prevention. We do not operate third-party advertising trackers on the site.'],
-    ['Your choices', 'You can edit your profile and manage your marketplace listings from the site. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. To request a copy of your data, correction, or account deletion, email drewcbusiness1@gmail.com. Additional legal rights may apply depending on where you live.'],
+    ['Your choices', 'You can edit your profile and manage your marketplace listings from the site. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. Marketing email can be turned on or off in Settings or through the unsubscribe link in any marketing message. AI writing features are optional and only send content when you choose to use them. To request a copy of your data, correction, or account deletion, email drewcbusiness1@gmail.com. Additional legal rights may apply depending on where you live.'],
     ['Retention and security', 'We keep account, order, payment and transaction records for as long as reasonably needed to provide the service, resolve disputes, prevent fraud, and meet tax, accounting or other legal obligations. Shipping information may remain with the related order record for those purposes. Passwords are stored as bcrypt hashes and never in readable form. No system is perfectly secure, so avoid posting sensitive information that is not necessary for a transaction.'],
     ['Children', 'This service is not for anyone under 18 and we do not knowingly collect personal information from children.'],
     ['Contact', 'drewcbusiness1@gmail.com']
@@ -2246,7 +2343,10 @@ async function renderSuppliers() {
 
   async function cjCatalogBrowser(supplier) {
     const panel = el('div', { class: 'card', style: 'padding:18px;margin-bottom:16px' });
-    const status = await api('GET', '/api/admin/cj/status');
+    const [status, aiStatus] = await Promise.all([
+      api('GET', '/api/admin/cj/status'),
+      api('GET', '/api/ai/status').catch(() => ({ configured: false, available: false }))
+    ]);
     panel.appendChild(el('div', { class: 't', style: 'font-size:16px;margin-bottom:6px' }, 'CJdropshipping catalog'));
 
     if (!status.connected) {
@@ -2366,6 +2466,38 @@ async function renderSuppliers() {
             el('div', { class: 'hint', style: 'margin-top:6px' }, 'Shipping is still quoted live from CJ at customer checkout. It is not included in this retail price.')
           ]);
 
+          const aiMsg = el('div', { class: 'hint' });
+          const aiBtn = el('button', { class: 'btn-ghost', type: 'button' }, aiStatus.configured ? '✨ Regenerate polished copy' : 'AI copy not configured');
+          aiBtn.disabled = !aiStatus.configured;
+          const runAi = async (automatic = false) => {
+            if (!aiStatus.configured) return;
+            aiBtn.disabled = true; aiBtn.textContent = automatic ? '✨ Polishing listing…' : '✨ Writing…'; aiMsg.textContent = '';
+            if (automatic) publish.disabled = true;
+            try {
+              const r = await api('POST', '/api/ai/listing-copy', {
+                kind: 'cj',
+                facts: {
+                  sourceTitle: defaultTitle || v.name || product.name,
+                  sourceDescription: product.description || '',
+                  currentCategory: categorySel.value,
+                  variant: v.option || '',
+                  weightGrams: v.weight || null,
+                  dimensionsMm: v.lengthMm && v.widthMm && v.heightMm ? [v.lengthMm, v.widthMm, v.heightMm] : null
+                },
+                images: photos.slice(0, 3)
+              });
+              if (r.draft.title) title.value = r.draft.title;
+              if (r.draft.description) desc.value = r.draft.description;
+              if (r.draft.categorySuggestion && categories.includes(r.draft.categorySuggestion)) categorySel.value = r.draft.categorySuggestion;
+              aiMsg.textContent = r.draft.warnings?.length ? `AI cleaned the listing. Review before publishing. ${r.draft.warnings.join(' ')}` : 'AI cleaned the supplier copy. Review before publishing.';
+            } catch (e) {
+              aiMsg.textContent = automatic ? `AI copy could not be generated; the original draft is still editable. ${e.message}` : e.message;
+            } finally {
+              aiBtn.disabled = false; aiBtn.textContent = '✨ Regenerate polished copy';
+              if (automatic) publish.disabled = false;
+            }
+          };
+
           const publish = el('button', { class: 'btn-primary', style: 'border:none;width:100%' }, 'Publish to Marketplace');
           publish.onclick = async () => {
             publish.disabled = true; publish.textContent = 'Publishing…';
@@ -2400,7 +2532,13 @@ async function renderSuppliers() {
             el('div', {}, [el('label', {}, 'Retail price ($)'), retail])
           ]));
           results.appendChild(el('label', {}, 'Description')); results.appendChild(desc);
+          results.appendChild(el('div', { class: 'aibox' }, [
+            el('b', {}, 'AI listing cleanup'),
+            el('div', { class: 'hint' }, aiStatus.configured ? 'Automatically removes supplier language and rewrites the title and description without inventing specs.' : 'Add OPENAI_API_KEY in Netlify to enable automatic supplier-copy cleanup.'),
+            aiBtn, aiMsg
+          ]));
           results.appendChild(publish);
+          if (aiStatus.configured) setTimeout(() => runAi(true), 0);
         }
 
         drawVariantList();

@@ -87,3 +87,9 @@ Do not measure against a venture-funded portal.
 - **Month 6:** the inflection point, if it comes, is when sellers start posting without you asking. That's when the marketplace is self-sustaining.
 
 The single strongest signal to watch: **does anyone come back on day 2?** Growth is not the metric that matters yet. Retention is.
+
+## Automated engagement email
+
+The site now has an opt-in engagement sequence. It rotates between fresh property activity, fresh marketplace inventory, profile completion, and a general return-to-feed message. A user can receive at most one marketing email every 48 hours. Signup consent is unchecked by default, and Settings plus every email provide opt-out controls. Transactional mail is not controlled by the marketing toggle.
+
+Do not enable `MARKETING_EMAILS_ENABLED` until `MARKETING_POSTAL_ADDRESS` contains the business mailing address you intend to show in every commercial email.

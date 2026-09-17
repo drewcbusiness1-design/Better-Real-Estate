@@ -53,6 +53,20 @@ if (!process.env.GOOGLE_MAPS_API_KEY) soft('GOOGLE_MAPS_API_KEY not set — brow
 else if (String(process.env.GOOGLE_MAPS_API_KEY).trim().length < 20) bad('GOOGLE_MAPS_API_KEY looks too short to be a real Google API key.');
 else ok('Google Maps Places key present (server-side only).');
 
+head('AI listing assistant');
+if (!process.env.OPENAI_API_KEY) soft('OPENAI_API_KEY not set — AI listing writing stays disabled, but the rest of the site works normally.');
+else if (String(process.env.OPENAI_API_KEY).trim().length < 20) bad('OPENAI_API_KEY looks too short to be a real API key.');
+else ok(`OpenAI key present; model ${process.env.OPENAI_MODEL || 'gpt-5.6-luna'}.`);
+
+head('Marketing email');
+const marketingEnabled = /^true$/i.test(String(process.env.MARKETING_EMAILS_ENABLED || ''));
+if (!marketingEnabled) soft('MARKETING_EMAILS_ENABLED is not true — opt-in preferences will be stored, but scheduled engagement email stays disabled.');
+else {
+  if (!process.env.RESEND_API_KEY) bad('Marketing email is enabled but RESEND_API_KEY is missing.');
+  if (!String(process.env.MARKETING_POSTAL_ADDRESS || '').trim()) bad('Marketing email is enabled but MARKETING_POSTAL_ADDRESS is missing. Commercial email needs a valid postal address in the footer.');
+  else ok('Marketing email enabled with a footer postal address.');
+}
+
 head('App');
 if (!process.env.APP_URL) bad('APP_URL not set. Confirmation and reset links in emails will point at localhost.');
 else if (!/^https:\/\//.test(process.env.APP_URL) && !/localhost/.test(process.env.APP_URL)) bad('APP_URL is not https. Sessions and payment tokens must not cross plain HTTP.');

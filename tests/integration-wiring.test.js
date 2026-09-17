@@ -94,3 +94,33 @@ assert.ok(server.includes('const sourcePhotos = [...new Set([variant.image, prod
 assert.ok(server.includes("error: 'One or more selected product photos are invalid.'"), 'CJ import must reject arbitrary remote photo injection');
 
 console.log('✓ CJ integration wiring tests passed');
+
+// v11 AI listing assistant + opt-in marketing automation.
+for (const route of [
+  "app.get('/api/ai/status'",
+  "app.post('/api/ai/listing-copy'",
+  "app.get('/api/email-preferences'",
+  "app.patch('/api/email-preferences'",
+  "app.get('/api/marketing/unsubscribe'",
+  "app.post('/api/marketing/unsubscribe'"
+]) assert.ok(server.includes(route), 'Missing v11 route ' + route);
+assert.ok(server.includes("AI listing assistance is a Platinum feature."), 'Regular AI listing generation must be Platinum-gated');
+assert.ok(server.includes("kind === 'cj' && !isAdmin"), 'CJ AI generation must remain admin-only');
+assert.ok(client.includes('✨ Write listing with AI'), 'Platinum shop sellers need the AI listing button');
+assert.ok(client.includes('✨ Draft property notes with AI'), 'Platinum property posts need AI drafting');
+assert.ok(client.includes('AI listing cleanup'), 'CJ review must expose the AI cleanup state');
+assert.ok(client.includes('setTimeout(() => runAi(true), 0)'), 'CJ review should automatically polish supplier copy when AI is configured');
+assert.ok(client.includes('marketingOptIn: marketingOpt.checked'), 'Signup must send explicit marketing consent');
+assert.ok(client.includes('Product & activity emails'), 'Settings must expose marketing preferences');
+assert.ok(client.includes('AI-assisted listing tools'), 'Privacy/terms must disclose AI processing');
+assert.ok(client.includes('Marketing email'), 'Privacy policy must disclose optional marketing email');
+assert.ok(env.includes('OPENAI_API_KEY='), '.env.example must document OPENAI_API_KEY');
+assert.ok(env.includes('MARKETING_EMAILS_ENABLED=false'), 'Marketing automation must default off until configured');
+assert.ok(env.includes('MARKETING_POSTAL_ADDRESS='), 'Commercial email footer address must be configured');
+assert.ok(toml.includes('[functions."marketing-cron"]'), 'Netlify scheduled marketing function must be configured');
+assert.ok(toml.includes('schedule = "0 15 * * *"'), 'Marketing scheduler should run once daily and enforce 48h per-user eligibility');
+assert.ok(server.includes('marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount'), 'Marketing/AI usage metadata must not leak through public user serializers');
+assert.ok(server.includes('const publicProfileUser = u => u ? ({'), 'Public profiles need a strict allowlist serializer');
+assert.ok(server.includes('owner: publicProfileUser(owner)'), 'Public profile route must not reuse the private account serializer');
+assert.ok(server.includes('{ ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone }'), 'Listing detail should add contact info only through the unlock gate');
+assert.ok(client.includes("'/api/users/' + encodeURIComponent(state.profileId) + '/listings'"), 'Profile screen must call the server route that actually exists');
