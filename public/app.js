@@ -1,7 +1,7 @@
 let state = {
   view: 'home', user: null, authMode: 'signup', pricing: null, access: null,
   detailId: null, profileId: null, photoIdx: 0, composePhotos: [], shopPhotos: [],
-  shopCat: 'All', shopQ: ''
+  shopCat: 'All', shopQ: '', shopItemId: null
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -126,9 +126,12 @@ function renderTabs() {
   tabs.innerHTML = '';
   if (!state.user) return;
   const items = [['feed','⌂','Feed'], ['shop','▦','Shop'], ['compose','＋','Post'], ['leaderboard','♦','Board'], ['me','◍','Profile']];
-  items.forEach(([v, ic, label]) => tabs.appendChild(el('button', {
-    class: state.view === v ? 'active' : '', onclick: () => go(v)
-  }, [el('span', { class: 'ic' }, ic), el('span', {}, label)])));
+  items.forEach(([v, ic, label]) => {
+    const active = state.view === v || (v === 'shop' && ['shopitem','sellitem'].includes(state.view));
+    tabs.appendChild(el('button', {
+      class: active ? 'active' : '', onclick: () => go(v)
+    }, [el('span', { class: 'ic' }, ic), el('span', {}, label)]));
+  });
 }
 
 async function renderApp() {
@@ -139,7 +142,7 @@ async function renderApp() {
     compose: renderCompose, saved: renderSaved, messages: renderMessages,
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin,
-    wallet: renderWallet, shop: renderShop, sellitem: renderSellItem, offers: renderOffers,
+    wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
     boostpicker: renderBoostPicker, workspace: renderWorkspace,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
@@ -889,37 +892,14 @@ async function renderShop() {
 
   const grid = el('div', { class: 'shopgrid' });
   items.forEach(i => {
-    const btn = el('button', {}, 'Buy ' + cents(i.price));
-    btn.onclick = async () => {
-      let shipping = null;
-      let expectedTotalCents = i.price;
-      let quote = null;
-      if (i.dropship) {
-        const line1 = prompt(`Shipping address for "${i.title}"\n\nStreet address:`);
-        if (!line1) return;
-        const city = prompt('City:'); if (!city) return;
-        const stateCode = prompt('State / province (e.g. NJ):'); if (!stateCode) return;
-        const zip = prompt('ZIP / postal code (e.g. 08520):'); if (!zip) return;
-        const phone = prompt('Phone number for the carrier (optional):') || '';
-        shipping = { name: state.user.name, line1, city, state: stateCode, zip, phone, country: 'United States', countryCode: 'US' };
-        try {
-          quote = await api('POST', '/api/shop/shipping-quote', { itemId: i.id, shipping });
-          expectedTotalCents = quote.totalCents;
-        } catch (e) { toast(e.message, 'err'); return; }
-      }
-      const shippingLine = quote && quote.shippingCostCents
-        ? `\nShipping: ${cents(quote.shippingCostCents)}${quote.days ? ` (${quote.days} days)` : ''}`
-        : '';
-      if (!confirm(`Buy "${i.title}"?\n\nItem: ${cents(i.price)}${shippingLine}\nTotal: ${cents(expectedTotalCents)}`)) return;
-      try {
-        const r = await api('POST', '/api/shop/buy', { itemId: i.id, shipping, expectedTotalCents });
-        await handlePurchaseResponse(r, 'Purchased — see Profile → Orders', async () => render());
-      } catch (e) { toast(e.message, 'err'); }
-    };
+    const openItem = () => go('shopitem', { shopItemId: i.id });
+    const btn = el('button', { onclick: openItem }, 'View item');
+    const photo = el('div', { class: 'si', onclick: openItem, style: 'cursor:pointer' }, i.photos?.length ? el('img', { src: i.photos[0], alt: i.title }) : 'No photo');
+    const title = el('button', { class: 'shopcard-title', onclick: openItem }, i.title);
     grid.appendChild(el('div', { class: 'shopcard' }, [
-      el('div', { class: 'si' }, i.photos?.length ? el('img', { src: i.photos[0] }) : 'No photo'),
+      photo,
       el('div', { class: 'sb' }, [
-        el('div', { class: 't' }, i.title),
+        title,
         el('div', { class: 'p' }, cents(i.price)),
         el('div', { class: 'm' }, i.dropship ? i.condition : [i.condition, i.location].filter(Boolean).join(' · ')),
         el('div', { class: 'm' }, i.dropship ? 'Ships direct · ' + (i.shipDays || '3-7') + ' days' : 'by ' + i.sellerName)
@@ -928,6 +908,167 @@ async function renderShop() {
     ]));
   });
   wrap.appendChild(grid);
+  return wrap;
+}
+
+async function renderShopItem() {
+  const wrap = el('div', { class: 'page shopdetailpage' });
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('shop') }, '← Marketplace'));
+  if (!state.shopItemId) {
+    wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Product not selected'), el('p', {}, 'Go back to the marketplace and choose an item.') ]));
+    return wrap;
+  }
+
+  const { item } = await api('GET', `/api/shop/items/${encodeURIComponent(state.shopItemId)}`);
+  const photos = Array.isArray(item.photos) ? item.photos.filter(Boolean) : [];
+  const mainMedia = el('div', { class: 'productmainphoto' });
+  let mainImg = null;
+  if (photos.length) {
+    mainImg = el('img', { src: photos[0], alt: item.title });
+    mainMedia.appendChild(mainImg);
+  } else {
+    mainMedia.appendChild(el('div', { class: 'productnophoto' }, 'No photo available'));
+  }
+  const thumbs = el('div', { class: 'productthumbs' });
+  photos.forEach((src, idx) => {
+    const thumb = el('button', { class: idx === 0 ? 'active' : '' }, el('img', { src, alt: `${item.title} photo ${idx + 1}` }));
+    thumb.onclick = () => {
+      if (mainImg) mainImg.src = src;
+      [...thumbs.children].forEach(x => x.classList.remove('active'));
+      thumb.classList.add('active');
+    };
+    thumbs.appendChild(thumb);
+  });
+
+  const gallery = el('div', { class: 'productgallery' }, [mainMedia, thumbs]);
+  const info = el('div', { class: 'productinfo' });
+  info.appendChild(el('div', { class: 'productcategory' }, item.category || 'Marketplace'));
+  info.appendChild(el('h1', {}, item.title));
+  info.appendChild(el('div', { class: 'productprice' }, cents(item.price)));
+  info.appendChild(el('div', { class: 'productmetarow' }, [
+    el('span', {}, item.condition || 'New'),
+    el('span', {}, item.stock > 0 ? `${item.stock} in stock` : 'Out of stock'),
+    item.dropship ? el('span', {}, `Ships direct${item.shipDays ? ` · ${item.shipDays} days` : ''}`) : el('span', {}, item.location || 'Seller arranged')
+  ]));
+
+  if (item.variant) info.appendChild(el('div', { class: 'productdetailrow' }, [el('b', {}, 'Option'), el('span', {}, item.variant)]));
+  if (item.weightGrams) info.appendChild(el('div', { class: 'productdetailrow' }, [el('b', {}, 'Weight'), el('span', {}, `${item.weightGrams} g`)]));
+  if (item.dimensionsMm) info.appendChild(el('div', { class: 'productdetailrow' }, [el('b', {}, 'Dimensions'), el('span', {}, `${item.dimensionsMm.length} × ${item.dimensionsMm.width} × ${item.dimensionsMm.height} mm`)]));
+
+  info.appendChild(el('div', { class: 'productsectiontitle' }, 'Product details'));
+  info.appendChild(el('div', { class: 'productdescription' }, item.description || 'No additional description was provided.'));
+
+  const checkout = el('div', { class: 'productcheckout' });
+  checkout.appendChild(el('h3', {}, item.dropship ? 'Delivery & checkout' : 'Order this item'));
+  const checkoutStatus = el('div', { class: 'errmsg' });
+
+  if (item.dropship) {
+    checkout.appendChild(el('div', { class: 'checkoutnote' }, 'Enter the delivery address to get the live CJ shipping price before payment.'));
+    const line1 = el('input', { placeholder: 'Street address', autocomplete: 'street-address' });
+    const line2 = el('input', { placeholder: 'Apartment, suite, unit (optional)', autocomplete: 'address-line2' });
+    const city = el('input', { placeholder: 'City', autocomplete: 'address-level2' });
+    const stateCode = el('input', { placeholder: 'State (e.g. NJ)', autocomplete: 'address-level1', maxlength: '30' });
+    const zip = el('input', { placeholder: 'ZIP code', autocomplete: 'postal-code' });
+    const phone = el('input', { placeholder: 'Phone (optional)', autocomplete: 'tel' });
+    const quoteBox = el('div', { class: 'quotesummary muted' }, 'Shipping has not been calculated yet.');
+    const quoteBtn = el('button', { class: 'btn-ghost productquote' }, 'Calculate shipping');
+    const buyBtn = el('button', { class: 'submitbtn', disabled: 'disabled' }, 'Continue to payment');
+    let quote = null;
+
+    const shippingPayload = () => ({
+      name: state.user?.name || '',
+      line1: line1.value.trim(), line2: line2.value.trim(), city: city.value.trim(), state: stateCode.value.trim(), zip: zip.value.trim(),
+      phone: phone.value.trim(), country: 'United States', countryCode: 'US'
+    });
+    const invalidateQuote = () => {
+      quote = null;
+      buyBtn.disabled = true;
+      quoteBox.className = 'quotesummary muted';
+      quoteBox.textContent = 'Address changed — calculate shipping again.';
+    };
+    [line1, line2, city, stateCode, zip, phone].forEach(input => input.addEventListener('input', invalidateQuote));
+
+    checkout.appendChild(el('label', {}, 'Street address')); checkout.appendChild(line1);
+    checkout.appendChild(el('label', {}, 'Apartment, suite, unit (optional)')); checkout.appendChild(line2);
+    checkout.appendChild(el('div', { class: 'checkoutgrid' }, [
+      el('div', {}, [el('label', {}, 'City'), city]),
+      el('div', {}, [el('label', {}, 'State'), stateCode]),
+      el('div', {}, [el('label', {}, 'ZIP code'), zip]),
+      el('div', {}, [el('label', {}, 'Country'), el('input', { value: 'United States', disabled: 'disabled' })])
+    ]));
+    checkout.appendChild(el('label', {}, 'Phone (optional)')); checkout.appendChild(phone);
+    checkout.appendChild(quoteBtn);
+    checkout.appendChild(quoteBox);
+    checkout.appendChild(buyBtn);
+    checkout.appendChild(checkoutStatus);
+
+    quoteBtn.onclick = async () => {
+      checkoutStatus.textContent = '';
+      const shipping = shippingPayload();
+      if (!shipping.line1 || !shipping.city || !shipping.state || !shipping.zip) {
+        checkoutStatus.textContent = 'Street, city, state and ZIP are required.';
+        return;
+      }
+      quoteBtn.disabled = true; quoteBtn.textContent = 'Checking CJ shipping…';
+      try {
+        quote = await api('POST', '/api/shop/shipping-quote', { itemId: item.id, shipping });
+        quoteBox.className = 'quotesummary';
+        quoteBox.innerHTML = '';
+        quoteBox.appendChild(el('div', {}, [el('span', {}, 'Item'), el('b', {}, cents(item.price))]));
+        quoteBox.appendChild(el('div', {}, [el('span', {}, quote.logisticName || 'Shipping'), el('b', {}, cents(quote.shippingCostCents || 0))]));
+        if (quote.days) {
+          const eta = /day/i.test(String(quote.days)) ? String(quote.days) : `${quote.days} days`;
+          quoteBox.appendChild(el('div', { class: 'quoteeta' }, `Estimated delivery: ${eta}`));
+        }
+        quoteBox.appendChild(el('div', { class: 'quotetotal' }, [el('span', {}, 'Total'), el('b', {}, cents(quote.totalCents))]));
+        buyBtn.disabled = false;
+      } catch (e) {
+        quote = null; buyBtn.disabled = true; quoteBox.className = 'quotesummary muted';
+        quoteBox.textContent = 'Shipping could not be calculated for that address.';
+        checkoutStatus.textContent = e.message;
+      } finally {
+        quoteBtn.disabled = false; quoteBtn.textContent = 'Calculate shipping';
+      }
+    };
+
+    buyBtn.onclick = async () => {
+      if (!quote) return;
+      buyBtn.disabled = true; buyBtn.textContent = 'Starting checkout…'; checkoutStatus.textContent = '';
+      try {
+        const r = await api('POST', '/api/shop/buy', { itemId: item.id, shipping: shippingPayload(), expectedTotalCents: quote.totalCents });
+        await handlePurchaseResponse(r, 'Purchased — your order is in Profile → Orders', async () => go('orders'));
+      } catch (e) {
+        checkoutStatus.textContent = e.message;
+        quote = null;
+        quoteBox.className = 'quotesummary muted';
+        quoteBox.textContent = 'Please calculate shipping again before retrying.';
+      } finally {
+        buyBtn.disabled = !quote;
+        buyBtn.textContent = 'Continue to payment';
+      }
+    };
+  } else {
+    checkout.appendChild(el('div', { class: 'checkoutnote' }, [
+      document.createTextNode(item.location ? `Located in ${item.location}. ` : ''),
+      document.createTextNode('After purchase, coordinate pickup or delivery with the seller through your order details.')
+    ]));
+    const total = el('div', { class: 'quotesummary' }, [
+      el('div', { class: 'quotetotal' }, [el('span', {}, 'Total'), el('b', {}, cents(item.price))])
+    ]);
+    const buyBtn = el('button', { class: 'submitbtn' }, `Buy for ${cents(item.price)}`);
+    buyBtn.onclick = async () => {
+      buyBtn.disabled = true; buyBtn.textContent = 'Starting checkout…'; checkoutStatus.textContent = '';
+      try {
+        const r = await api('POST', '/api/shop/buy', { itemId: item.id, shipping: null, expectedTotalCents: item.price });
+        await handlePurchaseResponse(r, 'Purchased — your order is in Profile → Orders', async () => go('orders'));
+      } catch (e) { checkoutStatus.textContent = e.message; }
+      finally { buyBtn.disabled = false; buyBtn.textContent = `Buy for ${cents(item.price)}`; }
+    };
+    checkout.appendChild(total); checkout.appendChild(buyBtn); checkout.appendChild(checkoutStatus);
+  }
+
+  info.appendChild(checkout);
+  wrap.appendChild(el('div', { class: 'productdetail' }, [gallery, info]));
   return wrap;
 }
 

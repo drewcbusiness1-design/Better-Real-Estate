@@ -405,3 +405,45 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important;}
 }
+
+
+/* Product detail / marketplace checkout */
+.shopcard-title{display:block;width:100%;border:0!important;background:transparent!important;padding:0!important;text-align:left;color:var(--ink)!important;font-size:13.5px!important;font-weight:600!important;line-height:1.35!important;margin-bottom:4px!important;cursor:pointer;}
+.shopcard-title:hover{text-decoration:underline;}
+.productdetail{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:34px;align-items:start;margin-top:10px;}
+.productgallery{min-width:0;}
+.productmainphoto{aspect-ratio:1;background:var(--surface-2);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm);}
+.productmainphoto img{width:100%;height:100%;object-fit:cover;}
+.productnophoto{color:var(--ink-soft);font-size:14px;}
+.productthumbs{display:flex;gap:8px;overflow-x:auto;padding:10px 2px 2px;}
+.productthumbs button{width:66px;height:66px;flex:0 0 66px;padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface);opacity:.72;}
+.productthumbs button.active{opacity:1;outline:2px solid var(--accent);outline-offset:1px;}
+.productthumbs img{width:100%;height:100%;object-fit:cover;display:block;}
+.productinfo h1{font-family:'Bricolage Grotesque',sans-serif;font-size:30px;line-height:1.12;margin:7px 0 8px;letter-spacing:-.02em;}
+.productcategory{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:5px 9px;font-size:11px;color:var(--ink-soft);background:var(--surface-2);}
+.productprice{font-family:'Bricolage Grotesque',sans-serif;font-size:32px;font-weight:700;margin:8px 0 12px;font-variant-numeric:tabular-nums;}
+.productmetarow{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px;}
+.productmetarow span{font-size:12px;color:var(--ink-soft);border:1px solid var(--line);border-radius:999px;padding:6px 9px;background:var(--surface);}
+.productdetailrow{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;}
+.productdetailrow span{color:var(--ink-soft);text-align:right;}
+.productsectiontitle{font-weight:700;margin:22px 0 8px;}
+.productdescription{font-size:14px;line-height:1.65;color:var(--ink-soft);white-space:pre-wrap;overflow-wrap:anywhere;}
+.productcheckout{margin-top:24px;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2);}
+.productcheckout h3{margin:0 0 5px;font-size:18px;}
+.productcheckout label{display:block;font-size:12px;font-weight:600;margin:11px 0 5px;}
+.productcheckout input{margin:0;}
+.checkoutnote{font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-bottom:8px;}
+.checkoutgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;}
+.productquote{width:100%;margin-top:14px;}
+.quotesummary{margin:12px 0;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--surface);font-size:13px;}
+.quotesummary.muted{color:var(--ink-soft);}
+.quotesummary>div:not(.quoteeta){display:flex;justify-content:space-between;gap:16px;padding:4px 0;}
+.quoteeta{color:var(--ink-soft);font-size:12px;padding-top:5px;}
+.quotetotal{border-top:1px solid var(--line);margin-top:6px;padding-top:10px!important;font-size:15px;}
+.productcheckout .submitbtn[disabled]{opacity:.48;cursor:not-allowed;}
+@media(max-width:720px){
+  .productdetail{grid-template-columns:1fr;gap:20px;}
+  .productinfo h1{font-size:26px;}
+  .productprice{font-size:29px;}
+}
+@media(max-width:460px){.checkoutgrid{grid-template-columns:1fr;}}

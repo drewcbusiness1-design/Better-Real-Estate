@@ -22,4 +22,11 @@ for (const endpoint of ['/api/admin/cj/products', '/api/admin/cj/import', '/api/
 assert.ok(toml.includes('cj-adapter.js'), 'Netlify function bundle must include cj-adapter.js');
 assert.ok(env.includes('CJ_API_KEY='), '.env.example must document CJ_API_KEY');
 assert.ok(!env.includes('CJ_EMAIL='), 'CJ_EMAIL is obsolete and should not be required');
+
+assert.ok(server.includes("app.get('/api/shop/items/:id'"), 'Missing marketplace product-detail route');
+assert.ok(server.includes('function publicShopItem'), 'Marketplace responses must be sanitized');
+assert.ok(server.includes('items: items.map(publicShopItem)'), 'Marketplace list must not expose supplier cost/internal CJ fields');
+assert.ok(client.includes('shopitem: renderShopItem'), 'Client is missing the internal marketplace product page');
+assert.ok(client.includes("'Calculate shipping'"), 'Product page must calculate live shipping without browser prompts');
+assert.ok(client.includes("'Continue to payment'"), 'Product page must provide an integrated checkout action');
 console.log('✓ CJ integration wiring tests passed');

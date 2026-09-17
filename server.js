@@ -808,6 +808,17 @@ app.post('/api/admin/verify-user', requireAuth, requireAdmin, async (req, res) =
 
 /* ============================ SHOP / MARKETPLACE ============================ */
 const SHOP_CATEGORIES = ['Appliances','HVAC','Plumbing','Electrical','Flooring','Doors & Windows','Lighting','Cabinets & Counters','Roofing','Tools','Fixtures','Other'];
+function publicShopItem(item) {
+  return {
+    id: item.id, title: item.title, category: item.category, condition: item.condition,
+    price: item.price, stock: item.stock, location: item.location, description: item.description,
+    photos: Array.isArray(item.photos) ? item.photos : [], sellerName: item.sellerName,
+    dropship: !!item.dropship, shipDays: item.shipDays || null, createdAt: item.createdAt,
+    variant: item.cjVariantOption || null, weightGrams: item.cjWeightGrams || null,
+    dimensionsMm: (item.cjLengthMm && item.cjWidthMm && item.cjHeightMm)
+      ? { length: item.cjLengthMm, width: item.cjWidthMm, height: item.cjHeightMm } : null
+  };
+}
 app.get('/api/shop/categories', async (req, res) => res.json({
   categories: SHOP_CATEGORIES,
   sellableCategories: SHOP_CATEGORIES.filter(c => !policy.USER_BANNED_CATEGORIES.includes(c)),
@@ -843,7 +854,14 @@ app.get('/api/shop/items', async (req, res) => {
   if (category && category !== 'All') items = items.filter(i => i.category === category);
   if (q) { const s = String(q).toLowerCase(); items = items.filter(i => i.title.toLowerCase().includes(s) || i.description.toLowerCase().includes(s)); }
   items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json({ items });
+  res.json({ items: items.map(publicShopItem) });
+});
+
+app.get('/api/shop/items/:id', async (req, res) => {
+  const db = await loadDB();
+  const item = db.shopItems.find(i => i.id === req.params.id && i.active && i.stock > 0);
+  if (!item) return res.status(404).json({ error: 'Item unavailable.' });
+  res.json({ item: publicShopItem(item) });
 });
 
 // Shared by the instant (wallet/simulated) purchase path and the Stripe
