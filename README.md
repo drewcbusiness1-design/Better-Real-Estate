@@ -176,3 +176,7 @@ Two optional systems are included and stay disabled until their server-side keys
 - The Netlify scheduled function `marketing-cron` runs daily and only emails a user if at least 48 hours have passed since the last marketing message.
 - Set `MARKETING_EMAILS_ENABLED=true` and `MARKETING_POSTAL_ADDRESS` before enabling sends. The postal address is included in every marketing footer.
 - Every marketing message has unsubscribe and email-preferences links. Transactional email remains separate.
+
+## Admin unlimited access
+
+Any account whose email is present in `ADMIN_EMAILS` is treated as a permanent admin super-account. Admin access does not expire and does not require Pro or Platinum billing. Admins receive all Pro/Platinum feature gates, unlimited AI listing assistance, unlimited buy boxes, unlimited included listing promotions, and unlimited listing unlock access. This bypass is enforced on the server and remains active as long as the email stays in `ADMIN_EMAILS`. Normal marketplace purchases and other real-world transaction charges are not made free by admin status.

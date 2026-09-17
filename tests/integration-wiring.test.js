@@ -41,7 +41,8 @@ for (const route of [
   "app.delete('/api/shop/items/:id'"
 ]) assert.ok(server.includes(route), 'Missing shop-management route ' + route);
 assert.ok(server.includes("isShopAdmin(user) || item.sellerId === user.id"), 'Shop-management authorization must be owner-or-admin');
-assert.ok(server.includes("user.role === 'admin' && policy.isAdminEmail(user.email)"), 'Shop admin management must honor the admin email allowlist');
+assert.ok(server.includes('function isAdminUser(user)'), 'Admin access needs a single allowlist-backed helper');
+assert.ok(server.includes('return isAdminUser(user);'), 'Shop admin management must reuse the allowlist-backed admin helper');
 assert.ok(server.includes('item.deleted = true'), 'Shop deletion should preserve transaction history with a soft delete');
 assert.ok(server.includes('policy.checkShopItem({ title, description, category }, false)'), 'Private-seller restrictions must be rechecked when editing');
 assert.ok(client.includes('shopmanage: renderShopManage'), 'Client is missing the shop listing manager');
@@ -124,3 +125,13 @@ assert.ok(server.includes('const publicProfileUser = u => u ? ({'), 'Public prof
 assert.ok(server.includes('owner: publicProfileUser(owner)'), 'Public profile route must not reuse the private account serializer');
 assert.ok(server.includes('{ ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone }'), 'Listing detail should add contact info only through the unlock gate');
 assert.ok(client.includes("'/api/users/' + encodeURIComponent(state.profileId) + '/listings'"), 'Profile screen must call the server route that actually exists');
+
+// Permanent admin super-access: allowlisted admins get every paid platform
+// feature without subscription expiry or usage quotas. Commerce purchases stay paid.
+assert.ok(server.includes("if (isAdminUser(user)) return true;"), 'Admin must bypass Pro/Platinum expiry gates');
+assert.ok(server.includes('if (isAdminUser(user)) return Number.MAX_SAFE_INTEGER;'), 'Admin buy boxes must be unlimited server-side');
+assert.ok(server.includes('adminUnlimited: isAdminUser(user)'), 'Client access payload must explicitly identify unlimited admin access');
+assert.ok(server.includes('if (!isAdmin) {'), 'AI usage quota must be skipped for admin');
+assert.ok(server.includes('const adminIncluded = isAdminUser(req.user);'), 'Promotions must be included for admin without monthly limits');
+assert.ok(client.includes('Admin — Unlimited access'), 'Plans screen must identify permanent admin access');
+assert.ok(client.includes('Number.POSITIVE_INFINITY : state.access?.platinum ? 5 : 1'), 'Admin buy-box UI must not cap at Platinum five-box limit');

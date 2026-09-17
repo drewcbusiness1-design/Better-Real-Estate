@@ -664,7 +664,15 @@ function renderUpgrade() {
   wrap.appendChild(el('div', { class: 'sub' }, 'Browse the feed free forever. Upgrade when you want unlimited unlocks — or the full toolkit.'));
 
   const st = el('div', { class: 'okmsg' });
-  const currentTier = state.access?.platinum ? 'platinum' : state.access?.pro ? 'pro' : 'free';
+  const adminUnlimited = state.access?.adminUnlimited === true || state.user?.role === 'admin';
+  const currentTier = adminUnlimited ? 'admin' : state.access?.platinum ? 'platinum' : state.access?.pro ? 'pro' : 'free';
+
+  if (adminUnlimited) {
+    wrap.appendChild(el('div', { class: 'card', style: 'padding:18px;margin:14px 0;border:1px solid var(--accent)' }, [
+      el('h3', { style: 'margin:0 0 6px' }, 'Admin — Unlimited access'),
+      el('div', { class: 'sub' }, 'All Better Real Estate platform features are permanently unlocked for this admin account. No subscription, unlock packs, AI quota, buy-box cap, or promotion charge is required.')
+    ]));
+  }
 
   wrap.appendChild(el('div', { class: 'tiergrid3' }, [
     tierCard({
@@ -678,8 +686,8 @@ function renderUpgrade() {
       priceLine: cents(p.pro.monthly) + '/mo or ' + cents(p.pro.annual) + '/yr',
       perks: ['Unlimited listing unlocks', 'Analytics on your own listings', 'Pro badge on your profile'],
       current: currentTier === 'pro',
-      onMonthly: () => subscribeTo('pro', 'monthly', st),
-      onAnnual: () => subscribeTo('pro', 'annual', st)
+      onMonthly: adminUnlimited ? null : () => subscribeTo('pro', 'monthly', st),
+      onAnnual: adminUnlimited ? null : () => subscribeTo('pro', 'annual', st)
     }),
     tierCard({
       key: 'platinum', name: p.platinum.label, tagline: 'The full toolkit for active investors',
@@ -696,13 +704,13 @@ function renderUpgrade() {
         'Investor workspace — compare saved properties, keep deal notes'
       ],
       current: currentTier === 'platinum',
-      onMonthly: () => subscribeTo('platinum', 'monthly', st),
-      onAnnual: () => subscribeTo('platinum', 'annual', st)
+      onMonthly: adminUnlimited ? null : () => subscribeTo('platinum', 'monthly', st),
+      onAnnual: adminUnlimited ? null : () => subscribeTo('platinum', 'annual', st)
     })
   ]));
   wrap.appendChild(st);
 
-  if (currentTier !== 'free') {
+  if (!adminUnlimited && currentTier !== 'free') {
     const cst = el('div', { class: 'okmsg' });
     const cancelBtn = el('button', { class: 'btn-ghost' }, 'Cancel auto-renewal');
     cancelBtn.onclick = async () => {
@@ -720,20 +728,22 @@ function renderUpgrade() {
     ]));
   }
 
-  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Or just buy unlocks'));
-  wrap.appendChild(el('div', { class: 'card', style: 'padding:22px' }, [
-    el('h3', { style: 'margin:0 0 4px;font-size:18px' }, `${p.unlockPack.qty} unlock pack`),
-    el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:700" }, cents(p.unlockPack.price)),
-    el('div', { class: 'sub' }, `${cents(Math.round(p.unlockPack.price / p.unlockPack.qty))} each vs ${cents(p.unlockCredit)} one at a time`),
-    el('button', {
-      class: 'submitbtn', onclick: async () => {
-        try {
-          const r = await api('POST', '/api/billing/unlock-pack');
-          await handlePurchaseResponse(r, 'Credits added.', async () => { await refreshMe(); render(); });
-        } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
-      }
-    }, 'Buy pack')
-  ]));
+  if (!adminUnlimited) {
+    wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Or just buy unlocks'));
+    wrap.appendChild(el('div', { class: 'card', style: 'padding:22px' }, [
+      el('h3', { style: 'margin:0 0 4px;font-size:18px' }, `${p.unlockPack.qty} unlock pack`),
+      el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:700" }, cents(p.unlockPack.price)),
+      el('div', { class: 'sub' }, `${cents(Math.round(p.unlockPack.price / p.unlockPack.qty))} each vs ${cents(p.unlockCredit)} one at a time`),
+      el('button', {
+        class: 'submitbtn', onclick: async () => {
+          try {
+            const r = await api('POST', '/api/billing/unlock-pack');
+            await handlePurchaseResponse(r, 'Credits added.', async () => { await refreshMe(); render(); });
+          } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
+        }
+      }, 'Buy pack')
+    ]));
+  }
   return wrap;
 }
 
@@ -1747,7 +1757,7 @@ async function renderMe() {
   const d = await api('GET', '/api/users/' + state.user.id + '/listings');
   const w = await api('GET', '/api/wallet');
   wrap.appendChild(el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]));
-  wrap.appendChild(el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${state.user.points} pts · ${state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`));
+  wrap.appendChild(el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`));
 
   wrap.appendChild(el('div', { class: 'statgrid' }, [
     stat(cents(w.balance), 'Wallet'), stat(state.user.unlockCredits, 'Unlocks'), stat(d.listings.length, 'Listings')
@@ -1854,7 +1864,7 @@ function renderBuyBox() {
   if (state.buyBoxIndex === undefined || state.buyBoxIndex >= boxes.length) state.buyBoxIndex = 0;
   const idx = state.buyBoxIndex;
   const bb = boxes[idx] || {};
-  const maxBoxes = state.access?.platinum ? 5 : 1;
+  const maxBoxes = state.access?.adminUnlimited ? Number.POSITIVE_INFINITY : state.access?.platinum ? 5 : 1;
 
   const wrap = el('div', { class: 'panel' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));

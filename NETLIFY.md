@@ -154,3 +154,7 @@ MARKETING_POSTAL_ADDRESS=Your valid business mailing address
 ```
 
 `marketing-cron` is configured in `netlify.toml` for `0 15 * * *` UTC. It runs daily but the application enforces a minimum 48-hour gap per opted-in user. Scheduled Functions only run automatically on published deploys.
+
+## Admin unlimited access
+
+Any account whose email is present in `ADMIN_EMAILS` is treated as a permanent admin super-account. Admin access does not expire and does not require Pro or Platinum billing. Admins receive all Pro/Platinum feature gates, unlimited AI listing assistance, unlimited buy boxes, unlimited included listing promotions, and unlimited listing unlock access. This bypass is enforced on the server and remains active as long as the email stays in `ADMIN_EMAILS`. Normal marketplace purchases and other real-world transaction charges are not made free by admin status.

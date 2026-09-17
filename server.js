@@ -158,19 +158,32 @@ function ledgerAdd(db, userId, type, amountCents, description, meta = {}) {
 function balanceOf(db, userId) {
   return db.ledger.filter(l => l.userId === userId).reduce((s, l) => s + l.amount, 0);
 }
+function isAdminUser(user) {
+  return !!user && user.role === 'admin' && policy.isAdminEmail(user.email);
+}
 function isPro(user) {
+  if (isAdminUser(user)) return true;
   return (user.plan === 'pro' || user.plan === 'platinum') && user.planUntil && new Date(user.planUntil) > new Date();
 }
 function isPlatinum(user) {
+  if (isAdminUser(user)) return true;
   return user.plan === 'platinum' && user.planUntil && new Date(user.planUntil) > new Date();
 }
 function inTrial(user) {
-  return user.trialUntil && new Date(user.trialUntil) > new Date();
+  return !isAdminUser(user) && user.trialUntil && new Date(user.trialUntil) > new Date();
 }
-function hasFullAccess(user) { return isPro(user) || inTrial(user) || user.role === 'admin'; }
+function hasFullAccess(user) { return isPro(user) || inTrial(user); }
 function maxBuyBoxesFor(user) {
+  if (isAdminUser(user)) return Number.MAX_SAFE_INTEGER;
   if (isPlatinum(user)) return PRICING.maxBuyBoxes.platinum;
   return PRICING.maxBuyBoxes[user.role] || 1;
+}
+function accessFor(user) {
+  if (!user) return null;
+  return {
+    pro: isPro(user), platinum: isPlatinum(user), trial: inTrial(user), full: hasFullAccess(user),
+    adminUnlimited: isAdminUser(user)
+  };
 }
 // Buy boxes moved from a single object to an array (Platinum can have
 // several). This reads either shape so accounts created before the
@@ -242,7 +255,7 @@ app.get('/api/me', async (req, res) => {
     user: publicUser(u),
     pricing: PRICING,
     balance: u ? balanceOf(db, u.id) : 0,
-    access: u ? { pro: isPro(u), platinum: isPlatinum(u), trial: inTrial(u), full: hasFullAccess(u) } : null
+    access: accessFor(u)
   });
 });
 app.get('/api/pricing', async (req, res) => res.json({ pricing: PRICING }));
@@ -518,6 +531,7 @@ function maybePayReferral(db, user) {
 
 /* ============================ SUBSCRIPTION & UNLOCKS ============================ */
 app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
+  if (isAdminUser(req.user)) return res.json({ user: publicUser(req.user), adminUnlimited: true });
   const period = req.body?.period === 'annual' ? 'annual' : 'monthly';
   const tier = req.body?.tier === 'platinum' ? 'platinum' : 'pro';
   const tierConfig = PRICING[tier];
@@ -552,6 +566,7 @@ app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.post('/api/billing/cancel', requireAuth, async (req, res) => {
+  if (isAdminUser(req.user)) return res.json({ user: publicUser(req.user), adminUnlimited: true, cancelsAtPeriodEnd: false });
   try {
     if (req.user.stripeSubscriptionId && payments.enabled()) {
       // Stops the next auto-charge. Access continues until the period
@@ -566,6 +581,7 @@ app.post('/api/billing/cancel', requireAuth, async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.post('/api/billing/unlock-pack', requireAuth, async (req, res) => {
+  if (isAdminUser(req.user)) return res.json({ unlimited: true, unlockCredits: req.user.unlockCredits });
   try {
     const result = await chargeOrIntent(req.db, req.user, PRICING.unlockPack.price, 'unlock_pack', `${PRICING.unlockPack.qty} listing unlocks`);
     if (!result.paid) { await saveDB(req.db); return res.json({ requiresPayment: true, clientSecret: result.clientSecret, amount: result.amount }); }
@@ -578,7 +594,7 @@ app.post('/api/billing/unlock-pack', requireAuth, async (req, res) => {
 
 /* ============================ LISTINGS ============================ */
 app.post('/api/listings', requireAuth, async (req, res) => {
-  if (!req.user.emailVerified && req.user.role !== 'admin') return res.status(403).json({ error: 'Confirm your email before posting a listing.' });
+  if (!req.user.emailVerified && !isAdminUser(req.user)) return res.status(403).json({ error: 'Confirm your email before posting a listing.' });
   const b = req.body || {};
   if (!b.address || !b.city || !b.asking) return res.status(400).json({ error: 'Address, city, and asking price are required.' });
   const photos = (await Promise.all((Array.isArray(b.photos) ? b.photos : []).slice(0, 12).map(writeImage))).filter(Boolean);
@@ -649,7 +665,7 @@ app.get('/api/listings/:id', async (req, res) => {
     owner: owner ? { ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone } : null,
     otherListings: others,
     unlockCredits: viewer ? viewer.unlockCredits : 0,
-    access: viewer ? { pro: isPro(viewer), platinum: isPlatinum(viewer), trial: inTrial(viewer), full: hasFullAccess(viewer) } : null,
+    access: accessFor(viewer),
     reviews: db.reviews.filter(r => r.aboutUserId === listing.ownerId)
   });
 });
@@ -657,6 +673,7 @@ app.get('/api/listings/:id', async (req, res) => {
 app.post('/api/listings/:id/unlock', requireAuth, async (req, res) => {
   const listing = req.db.listings.find(l => l.id === req.params.id);
   if (!listing) return res.status(404).json({ error: 'Not found.' });
+  if (isAdminUser(req.user)) return res.json({ ok: true, already: true, adminUnlimited: true });
   if (req.db.unlocks.some(u => u.userId === req.user.id && u.listingId === listing.id)) return res.json({ ok: true, already: true });
 
   if (req.user.unlockCredits > 0) {
@@ -676,7 +693,7 @@ app.post('/api/listings/:id/unlock', requireAuth, async (req, res) => {
 app.delete('/api/listings/:id', requireAuth, async (req, res) => {
   const i = req.db.listings.findIndex(l => l.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: 'Not found.' });
-  if (req.db.listings[i].ownerId !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Not your listing.' });
+  if (req.db.listings[i].ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Not your listing.' });
   req.db.listings.splice(i, 1); await saveDB(req.db); res.json({ ok: true });
 });
 
@@ -763,7 +780,7 @@ app.get('/api/feed', async (req, res) => {
       demo: !!l.demo
     };
   }).sort((a, b) => b._score - a._score);
-  res.json({ feed, access: viewer ? { pro: isPro(viewer), platinum: isPlatinum(viewer), trial: inTrial(viewer), full: hasFullAccess(viewer) } : null });
+  res.json({ feed, access: accessFor(viewer) });
 });
 
 /* ============================ PROMOTIONS ============================ */
@@ -776,15 +793,16 @@ app.post('/api/promotions/buy', requireAuth, async (req, res) => {
   const tier = PRICING.promotions[tierId];
   if (!tier) return res.status(400).json({ error: 'Unknown promotion.' });
 
-  // Platinum: one Super Boost included free per calendar month.
+  // Admin accounts have every promotion included with no quota. Platinum
+  // keeps its normal one-Super-Boost-per-calendar-month benefit.
+  const adminIncluded = isAdminUser(req.user);
   const thisMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
-  const freeBoostAvailable = tierId === 'superboost' && isPlatinum(req.user) && req.user.lastFreeBoostMonth !== thisMonth;
+  const freeBoostAvailable = !adminIncluded && tierId === 'superboost' && isPlatinum(req.user) && req.user.lastFreeBoostMonth !== thisMonth;
 
-  let usedFreeBoost = false;
+  let usedFreeBoost = adminIncluded || freeBoostAvailable;
   if (freeBoostAvailable) {
-    usedFreeBoost = true;
     req.user.lastFreeBoostMonth = thisMonth;
-  } else {
+  } else if (!adminIncluded) {
     let result;
     try { result = await chargeOrIntent(req.db, req.user, tier.price, 'promotion', tier.label + ' — ' + listing.address, { listingId, tierId }); }
     catch (e) { return res.status(400).json({ error: e.message }); }
@@ -801,17 +819,17 @@ app.post('/api/promotions/buy', requireAuth, async (req, res) => {
     listing.boostUntil = new Date(base + tier.hours * 3600000).toISOString();
     listing.boostWeight = Math.max(listing.boostWeight || 0, tier.weight);
   }
-  req.db.promotions.push({ id: crypto.randomUUID(), listingId, userId: req.user.id, tierId, price: usedFreeBoost ? 0 : tier.price, freeWithPlatinum: usedFreeBoost, at: new Date().toISOString() });
+  req.db.promotions.push({ id: crypto.randomUUID(), listingId, userId: req.user.id, tierId, price: usedFreeBoost ? 0 : tier.price, freeWithPlatinum: freeBoostAvailable, includedWithAdmin: adminIncluded, at: new Date().toISOString() });
   if (!usedFreeBoost) maybePayReferral(req.db, req.user);
   await saveDB(req.db);
-  res.json({ listing, usedFreeBoost });
+  res.json({ listing, usedFreeBoost, adminIncluded });
 });
 
 /* ============================ SELLER ANALYTICS ============================ */
 app.get('/api/listings/:id/analytics', requireAuth, async (req, res) => {
   const l = req.db.listings.find(x => x.id === req.params.id);
   if (!l) return res.status(404).json({ error: 'Not found.' });
-  if (l.ownerId !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Not your listing.' });
+  if (l.ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Not your listing.' });
   const views = req.db.views.filter(v => v.listingId === l.id);
   const saves = req.db.saves.filter(s => s.listingId === l.id);
   const unlocks = req.db.unlocks.filter(u => u.listingId === l.id);
@@ -995,28 +1013,30 @@ const SHOP_CATEGORIES = ['Appliances','HVAC','Plumbing','Electrical','Flooring',
 
 
 app.get('/api/ai/status', requireAuth, async (req, res) => {
-  res.json({ configured: ai.configured(), available: req.user.role === 'admin' || isPlatinum(req.user), model: ai.configured() ? ai.model() : null });
+  res.json({ configured: ai.configured(), available: isPlatinum(req.user), model: ai.configured() ? ai.model() : null });
 });
 app.post('/api/ai/listing-copy', requireAuth, async (req, res) => {
   const kind = ['shop','property','cj'].includes(req.body?.kind) ? req.body.kind : 'shop';
-  const isAdmin = req.user.role === 'admin' && policy.isAdminEmail(req.user.email);
+  const isAdmin = isAdminUser(req.user);
   if (kind === 'cj' && !isAdmin) return res.status(403).json({ error: 'Admin only.' });
   if (!isAdmin && !isPlatinum(req.user)) return res.status(403).json({ error: 'AI listing assistance is a Platinum feature.' });
   if (!ai.configured()) return res.status(503).json({ error: 'AI listing assistance is not configured yet.' });
 
   const day = new Date().toISOString().slice(0, 10);
-  if (req.user.aiUsageDay !== day) { req.user.aiUsageDay = day; req.user.aiUsageCount = 0; }
-  const limit = isAdmin ? 200 : 30;
-  if (Number(req.user.aiUsageCount || 0) >= limit) return res.status(429).json({ error: 'Daily AI listing limit reached. Try again tomorrow.' });
-  req.user.aiUsageCount = Number(req.user.aiUsageCount || 0) + 1;
-  await saveDB(req.db);
+  const limit = 30;
+  if (!isAdmin) {
+    if (req.user.aiUsageDay !== day) { req.user.aiUsageDay = day; req.user.aiUsageCount = 0; }
+    if (Number(req.user.aiUsageCount || 0) >= limit) return res.status(429).json({ error: 'Daily AI listing limit reached. Try again tomorrow.' });
+    req.user.aiUsageCount = Number(req.user.aiUsageCount || 0) + 1;
+    await saveDB(req.db);
+  }
 
   const facts = req.body?.facts && typeof req.body.facts === 'object' ? req.body.facts : {};
   const images = Array.isArray(req.body?.images) ? req.body.images.slice(0, 3) : [];
   try {
     const draft = await ai.generateListingCopy({ kind, facts, images, allowedCategories: kind === 'property' ? [] : SHOP_CATEGORIES });
     if (draft.categorySuggestion && !SHOP_CATEGORIES.includes(draft.categorySuggestion) && kind !== 'property') draft.categorySuggestion = '';
-    res.json({ draft, remainingToday: Math.max(0, limit - req.user.aiUsageCount) });
+    res.json({ draft, remainingToday: isAdmin ? null : Math.max(0, limit - req.user.aiUsageCount), unlimited: isAdmin });
   } catch (e) {
     console.error('[ai listing]', e.message);
     res.status(502).json({ error: 'AI listing assistance is temporarily unavailable. ' + e.message });
@@ -1150,7 +1170,7 @@ app.get('/api/shop/items/:id', async (req, res) => {
 
 
 function isShopAdmin(user) {
-  return !!user && user.role === 'admin' && policy.isAdminEmail(user.email);
+  return isAdminUser(user);
 }
 function canManageShopItem(user, item) {
   return !!user && !!item && (isShopAdmin(user) || item.sellerId === user.id);
