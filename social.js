@@ -2,6 +2,7 @@ function publicProfileUser(u) {
   return u ? {
     id: u.id,
     name: u.name,
+    username: u.username || null,
     role: u.role,
     bio: u.bio || '',
     location: u.location || '',
@@ -28,6 +29,7 @@ function friendRelationship(db, viewerId, otherId) {
 function socialUserCard(db, viewerId, u) {
   const listings = (db.listings || []).filter(l => l.ownerId === u.id);
   const markets = [...new Set([u.location, ...listings.map(l => l.city)].filter(Boolean))].slice(0, 4);
+  const company = u.companyId ? (db.companies || []).find(c => c.id === u.companyId) : null;
   const friendship = friendRelationship(db, viewerId, u.id);
   return {
     ...publicProfileUser(u),
@@ -35,6 +37,7 @@ function socialUserCard(db, viewerId, u) {
     followerCount: (db.follows || []).filter(f => f.followingId === u.id).length,
     friendCount: (db.friendships || []).filter(f => f.userAId === u.id || f.userBId === u.id).length,
     markets,
+    company: company ? { id: company.id, name: company.name, slug: company.slug || null, logoUrl: company.logoUrl || null } : null,
     following: !!viewerId && (db.follows || []).some(f => f.followerId === viewerId && f.followingId === u.id),
     friendStatus: friendship.status,
     friendRequestId: friendship.requestId
@@ -50,7 +53,8 @@ function searchUsers(db, viewerId, q = '', role = '') {
   if (words.length) {
     users = users.filter(u => {
       const listingMarkets = (db.listings || []).filter(l => l.ownerId === u.id).map(l => l.city).join(' ');
-      const hay = [u.name, u.role, u.bio, u.location, listingMarkets].filter(Boolean).join(' ').toLowerCase();
+      const company = u.companyId ? (db.companies || []).find(c => c.id === u.companyId) : null;
+      const hay = [u.name, u.username, u.role, u.bio, u.location, company?.name, company?.slug, listingMarkets].filter(Boolean).join(' ').toLowerCase();
       return words.every(w => hay.includes(w));
     });
   }

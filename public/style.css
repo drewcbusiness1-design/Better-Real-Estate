@@ -584,3 +584,29 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 }
 .tabbar button .ic{position:relative;}
 .tabalert{position:absolute;top:-4px;right:-7px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg);}
+
+/* ================= account + wholesale teams ================= */
+.tiergrid4{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:10px;}
+.profileusername,.personhandle{font-size:12.5px;color:var(--ink-soft);margin:1px 0 5px;}
+.companychip,.companylink{border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);border-radius:999px;padding:5px 9px;font-size:12px;font-weight:600;margin:2px 0 7px;display:inline-flex;align-items:center;max-width:100%;}
+.companybyline{font-size:11.5px;font-weight:600;color:var(--accent);margin-top:1px;}
+.companyhero{display:flex;gap:18px;align-items:flex-start;border:1px solid var(--line);background:var(--surface);border-radius:16px;padding:20px;box-shadow:var(--shadow-sm);margin:8px 0 20px;}
+.companyhero h2{margin:1px 0 3px;}
+.companylogo{width:52px;height:52px;border-radius:14px;border:1px solid var(--line);background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-weight:800;overflow:hidden;flex:0 0 auto;}
+.companylogo.large{width:78px;height:78px;border-radius:18px;font-size:22px;}
+.companylogo img{width:100%;height:100%;object-fit:cover;}
+.accountdivider{height:1px;background:var(--line);margin:16px 0;}
+.dangerzone{border-color:color-mix(in srgb,#b42318 30%,var(--line));}
+.dangertext{color:#b42318;}
+.pendinginvites{margin-top:14px;border-top:1px solid var(--line);padding-top:6px;}
+.companyinquiry{display:flex;align-items:flex-start;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line);}
+.companyinquiry:last-child{border-bottom:none;}
+.companyinquiry .t{font-weight:650;margin-bottom:3px;}
+.companyinquiry .s{font-size:13px;color:var(--ink-2);white-space:pre-wrap;}
+.linkbtn{background:none!important;border:0!important;padding:0 3px!important;color:var(--accent)!important;text-decoration:underline;cursor:pointer;}
+@media(max-width:700px){
+  .tiergrid4{grid-template-columns:1fr;}
+  .companyhero{padding:16px;gap:13px;}
+  .companylogo.large{width:64px;height:64px;border-radius:16px;}
+  .companyinquiry{flex-wrap:wrap;}
+}

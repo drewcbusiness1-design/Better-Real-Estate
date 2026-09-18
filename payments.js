@@ -95,8 +95,8 @@ async function createSubscriptionCheckout(user, { amountCents, interval, label, 
       },
       quantity: 1
     }],
-    success_url: `${appUrl}/?checkout=success`,
-    cancel_url: `${appUrl}/?checkout=cancelled`,
+    success_url: `${appUrl}/?view=upgrade&checkout=success`,
+    cancel_url: `${appUrl}/?view=upgrade&checkout=cancelled`,
     metadata: { userId: user.id, purpose: 'pro_subscription', period: interval === 'year' ? 'annual' : 'monthly', tier: tier || 'pro' }
   });
 }

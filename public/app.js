@@ -2,7 +2,8 @@ let state = {
   view: 'home', user: null, authMode: 'signup', pricing: null, access: null,
   detailId: null, profileId: null, photoIdx: 0, composePhotos: [], shopPhotos: [],
   shopCat: 'All', shopQ: '', shopItemId: null, shopEditId: null, shopEditPhotos: [], shopManageQ: '',
-  networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0
+  networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0,
+  companyId: null, companyInviteToken: null
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -62,12 +63,48 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
+const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','leaderboard','admin','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
+function applyRouteParams(params) {
+  const requested = params.get('view');
+  if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
+  const id = params.get('id');
+  const userId = params.get('user');
+  const itemId = params.get('item');
+  if (['detail','promote','analytics'].includes(state.view)) state.detailId = id || null;
+  if (state.view === 'profile') state.profileId = userId || null;
+  if (state.view === 'chat') state.chatUserId = userId || null;
+  if (state.view === 'shopitem') state.shopItemId = itemId || null;
+  if (state.view === 'shopedit') state.shopEditId = itemId || null;
+  if (state.view === 'company') state.companyId = params.get('company') || null;
+  if (params.get('invite')) state.companyInviteToken = params.get('invite');
+  return requested;
+}
+function routeUrl(view = state.view) {
+  const p = new URLSearchParams();
+  if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
+  if (['detail','promote','analytics'].includes(view) && state.detailId) p.set('id', state.detailId);
+  if (view === 'profile' && state.profileId) p.set('user', state.profileId);
+  if (view === 'chat' && state.chatUserId) p.set('user', state.chatUserId);
+  if (view === 'shopitem' && state.shopItemId) p.set('item', state.shopItemId);
+  if (view === 'shopedit' && state.shopEditId) p.set('item', state.shopEditId);
+  if (view === 'company' && state.companyId) p.set('company', state.companyId);
+  if ((view === 'companyjoin' || view === 'auth') && state.companyInviteToken) p.set('invite', state.companyInviteToken);
+  const q = p.toString();
+  return location.pathname + (q ? '?' + q : '');
+}
+function writeRoute(mode = 'push') {
+  const url = routeUrl();
+  const current = location.pathname + location.search;
+  if (mode === 'replace') history.replaceState({ bre: true }, '', url);
+  else if (url !== current) history.pushState({ bre: true }, '', url);
+}
+
 async function boot() {
   const params = new URLSearchParams(location.search);
   state.verifyToken = params.get('verify');
   state.resetToken = params.get('reset');
   const checkoutResult = params.get('checkout');
-  const requestedView = params.get('view');
+  const requestedView = applyRouteParams(params);
   try {
     const d = await api('GET', '/api/me');
     state.user = d.user; state.pricing = d.pricing; state.access = d.access;
@@ -83,18 +120,21 @@ async function boot() {
     // query string off the URL either way, and if it succeeded, give the
     // webhook a moment to land before refreshing — Stripe redirects the
     // browser back slightly before the webhook always arrives.
-    history.replaceState({}, '', location.pathname);
+    const cleaned = new URLSearchParams(location.search);
+    cleaned.delete('checkout');
+    history.replaceState({ bre: true }, '', location.pathname + (cleaned.toString() ? '?' + cleaned.toString() : ''));
     if (checkoutResult === 'success') {
-      setTimeout(async () => { await refreshMe(); toast('Pro is active — thanks!', 'ok'); render(); }, 1800);
+      setTimeout(async () => { await refreshMe(); toast('Your plan is active — thanks!', 'ok'); render(); }, 1800);
     }
   }
   if (state.verifyToken) state.view = 'verify';
   else if (state.resetToken) state.view = 'reset';
-  else if (state.user) {
-    const allowedDeepLinks = new Set(['feed','shop','shopmanage','orders','settings','me','saved','messages','network','workspace','upgrade']);
-    state.view = allowedDeepLinks.has(requestedView) ? requestedView : 'feed';
-  }
+  else if (state.companyInviteToken && state.user) state.view = 'companyjoin';
+  else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : 'feed';
+  else if (state.companyInviteToken) { state.view = 'auth'; state.authMode = 'signup'; }
+  else state.view = requestedView && ROUTED_VIEWS.has(requestedView) ? requestedView : 'home';
   if (state.user) await refreshUnread();
+  if (!state.verifyToken && !state.resetToken) writeRoute('replace');
   render();
 }
 async function refreshMe() {
@@ -115,8 +155,16 @@ function startViewPolling(fn, ms = 5000) {
     Promise.resolve().then(fn).catch(() => {});
   }, ms);
 }
-function go(view, extra = {}) { Object.assign(state, { view }, extra); window.scrollTo(0, 0); render(); }
+function go(view, extra = {}, options = {}) { Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
 function render() { stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter(); }
+window.addEventListener('popstate', () => {
+  const params = new URLSearchParams(location.search);
+  const requested = applyRouteParams(params);
+  if (state.user) state.view = requested && ROUTED_VIEWS.has(requested) && !['home','auth'].includes(requested) ? requested : 'feed';
+  else state.view = requested && ROUTED_VIEWS.has(requested) ? requested : 'home';
+  window.scrollTo(0, 0);
+  render();
+});
 
 function renderTop() {
   const brandEl = document.querySelector('.brand');
@@ -169,7 +217,7 @@ async function renderApp() {
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
-    boostpicker: renderBoostPicker, workspace: renderWorkspace,
+    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
@@ -240,11 +288,11 @@ function renderAuth() {
   const wrap = el('div', { class: 'panel' });
   const isSignup = state.authMode === 'signup';
   wrap.appendChild(el('h2', {}, isSignup ? 'Create your account' : 'Welcome back'));
-  wrap.appendChild(el('div', { class: 'sub' }, isSignup ? `${state.pricing?.signupTrialDays || 7} days of full access, no card required.` : 'Sign in to continue.'));
+  wrap.appendChild(el('div', { class: 'sub' }, state.companyInviteToken ? (isSignup ? 'Create your account to join your company workspace.' : 'Sign in with the email that received your company invitation.') : (isSignup ? `${state.pricing?.signupTrialDays || 7} days of full access, no card required.` : 'Sign in to continue.')));
 
   let role = 'buyer';
   const name = el('input', { placeholder: 'Jordan Alvarez' });
-  const email = el('input', { type: 'email', placeholder: 'you@email.com' });
+  const email = el('input', { type: 'text', autocomplete: 'username', placeholder: isSignup ? 'you@email.com' : 'Email or @username' });
   const pass = el('input', { type: 'password', placeholder: isSignup ? 'At least 6 characters' : 'Your password' });
   const ref = el('input', { placeholder: 'Optional' });
   const marketingOpt = el('input', { type: 'checkbox', style: 'width:auto;margin:0' });
@@ -282,7 +330,7 @@ function renderAuth() {
       state.user = d.user; if (d.pricing) state.pricing = d.pricing;
       await refreshMe();
       applyTheme(state.user.settings?.theme || 'light');
-      go('feed');
+      go(state.companyInviteToken ? 'companyjoin' : 'feed');
     } catch (e) { err.textContent = e.message; }
   };
   wrap.appendChild(submit);
@@ -482,6 +530,7 @@ function propertyCard(l) {
       el('div', { class: 'av', onclick: () => go('profile', { profileId: l.ownerId }) }, l.ownerAvatar ? el('img', { src: l.ownerAvatar }) : initials(l.ownerName)),
       el('div', { class: 'who', onclick: () => go('profile', { profileId: l.ownerId }) }, [
         el('div', { class: 'n' }, [l.ownerName, l.ownerVerified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
+        l.companyName ? el('div', { class: 'companybyline' }, l.companyName) : null,
         el('div', { class: 't' }, l.situation + ' · ' + l.timeline)
       ]),
       l.demo ? el('div', { class: 'demopill' }, 'SAMPLE') : (l.isBoosted ? el('div', { class: 'boostpill' }, 'PROMOTED') : (l.isSpotlight ? el('div', { class: 'spotbadge' }, '★') : null))
@@ -593,7 +642,8 @@ async function renderDetail() {
       el('div', { class: 'av', onclick: () => go('profile', { profileId: owner.id }) }, owner.avatarUrl ? el('img', { src: owner.avatarUrl }) : initials(owner.name)),
       el('div', { class: 'meta', onclick: () => go('profile', { profileId: owner.id }) }, [
         el('div', { class: 'n' }, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓') : null]),
-        el('div', { class: 's' }, [owner.phone, owner.email, avg ? `★ ${avg} (${reviews.length})` : null].filter(Boolean).join(' · '))
+        owner.company ? el('button', { class: 'companylink', onclick: e => { e.stopPropagation(); go('company', { companyId: owner.company.id }); } }, owner.company.name) : null,
+        el('div', { class: 's' }, [owner.username ? '@' + owner.username : null, owner.phone, owner.email, avg ? `★ ${avg} (${reviews.length})` : null].filter(Boolean).join(' · '))
       ]),
       state.user && state.user.id !== owner.id ? followBtn : null
     ])
@@ -686,7 +736,8 @@ function renderUpgrade() {
 
   const st = el('div', { class: 'okmsg' });
   const adminUnlimited = state.access?.adminUnlimited === true || state.user?.role === 'admin';
-  const currentTier = adminUnlimited ? 'admin' : state.access?.platinum ? 'platinum' : state.access?.pro ? 'pro' : 'free';
+  const currentTier = adminUnlimited ? 'admin' : state.access?.wholesale ? 'wholesale' : state.access?.platinum ? 'platinum' : state.access?.pro ? 'pro' : 'free';
+  const companySeatAccess = currentTier === 'wholesale' && state.user?.companyId && state.user?.companyRole !== 'owner' && state.user?.plan !== 'wholesale';
 
   if (adminUnlimited) {
     wrap.appendChild(el('div', { class: 'card', style: 'padding:18px;margin:14px 0;border:1px solid var(--accent)' }, [
@@ -695,7 +746,7 @@ function renderUpgrade() {
     ]));
   }
 
-  wrap.appendChild(el('div', { class: 'tiergrid3' }, [
+  wrap.appendChild(el('div', { class: 'tiergrid4' }, [
     tierCard({
       key: 'free', name: 'Free', tagline: '7-day trial, then pay as you browse',
       priceLine: 'Free',
@@ -727,15 +778,33 @@ function renderUpgrade() {
       current: currentTier === 'platinum',
       onMonthly: adminUnlimited ? null : () => subscribeTo('platinum', 'monthly', st),
       onAnnual: adminUnlimited ? null : () => subscribeTo('platinum', 'annual', st)
+    }),
+    tierCard({
+      key: 'wholesale', name: p.wholesale.label, tagline: 'For professional wholesale teams',
+      priceLine: cents(p.wholesale.monthly) + '/mo or ' + cents(p.wholesale.annual) + '/yr',
+      perks: [
+        'Everything in Platinum for the whole team',
+        `${p.wholesale.seats} secure individual team seats`,
+        'Branded company profile and company workspace',
+        'Shared team property inventory',
+        'Shared company-listing inquiry inbox',
+        'Company acquisition buy box and team analytics',
+        'Owner, admin and member permissions'
+      ],
+      current: currentTier === 'wholesale',
+      onMonthly: adminUnlimited || companySeatAccess ? null : () => subscribeTo('wholesale', 'monthly', st),
+      onAnnual: adminUnlimited || companySeatAccess ? null : () => subscribeTo('wholesale', 'annual', st)
     })
   ]));
+  if (companySeatAccess) wrap.appendChild(el('div', { class: 'hint', style: 'margin-top:10px' }, 'Your Wholesale Teams access is provided by your company. Billing is managed by the company owner.'));
+  if (currentTier === 'wholesale' && !companySeatAccess) wrap.appendChild(el('button', { class: 'btn-ghost', style: 'margin-top:12px', onclick: () => go('companyworkspace') }, state.user.companyId ? 'Open company workspace' : 'Set up company workspace'));
   wrap.appendChild(st);
 
-  if (!adminUnlimited && currentTier !== 'free') {
+  if (!adminUnlimited && currentTier !== 'free' && !companySeatAccess) {
     const cst = el('div', { class: 'okmsg' });
     const cancelBtn = el('button', { class: 'btn-ghost' }, 'Cancel auto-renewal');
     cancelBtn.onclick = async () => {
-      if (!confirm(`Stop future automatic charges? You keep ${currentTier === 'platinum' ? 'Platinum' : 'Pro'} until ${new Date(state.user.planUntil).toLocaleDateString()}, then it won't renew.`)) return;
+      if (!confirm(`Stop future automatic charges? You keep ${currentTier === 'wholesale' ? 'Wholesale Teams' : currentTier === 'platinum' ? 'Platinum' : 'Pro'} until ${new Date(state.user.planUntil).toLocaleDateString()}, then it won't renew.`)) return;
       try {
         const r = await api('POST', '/api/billing/cancel');
         await refreshMe();
@@ -744,7 +813,7 @@ function renderUpgrade() {
       } catch (e) { cst.className = 'errmsg'; cst.textContent = e.message; }
     };
     wrap.appendChild(el('div', { class: 'card', style: 'padding:16px;margin:18px 0' }, [
-      el('div', { class: 'hint', style: 'margin-bottom:10px' }, `You're on ${currentTier === 'platinum' ? 'Platinum' : 'Pro'}, renewing automatically until ${new Date(state.user.planUntil).toLocaleDateString()}.`),
+      el('div', { class: 'hint', style: 'margin-bottom:10px' }, `You're on ${currentTier === 'wholesale' ? 'Wholesale Teams' : currentTier === 'platinum' ? 'Platinum' : 'Pro'}, renewing automatically until ${new Date(state.user.planUntil).toLocaleDateString()}.`),
       cancelBtn, cst
     ]));
   }
@@ -772,7 +841,7 @@ async function subscribeTo(tier, period, st) {
   try {
     const r = await api('POST', '/api/billing/subscribe', { period, tier });
     if (r.checkoutUrl) { window.location.href = r.checkoutUrl; return; }
-    await handlePurchaseResponse(r, `${tier === 'platinum' ? 'Platinum' : 'Pro'} active — billed ${period}.`, async () => { await refreshMe(); render(); });
+    await handlePurchaseResponse(r, `${tier === 'wholesale' ? 'Wholesale Teams' : tier === 'platinum' ? 'Platinum' : 'Pro'} active — billed ${period}.`, async () => { await refreshMe(); render(); });
   } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
 }
 
@@ -1791,7 +1860,8 @@ function personCard(user, opts = {}) {
     avatarNode(user),
     el('div', { class: 'personmeta' }, [
       el('div', { class: 'personname' }, [user.name, user.verified ? el('span', { class: 'vbadge' }, '✓') : null]),
-      el('div', { class: 'personsub' }, [user.role, ...(user.markets || []), user.location].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3).join(' · ')),
+      user.username ? el('div', { class: 'personhandle' }, '@' + user.username) : null,
+      el('div', { class: 'personsub' }, [user.company?.name, user.role, ...(user.markets || []), user.location].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3).join(' · ')),
       el('div', { class: 'personstats' }, `${user.listingCount || 0} listings · ${user.followerCount || 0} followers · ${user.friendCount || 0} friends`)
     ])
   ]);
@@ -1863,7 +1933,7 @@ async function renderNetwork() {
   }
 
   const controls = el('div', { class: 'networksearch' });
-  const q = el('input', { placeholder: 'Search name, market, role or bio…', value: state.networkQ || '' });
+  const q = el('input', { placeholder: 'Search name, @username, company, market or role…', value: state.networkQ || '' });
   const role = el('select');
   [['all','All people'],['buyer','Buyers'],['seller','Sellers']].forEach(([v,l]) => role.appendChild(el('option', { value: v, selected: state.networkRole === v ? 'selected' : null }, l)));
   controls.appendChild(q); controls.appendChild(role); wrap.appendChild(controls);
@@ -2021,7 +2091,8 @@ async function renderMe() {
     avatarNode(state.user, 'profile'),
     el('div', { class: 'profileherobody' }, [
       el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
-      el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`),
+      state.user.username ? el('div', { class: 'profileusername' }, '@' + state.user.username) : null,
+      el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`),
       state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
       state.user.bio ? el('p', { class: 'profilebio' }, state.user.bio) : null,
       el('button', { class: 'btn-ghost profileeditbtn', onclick: () => go('settings') }, state.user.avatarUrl ? 'Edit profile' : 'Add profile photo')
@@ -2036,7 +2107,7 @@ async function renderMe() {
   const nav = el('div', { class: 'card' });
   [['Wallet & payouts', () => go('wallet')], ['Offers', () => go('offers')], ['Orders', () => go('orders')],
    [state.user.role === 'admin' ? 'Admin — shop listings' : 'My shop listings', () => go('shopmanage')],
-   ['Saved properties', () => go('saved')], ['Network & friends', () => go('network')], ['Messages', () => go('messages')], ['Buy box', () => go('buybox')],
+   ['Saved properties', () => go('saved')], ['Network & friends', () => go('network')], ['Messages', () => go('messages')], ...(state.access?.wholesale || state.user.companyId ? [['Company workspace', () => go('companyworkspace')]] : []), ['Buy box', () => go('buybox')],
    ['Investor workspace' + (state.access?.platinum ? '' : ' 🔒'), () => go('workspace')],
    ['Plans & billing', () => go('upgrade')],
    ...(state.user.role === 'admin' ? [
@@ -2095,12 +2166,14 @@ async function renderMe() {
 }
 
 async function renderProfile() {
-  const { owner, listings, followerCount, friendCount, friendship, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
+  const { owner, company, listings, followerCount, friendCount, friendship, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
   const profileBody = el('div', { class: 'profileherobody' }, [
     el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
+    owner.username ? el('div', { class: 'profileusername' }, '@' + owner.username) : null,
+    company ? el('button', { class: 'companychip', onclick: () => go('company', { companyId: company.id }) }, company.name) : null,
     el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')),
     owner.location ? el('div', { class: 'profilelocation' }, owner.location) : null,
     owner.bio ? el('p', { class: 'profilebio' }, owner.bio) : null
@@ -2220,6 +2293,7 @@ async function renderSettings() {
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Profile'));
   const pbox = el('div', { class: 'card', style: 'padding:16px' });
   const nameI = el('input', { value: state.user.name });
+  const usernameI = el('input', { value: state.user.username || '', placeholder: 'your.username', autocapitalize: 'none', autocomplete: 'username' });
   const bioI = el('textarea', {}); bioI.value = state.user.bio || '';
   const phoneI = el('input', { value: state.user.phone || '' });
   const locationI = el('input', { value: state.user.location || '', placeholder: 'e.g. Newark, NJ or South Jersey' });
@@ -2242,13 +2316,15 @@ async function renderSettings() {
     const label = avPrev.querySelector('b'); if (label) label.textContent = 'Photo ready — save to apply';
   };
   pbox.appendChild(el('label', {}, 'Display name')); pbox.appendChild(nameI);
+  pbox.appendChild(el('label', {}, 'Username')); pbox.appendChild(usernameI);
+  pbox.appendChild(el('div', { class: 'hint' }, 'Shown as @username. Usernames are searchable and can be changed once every 7 days.'));
   pbox.appendChild(el('label', {}, 'Phone (shown after unlock)')); pbox.appendChild(phoneI);
   pbox.appendChild(el('label', {}, 'Market / location')); pbox.appendChild(locationI);
   pbox.appendChild(el('label', {}, 'Bio')); pbox.appendChild(bioI);
   pbox.appendChild(el('label', {}, 'Profile photo')); pbox.appendChild(avPrev); pbox.appendChild(avFile);
   const pst = el('div', { class: 'okmsg' });
   pbox.appendChild(el('button', { class: 'submitbtn', onclick: async () => {
-    try { const { user } = await api('PATCH', '/api/me', { name: nameI.value, bio: bioI.value, phone: phoneI.value, location: locationI.value, avatarData: avData }); state.user = user; pst.textContent = 'Saved.'; }
+    try { const { user } = await api('PATCH', '/api/me', { name: nameI.value, username: usernameI.value, bio: bioI.value, phone: phoneI.value, location: locationI.value, avatarData: avData }); state.user = user; usernameI.value = user.username || ''; pst.textContent = 'Saved.'; }
     catch (e) { pst.className = 'errmsg'; pst.textContent = e.message; }
   } }, 'Save profile'));
   pbox.appendChild(pst);
@@ -2273,6 +2349,45 @@ async function renderSettings() {
   }));
   wrap.appendChild(sbox);
 
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Account & security'));
+  const abox = el('div', { class: 'card', style: 'padding:16px' });
+  abox.appendChild(el('div', { class: 'hint', style: 'margin-bottom:12px' }, `Signed in as ${state.user.email} · @${state.user.username || 'username'}`));
+  const currentPass = el('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Current password' });
+  const newPass = el('input', { type: 'password', autocomplete: 'new-password', placeholder: 'New password (6+ characters)' });
+  const confirmPass = el('input', { type: 'password', autocomplete: 'new-password', placeholder: 'Confirm new password' });
+  const passSt = el('div', { class: 'okmsg' });
+  abox.appendChild(el('label', {}, 'Change password')); abox.appendChild(currentPass); abox.appendChild(newPass); abox.appendChild(confirmPass);
+  abox.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%', onclick: async () => {
+    passSt.className = 'okmsg'; passSt.textContent = '';
+    if (newPass.value !== confirmPass.value) { passSt.className = 'errmsg'; passSt.textContent = 'New passwords do not match.'; return; }
+    try { await api('POST', '/api/me/password', { currentPassword: currentPass.value, newPassword: newPass.value }); currentPass.value = newPass.value = confirmPass.value = ''; passSt.textContent = 'Password changed.'; }
+    catch (e) { passSt.className = 'errmsg'; passSt.textContent = e.message; }
+  } }, 'Change password'));
+  abox.appendChild(passSt);
+  if (state.access?.wholesale || state.user.companyId) {
+    abox.appendChild(el('div', { class: 'accountdivider' }));
+    abox.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%', onclick: () => go('companyworkspace') }, 'Open company workspace'));
+  } else {
+    abox.appendChild(el('div', { class: 'accountdivider' }));
+    abox.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%', onclick: () => go('upgrade') }, 'Wholesale company plans'));
+  }
+  wrap.appendChild(abox);
+
+  wrap.appendChild(el('div', { class: 'sectiontitle dangertext' }, 'Delete account'));
+  const dbox = el('div', { class: 'card dangerzone', style: 'padding:16px' });
+  dbox.appendChild(el('div', { class: 'dnotes' }, 'Permanently removes your public profile, listings, friendships and messages. Financial/order records that must be retained are stripped of your profile information. If you own a company workspace, deleting your account closes that workspace for the team.'));
+  const delPass = el('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
+  const delConfirm = el('input', { placeholder: 'Type DELETE' });
+  const delSt = el('div', { class: 'errmsg' });
+  dbox.appendChild(delPass); dbox.appendChild(delConfirm);
+  dbox.appendChild(el('button', { class: 'dangerbtn', onclick: async () => {
+    if (delConfirm.value.trim().toUpperCase() !== 'DELETE') { delSt.textContent = 'Type DELETE to confirm.'; return; }
+    if (!confirm('Permanently delete this Better Real Estate account? This cannot be undone.')) return;
+    try { await api('DELETE', '/api/me', { password: delPass.value, confirmation: delConfirm.value }); state.user = null; state.access = null; state.companyId = null; state.companyInviteToken = null; go('home', {}, { replace: true }); }
+    catch (e) { delSt.textContent = e.message; }
+  } }, 'Permanently delete account'));
+  dbox.appendChild(delSt); wrap.appendChild(dbox);
+
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Email preferences'));
   const ep = await api('GET', '/api/email-preferences').catch(() => ({ marketingOptIn: false, marketingConfigured: false }));
   const ebox = el('div', { class: 'card' });
@@ -2289,6 +2404,199 @@ async function renderSettings() {
   } }, 'Log out'));
   return wrap;
 }
+
+async function renderCompanyJoin() {
+  const wrap = el('div', { class: 'panel' });
+  wrap.appendChild(el('h2', {}, 'Join company workspace'));
+  wrap.appendChild(el('div', { class: 'sub' }, 'Company seats use individual logins, so your password and personal direct messages stay private.'));
+  if (!state.user) {
+    wrap.appendChild(el('button', { class: 'submitbtn', onclick: () => go('auth') }, 'Sign in or create account'));
+    return wrap;
+  }
+  if (!state.companyInviteToken) {
+    wrap.appendChild(el('div', { class: 'errmsg' }, 'This company invitation is missing or invalid.'));
+    return wrap;
+  }
+  const st = el('div', { class: 'okmsg' });
+  const accept = el('button', { class: 'submitbtn' }, 'Accept company invitation');
+  accept.onclick = async () => {
+    accept.disabled = true;
+    try {
+      const r = await api('POST', '/api/company/invites/accept', { token: state.companyInviteToken });
+      state.companyInviteToken = null;
+      await refreshMe();
+      toast(`Joined ${r.company.name}`, 'ok');
+      go('companyworkspace', {}, { replace: true });
+    } catch (e) { st.className = 'errmsg'; st.textContent = e.message; accept.disabled = false; }
+  };
+  wrap.appendChild(accept); wrap.appendChild(st);
+  wrap.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%;margin-top:10px', onclick: async () => { await api('POST', '/api/logout'); state.user = null; state.access = null; state.authMode = 'login'; go('auth', {}, { replace: true }); } }, 'Use a different account'));
+  return wrap;
+}
+
+function companyLogoNode(company, cls = '') {
+  return el('div', { class: 'companylogo ' + cls }, company?.logoUrl ? el('img', { src: company.logoUrl, alt: company.name || 'Company logo' }) : initials(company?.name || 'Company'));
+}
+
+async function renderCompany() {
+  const id = state.companyId;
+  if (!id) return el('div', { class: 'page' }, el('div', { class: 'empty' }, 'Company not found.'));
+  const { company, members, listings } = await api('GET', '/api/companies/' + encodeURIComponent(id));
+  const wrap = el('div', { class: 'page' });
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => history.back() }, '← Back'));
+  wrap.appendChild(el('div', { class: 'companyhero' }, [
+    companyLogoNode(company, 'large'),
+    el('div', { class: 'grow' }, [
+      el('h2', {}, company.name),
+      el('div', { class: 'profileusername' }, '@' + company.slug),
+      company.bio ? el('p', { class: 'profilebio' }, company.bio) : null,
+      company.markets?.length ? el('div', { class: 'sub' }, company.markets.join(' · ')) : null,
+      company.website ? el('a', { href: company.website.startsWith('http') ? company.website : 'https://' + company.website, target: '_blank', rel: 'noopener noreferrer' }, company.website) : null
+    ])
+  ]));
+  wrap.appendChild(el('div', { class: 'statgrid' }, [stat(members.length, 'Team'), stat(listings.length, 'Listings'), stat(company.seatLimit, 'Seats')]));
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Team'));
+  const team = el('div', { class: 'peoplegrid' });
+  members.forEach(m => team.appendChild(el('div', { class: 'personcard' }, el('div', { class: 'personmain', onclick: () => go('profile', { profileId: m.id }) }, [
+    avatarNode(m), el('div', { class: 'personmeta' }, [el('div', { class: 'personname' }, m.name), m.username ? el('div', { class: 'personhandle' }, '@' + m.username) : null, el('div', { class: 'personsub' }, m.role)])
+  ]))));
+  wrap.appendChild(team);
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Company listings'));
+  const grid = el('div', { class: 'minigrid' });
+  listings.forEach(l => grid.appendChild(el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
+    el('div', { class: 'mi' }, l.photos?.length ? el('img', { src: l.photos[0] }) : null),
+    el('div', { class: 'mt' }, [el('b', {}, l.address), el('span', {}, money(l.asking))])
+  ])));
+  wrap.appendChild(listings.length ? grid : el('div', { class: 'empty' }, el('p', {}, 'No company listings yet.')));
+  return wrap;
+}
+
+async function renderCompanyWorkspace() {
+  const wrap = el('div', { class: 'page' });
+  wrap.appendChild(el('div', { class: 'pageheadrow' }, [
+    el('div', {}, [el('h2', {}, 'Company workspace'), el('div', { class: 'sub' }, 'Shared tools for your wholesale team. Personal direct messages stay private.')]),
+    el('button', { class: 'btn-ghost', onclick: () => go('upgrade') }, 'Plan & billing')
+  ]));
+
+  if (!state.access?.wholesale) {
+    wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Wholesale Teams required'), el('p', {}, 'Company workspaces are included with Better Wholesale Teams.'), el('button', { class: 'btn-primary', onclick: () => go('upgrade') }, 'View Wholesale Teams')])) ;
+    return wrap;
+  }
+
+  let data;
+  try { data = await api('GET', '/api/company'); }
+  catch (e) {
+    if (!state.user.companyId) {
+      const name = el('input', { placeholder: 'Company name' });
+      const st = el('div', { class: 'okmsg' });
+      wrap.appendChild(el('div', { class: 'card', style: 'padding:18px' }, [
+        el('h3', {}, 'Create your company workspace'),
+        el('p', { class: 'sub' }, `Your plan includes ${state.pricing?.wholesale?.seats || 5} secure individual team seats.`),
+        name,
+        el('button', { class: 'submitbtn', onclick: async () => {
+          try { const r = await api('POST', '/api/company', { name: name.value }); await refreshMe(); state.companyId = r.company.id; go('companyworkspace', {}, { replace: true }); }
+          catch (err) { st.className = 'errmsg'; st.textContent = err.message; }
+        } }, 'Create workspace'), st
+      ]));
+      return wrap;
+    }
+    wrap.appendChild(el('div', { class: 'errmsg' }, e.message)); return wrap;
+  }
+
+  const company = data.company;
+  state.companyId = company.id;
+  const manager = ['owner','admin'].includes(data.role);
+  wrap.appendChild(el('div', { class: 'companyhero' }, [
+    companyLogoNode(company, 'large'),
+    el('div', { class: 'grow' }, [el('h2', {}, company.name), el('div', { class: 'profileusername' }, '@' + company.slug), el('div', { class: 'sub' }, `${data.role} · ${data.members.length}/${company.seatLimit} seats used`), company.bio ? el('p', { class: 'profilebio' }, company.bio) : null]),
+    el('button', { class: 'btn-ghost', onclick: () => go('company', { companyId: company.id }) }, 'Public profile')
+  ]));
+  wrap.appendChild(el('div', { class: 'statgrid' }, [stat(data.analytics.listings, 'Team listings'), stat(data.analytics.views, 'Listing views'), stat(data.analytics.inquiries, 'Inquiries')]));
+
+  if (manager) {
+    wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Company profile'));
+    const edit = el('div', { class: 'card', style: 'padding:16px' });
+    const name = el('input', { value: company.name });
+    const website = el('input', { value: company.website || '', placeholder: 'https://yourcompany.com' });
+    const markets = el('input', { value: (company.markets || []).join(', '), placeholder: 'Philadelphia, South Jersey, Atlanta' });
+    const bio = el('textarea', {}); bio.value = company.bio || '';
+    const logo = el('input', { type: 'file', accept: 'image/*' }); let logoData = null;
+    logo.onchange = async () => { if (logo.files[0]) logoData = await downscale(logo.files[0], 500); };
+    edit.appendChild(el('label', {}, 'Company name')); edit.appendChild(name);
+    edit.appendChild(el('label', {}, 'Website')); edit.appendChild(website);
+    edit.appendChild(el('label', {}, 'Markets')); edit.appendChild(markets);
+    edit.appendChild(el('label', {}, 'Company bio')); edit.appendChild(bio);
+    edit.appendChild(el('label', {}, 'Company logo')); edit.appendChild(logo);
+    const est = el('div', { class: 'okmsg' });
+    edit.appendChild(el('button', { class: 'submitbtn', onclick: async () => { try { await api('PATCH', '/api/company', { name: name.value, website: website.value, markets: markets.value, bio: bio.value, logoData }); est.textContent = 'Company profile saved.'; } catch (e) { est.className = 'errmsg'; est.textContent = e.message; } } }, 'Save company profile'));
+    edit.appendChild(est); wrap.appendChild(edit);
+  }
+
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Team members'));
+  const memberCard = el('div', { class: 'card' });
+  data.members.forEach(m => {
+    const row = el('div', { class: 'listrow' }, [avatarNode(m, 'small'), el('div', { class: 'grow', onclick: () => go('profile', { profileId: m.id }) }, [el('div', { class: 't' }, m.name), el('div', { class: 's' }, '@' + (m.username || 'member'))])]);
+    const actual = m.companyRole || (m.id === company.ownerId ? 'owner' : 'member');
+    row.appendChild(el('span', { class: 'pill' }, actual));
+    if (data.role === 'owner' && m.id !== state.user.id && m.id !== company.ownerId) {
+      row.appendChild(el('button', { onclick: async () => { const next = actual === 'admin' ? 'member' : 'admin'; await api('PATCH', '/api/company/members/' + encodeURIComponent(m.id), { role: next }); render(); } }, actual === 'admin' ? 'Make member' : 'Make admin'));
+    }
+    if (manager && m.id !== state.user.id && m.id !== company.ownerId) {
+      row.appendChild(el('button', { onclick: async () => { if (!confirm('Remove this person from the company workspace?')) return; await api('DELETE', '/api/company/members/' + encodeURIComponent(m.id)); render(); } }, 'Remove'));
+    }
+    memberCard.appendChild(row);
+  });
+  wrap.appendChild(memberCard);
+
+  if (manager) {
+    wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Invite team member'));
+    const ibox = el('div', { class: 'card', style: 'padding:16px' });
+    const email = el('input', { type: 'email', placeholder: 'teammate@company.com' });
+    const role = el('select'); role.appendChild(el('option', { value: 'member' }, 'Member')); role.appendChild(el('option', { value: 'admin' }, 'Company admin'));
+    const ist = el('div', { class: 'okmsg' });
+    ibox.appendChild(twoUp('Email', email, 'Role', role));
+    ibox.appendChild(el('button', { class: 'submitbtn', onclick: async () => { try { const r = await api('POST', '/api/company/invites', { email: email.value, role: role.value }); email.value = ''; ist.className = 'okmsg'; ist.innerHTML = ''; ist.appendChild(document.createTextNode('Invite sent. ')); const copy = el('button', { class: 'linkbtn', onclick: async () => { try { await navigator.clipboard.writeText(r.inviteUrl); toast('Invite link copied', 'ok'); } catch {} } }, 'Copy invite link'); ist.appendChild(copy); } catch (e) { ist.className = 'errmsg'; ist.textContent = e.message; } } }, 'Send invitation'));
+    ibox.appendChild(ist);
+    if (data.pendingInvites?.length) {
+      const pending = el('div', { class: 'pendinginvites' });
+      data.pendingInvites.forEach(i => pending.appendChild(el('div', { class: 'listrow' }, [el('div', { class: 'grow' }, [el('div', { class: 't' }, i.email), el('div', { class: 's' }, `${i.role} · pending`)] )])));
+      ibox.appendChild(pending);
+    }
+    wrap.appendChild(ibox);
+  }
+
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Shared acquisition box'));
+  const bb = (data.sharedBuyBoxes || [])[0] || { label: 'Company buy box', minPrice: 0, maxPrice: 2000000, cities: [], minSpread: 0 };
+  const bbox = el('div', { class: 'card', style: 'padding:16px' });
+  const bLabel = el('input', { value: bb.label || 'Company buy box' });
+  const bMin = el('input', { type: 'number', value: bb.minPrice || 0 }); const bMax = el('input', { type: 'number', value: bb.maxPrice || 2000000 });
+  const bCities = el('input', { value: (bb.cities || []).join(', '), placeholder: 'Markets, comma separated' }); const bSpread = el('input', { type: 'number', value: bb.minSpread || 0 });
+  bbox.appendChild(el('label', {}, 'Name')); bbox.appendChild(bLabel); bbox.appendChild(twoUp('Min price ($)', bMin, 'Max price ($)', bMax)); bbox.appendChild(el('label', {}, 'Markets')); bbox.appendChild(bCities); bbox.appendChild(el('label', {}, 'Minimum spread ($)')); bbox.appendChild(bSpread);
+  const bst = el('div', { class: 'okmsg' });
+  if (manager) bbox.appendChild(el('button', { class: 'submitbtn', onclick: async () => { try { await api('PATCH', '/api/company/buyboxes', { buyBoxes: [{ ...bb, label: bLabel.value, minPrice: bMin.value, maxPrice: bMax.value, cities: bCities.value, minSpread: bSpread.value }] }); bst.textContent = 'Shared buy box saved.'; } catch (e) { bst.className = 'errmsg'; bst.textContent = e.message; } } }, 'Save company buy box'));
+  else [bLabel,bMin,bMax,bCities,bSpread].forEach(x => x.disabled = true);
+  bbox.appendChild(bst); wrap.appendChild(bbox);
+
+  const [{ listings }, { messages }] = await Promise.all([api('GET', '/api/company/listings'), api('GET', '/api/company/inbox')]);
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Team listings'));
+  const lc = el('div', { class: 'card' });
+  listings.slice(0, 30).forEach(l => lc.appendChild(el('div', { class: 'listrow' }, [el('div', { class: 'grow', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [el('div', { class: 't' }, l.address), el('div', { class: 's' }, `${l.city} · ${money(l.asking)} · ${l.owner?.name || 'Team'}`)]), el('button', { onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, 'Open')])));
+  if (!listings.length) lc.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'Team listings will appear here.')));
+  wrap.appendChild(lc);
+
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Company listing inquiries'));
+  const inbox = el('div', { class: 'card' });
+  messages.slice(0, 30).forEach(m => inbox.appendChild(el('div', { class: 'companyinquiry' }, [
+    el('div', { class: 'grow' }, [el('div', { class: 't' }, `${m.customer?.name || 'User'} · ${m.listingAddress}`), el('div', { class: 's' }, m.body), el('div', { class: 'hint' }, `${formatChatTime(m.at)}${m.teammate ? ' · handled by ' + m.teammate.name : ''}`)]),
+    m.customer ? el('button', { onclick: () => go('chat', { chatUserId: m.customer.id }) }, 'Message') : null
+  ])));
+  if (!messages.length) inbox.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'Messages tied to team property listings will appear here.')));
+  wrap.appendChild(inbox);
+
+  if (data.role !== 'owner') wrap.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%;margin-top:22px', onclick: async () => { if (!confirm('Leave this company workspace?')) return; await api('POST', '/api/company/leave'); await refreshMe(); go('me'); } }, 'Leave company workspace'));
+  return wrap;
+}
+
 function toggleRow(title, desc, initial, onChange) {
   const sw = el('button', { class: 'switch' + (initial ? ' on' : '') }, el('div', { class: 'knob' }));
   sw.onclick = async () => { const on = !sw.classList.contains('on'); sw.classList.toggle('on', on); try { await onChange(on); } catch {} };
@@ -2410,10 +2718,11 @@ function pageFaq() {
 }
 
 function pageTerms() {
-  return staticPage('Terms of Service', 'Last updated September 17, 2026. Plain-English summary, not a substitute for legal review.', [
+  return staticPage('Terms of Service', 'Last updated September 18, 2026. Plain-English summary, not a substitute for legal review.', [
     [null, 'By creating an account you agree to these terms. If you do not agree, do not use the site.'],
     ['1. What this service is', 'Better Real Estate is an online platform where users post property listings and items for sale, and communicate with each other. We are not a real estate brokerage, agent, escrow holder, lender, or party to any transaction between users. We do not verify property ownership, condition, title, valuation, or any statement a user makes.'],
-    ['2. Your account', 'You must be 18 or older and provide accurate information. You are responsible for everything that happens under your account and for keeping your password secure. One account per person.'],
+    ['2. Your account', 'You must be 18 or older and provide accurate information. You are responsible for everything that happens under your account and for keeping your password secure. One account per person. Usernames may be changed subject to reasonable anti-abuse limits. You may permanently delete your account from Settings, subject to retention of records we reasonably need for completed transactions, accounting, fraud prevention or legal obligations.'],
+    ['2a. Company workspaces', 'Wholesale Teams workspaces are licensed for the number of seats shown on the plan. Each team member must use their own login; sharing passwords or creating duplicate identities to evade seat limits is not allowed. Company owners and admins may manage members and company content. Listing-related inquiries may be visible to authorized members of the company workspace, while personal direct messages that are not connected to company listings remain private to the individual account. The company owner is responsible for team access and billing.'],
     ['3. What you may not post', 'Do not post property you have no legal right to sell or market. Do not post false, misleading, or fabricated listings. Do not post items you do not have. Do not harass other users, scrape the site, or attempt to circumvent payment. We remove content and terminate accounts for any of the above, without refund.'],
     ['3a. No electronics or appliances', 'Users may not list any item that runs on mains power or a battery. This includes but is not limited to appliances, HVAC equipment, water heaters, power tools, light fixtures, lamps, bulbs, wiring, breakers, outlets, switches, smart-home devices, alarms, detectors, generators, batteries and consumer electronics. Listings that appear to be electrical may be rejected automatically and accounts that repeatedly attempt to evade this rule may be terminated.'],
     ['4. Transactions between users', 'Any deal you reach with another user is strictly between you and them. We do not guarantee that a listed property exists, is available, is priced accurately, or that any user will perform. You are solely responsible for your own due diligence, contracts, inspections, title work, and compliance with the laws of your jurisdiction.'],
@@ -2437,9 +2746,9 @@ function pageTerms() {
 }
 
 function pagePrivacy() {
-  return staticPage('Privacy Policy', 'Last updated September 17, 2026.', [
+  return staticPage('Privacy Policy', 'Last updated September 18, 2026.', [
     [null, 'This policy explains what Better Real Estate collects, why we use it, which service providers may receive it, and the choices available to you.'],
-    ['What we collect', 'Account information you give us, including your name, email address, phone number if you add one, profile photo, bio and optional market/location. Content you post, including property listings, addresses, photos, notes and marketplace items. Activity such as what you view, save, unlock, offer on, buy or sell, people you follow, friend requests and friendships, plus messages you send through the site. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
+    ['What we collect', 'Account information you give us, including your name, username, email address, phone number if you add one, profile photo, bio and optional market/location. If you use a Wholesale Teams workspace, we also collect company profile details, team membership, role, invitations and shared acquisition criteria. Content you post, including property listings, addresses, photos, notes and marketplace items. Activity such as what you view, save, unlock, offer on, buy or sell, people you follow, friend requests and friendships, plus messages you send through the site. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
     ['Address autofill and autocomplete', el('span', {}, [
       'Your browser may offer its own saved-address autofill. When typed address suggestions are enabled, partial address text and an autocomplete session identifier are sent through our server to Google Maps Platform so suggestions can be returned. If you select a suggestion, Google may return address components such as street, city, state and ZIP to fill the checkout form. We do not use device geolocation for this feature. We keep the shipping address needed for the order, but we do not intentionally store the list of autocomplete suggestions. Google handles its data under the ',
       el('a', { href: 'https://policies.google.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Google Privacy Policy'),
@@ -2456,12 +2765,12 @@ function pagePrivacy() {
       el('a', { href: 'https://stripe.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Privacy Policy'),
       '.'
     ])],
-    ['Why we collect it', 'To run your account, rank your feed against your buy box, power member search, friend connections and direct messaging, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, send transactional messages such as confirmations, shipping notices and password resets, provide AI-assisted listing tools when you invoke them, and send optional marketing messages when you opt in.'],
-    ['What other users can see', 'Your name, role, bio, optional market/location, profile photo, listing count, follower count, friend count, points, verification status and reviews may be public and may appear in member search. Your email address and phone number are shown to another user only where the product requires it, such as after they unlock one of your property listings. Direct messaging does not by itself reveal your email address or phone number. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
+    ['Why we collect it', 'To run your account, rank your feed against your buy box, power member search, friend connections and direct messaging, operate company workspaces and team permissions, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, send transactional messages such as confirmations, shipping notices and password resets, provide AI-assisted listing tools when you invoke them, and send optional marketing messages when you opt in.'],
+    ['What other users can see', 'Your name, username, role, bio, optional market/location, profile photo, listing count, follower count, friend count, points, verification status, company affiliation and reviews may be public and may appear in member search. Authorized members of the same Wholesale Teams workspace may see company listings, team analytics, shared acquisition criteria and messages tied to company property listings. Personal direct messages not tied to company listings are not included in the company inbox. Your email address and phone number are shown to another user only where the product requires it, such as after they unlock one of your property listings. Direct messaging does not by itself reveal your email address or phone number. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
     ['Who we share it with', 'We share information only as needed to operate the service: Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; OpenAI for AI-assisted listing generation when you choose that feature; email providers for transactional and opted-in marketing messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising.'],
     ['Cookies and similar technology', 'We use a session cookie to keep you signed in. Payment providers such as Stripe may use cookies, browser/device information and similar signals for payment security and fraud prevention. We do not operate third-party advertising trackers on the site.'],
-    ['Your choices', 'You can edit your profile and manage your marketplace listings from the site. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. Marketing email can be turned on or off in Settings or through the unsubscribe link in any marketing message. AI writing features are optional and only send content when you choose to use them. To request a copy of your data, correction, or account deletion, email drewcbusiness1@gmail.com. Additional legal rights may apply depending on where you live.'],
-    ['Retention and security', 'We keep account, order, payment and transaction records for as long as reasonably needed to provide the service, resolve disputes, prevent fraud, and meet tax, accounting or other legal obligations. Shipping information may remain with the related order record for those purposes. Passwords are stored as bcrypt hashes and never in readable form. No system is perfectly secure, so avoid posting sensitive information that is not necessary for a transaction.'],
+    ['Your choices', 'You can edit your profile, username and password, manage your marketplace listings, and permanently delete your account from Settings. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. Marketing email can be turned on or off in Settings or through the unsubscribe link in any marketing message. AI writing features are optional and only send content when you choose to use them. To request a copy of your data or correction that is not available in the product, email drewcbusiness1@gmail.com. Additional legal rights may apply depending on where you live.'],
+    ['Retention and security', 'We keep account, order, payment and transaction records for as long as reasonably needed to provide the service, resolve disputes, prevent fraud, and meet tax, accounting or other legal obligations. When you delete an account, public profile content and ordinary social data are removed; transaction records we must retain are de-identified where practical. Shipping information may remain with the related order record only where reasonably needed for those purposes. Passwords are stored as bcrypt hashes and never in readable form. No system is perfectly secure, so avoid posting sensitive information that is not necessary for a transaction.'],
     ['Children', 'This service is not for anyone under 18 and we do not knowingly collect personal information from children.'],
     ['Contact', 'drewcbusiness1@gmail.com']
   ]);
@@ -2513,7 +2822,7 @@ function renderForgot() {
   const wrap = el('div', { class: 'panel' });
   wrap.appendChild(el('h2', {}, 'Reset your password'));
   wrap.appendChild(el('div', { class: 'sub' }, 'We will email you a link to set a new one.'));
-  const email = el('input', { type: 'email', placeholder: 'you@email.com' });
+  const email = el('input', { type: 'email', autocomplete: 'email', placeholder: 'you@email.com' });
   const st = el('div', { class: 'okmsg' });
   wrap.appendChild(el('label', {}, 'Email')); wrap.appendChild(email);
   const btn = el('button', { class: 'submitbtn' }, 'Send reset link');

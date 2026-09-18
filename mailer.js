@@ -145,6 +145,15 @@ exports.sendMatchAlert = (to, name, listing) =>
 exports.configured = () => !!RESEND_KEY;
 
 
+
+exports.sendCompanyInvite = (to, companyName, inviterName, inviteUrl) =>
+  send(to, `You're invited to join ${companyName} on ${APP_NAME}`,
+    shell('Join your company workspace',
+      `<p>${esc(inviterName || 'A teammate')} invited you to join <b>${esc(companyName || 'their company')}</b> on ${APP_NAME}.</p>
+       <p>Use your own secure login while sharing the company workspace, listings and team tools.</p>${button(inviteUrl, 'Join company workspace')}
+       <p style="font-size:12.5px;color:#40474F">This invitation expires in 7 days.</p>`),
+    `${inviterName || 'A teammate'} invited you to join ${companyName} on ${APP_NAME}. Join here: ${inviteUrl}`);
+
 exports.sendMarketing = (to, name, { subject, headline, body, ctaLabel, ctaUrl, unsubscribeUrl, preferencesUrl, postalAddress }) => {
   const safeName = esc(name || 'there');
   const safeBody = esc(body || '');

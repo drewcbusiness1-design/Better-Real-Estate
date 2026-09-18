@@ -45,8 +45,9 @@ const PRICING = {
   unlockPack: { qty: 10, price: 1499 }, // $14.99 for 10
   pro: { monthly: 3000, annual: 32000, label: 'Better Pro' },  // $30/mo or $320/yr
   platinum: { monthly: 5000, annual: 50000, label: 'Better Platinum' },  // $50/mo or $500/yr
+  wholesale: { monthly: 14900, annual: 150000, label: 'Better Wholesale Teams', seats: 5 },
   platinumFeeBps: 400,             // marketplace fee for Platinum sellers (vs 700 = 7% standard)
-  maxBuyBoxes: { free: 1, seller: 1, buyer: 1, admin: 1, pro: 1, platinum: 5 },
+  maxBuyBoxes: { free: 1, seller: 1, buyer: 1, admin: 1, pro: 1, platinum: 5, wholesale: 5 },
   promotions: {
     boost24:   { id: 'boost24',   label: 'Boost — 24 hours',  hours: 24,  price: 900,  weight: 1000 },
     boost3d:   { id: 'boost3d',   label: 'Boost — 3 days',    hours: 72,  price: 1900, weight: 1000 },
@@ -79,10 +80,69 @@ const publicUser = u => { if (!u) return null; const { passwordHash, marketingOp
 const publicProfileUser = social.publicProfileUser;
 const friendRelationship = social.friendRelationship;
 const socialUserCard = social.socialUserCard;
+
+function normalizeUsername(v) {
+  return String(v || '').trim().toLowerCase().replace(/^@+/, '');
+}
+function usernameValid(v) { return /^[a-z0-9._]{3,30}$/.test(v) && !v.startsWith('.') && !v.endsWith('.'); }
+function usernameTaken(db, username, exceptUserId = null) {
+  const u = normalizeUsername(username);
+  return db.users.some(x => x.id !== exceptUserId && normalizeUsername(x.username) === u);
+}
+function baseUsername(name, email) {
+  const raw = String(name || email?.split('@')[0] || 'member').toLowerCase().replace(/[^a-z0-9._]+/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 24);
+  return usernameValid(raw) ? raw : ('member.' + crypto.randomBytes(2).toString('hex'));
+}
+function ensureUsername(db, user) {
+  if (!user || (user.username && usernameValid(normalizeUsername(user.username)) && !usernameTaken(db, user.username, user.id))) return false;
+  const base = baseUsername(user?.name, user?.email);
+  let candidate = base, n = 2;
+  while (usernameTaken(db, candidate, user.id)) candidate = (base.slice(0, 25) + '.' + n++).slice(0, 30);
+  user.username = candidate;
+  return true;
+}
+function publicCompany(c) {
+  if (!c) return null;
+  return { id: c.id, ownerId: c.ownerId, name: c.name, slug: c.slug, logoUrl: c.logoUrl || null, bio: c.bio || '', website: c.website || '', markets: c.markets || [], seatLimit: c.seatLimit || PRICING.wholesale.seats, createdAt: c.createdAt || null };
+}
+function companyForUser(db, user) { return user?.companyId ? (db.companies || []).find(c => c.id === user.companyId) || null : null; }
+function slugifyCompany(v) { return String(v || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'company'; }
+function uniqueCompanySlug(db, name, exceptId = null) {
+  const base = slugifyCompany(name); let slug = base, n = 2;
+  while ((db.companies || []).some(c => c.id !== exceptId && c.slug === slug)) slug = `${base.slice(0, 42)}-${n++}`;
+  return slug;
+}
+function companyEntitlementUntilForOwner(owner) {
+  if (!owner) return null;
+  if (isAdminUser(owner)) return '9999-12-31T23:59:59.999Z';
+  return owner.plan === 'wholesale' && owner.planUntil && new Date(owner.planUntil) > new Date() ? owner.planUntil : null;
+}
+function syncCompanyMemberEntitlements(db, owner) {
+  if (!owner) return false;
+  const company = (db.companies || []).find(c => c.ownerId === owner.id);
+  if (!company) return false;
+  const until = companyEntitlementUntilForOwner(owner);
+  let changed = false;
+  for (const member of db.users.filter(u => u.companyId === company.id && u.id !== owner.id)) {
+    if ((member.companyPlanUntil || null) !== until) { member.companyPlanUntil = until; changed = true; }
+  }
+  return changed;
+}
+function syncOneCompanyMember(db, user) {
+  if (!user?.companyId || user.companyRole === 'owner') return false;
+  const company = companyForUser(db, user); if (!company) { user.companyId = null; user.companyRole = null; user.companyPlanUntil = null; return true; }
+  const owner = db.users.find(u => u.id === company.ownerId);
+  const until = companyEntitlementUntilForOwner(owner);
+  if ((user.companyPlanUntil || null) !== until) { user.companyPlanUntil = until; return true; }
+  return false;
+}
 async function requireAuth(req, res, next) {
   const db = await loadDB();
   const user = db.users.find(u => u.id === req.session.userId);
   if (!user) return res.status(401).json({ error: 'Not signed in' });
+  let changed = ensureUsername(db, user);
+  if (syncOneCompanyMember(db, user)) changed = true;
+  if (changed) await saveDB(db);
   req.user = user; req.db = db; next();
 }
 // Belt and braces: the stored role must say admin AND the email must be on
@@ -161,13 +221,18 @@ function balanceOf(db, userId) {
 function isAdminUser(user) {
   return !!user && user.role === 'admin' && policy.isAdminEmail(user.email);
 }
+function isCompanyEntitled(user) { return !!(user?.companyPlanUntil && new Date(user.companyPlanUntil) > new Date()); }
+function isWholesale(user) {
+  if (isAdminUser(user)) return true;
+  return !!user && ((user.plan === 'wholesale' && user.planUntil && new Date(user.planUntil) > new Date()) || isCompanyEntitled(user));
+}
 function isPro(user) {
   if (isAdminUser(user)) return true;
-  return (user.plan === 'pro' || user.plan === 'platinum') && user.planUntil && new Date(user.planUntil) > new Date();
+  return !!user && (((user.plan === 'pro' || user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) || isCompanyEntitled(user));
 }
 function isPlatinum(user) {
   if (isAdminUser(user)) return true;
-  return user.plan === 'platinum' && user.planUntil && new Date(user.planUntil) > new Date();
+  return !!user && (((user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) || isCompanyEntitled(user));
 }
 function inTrial(user) {
   return !isAdminUser(user) && user.trialUntil && new Date(user.trialUntil) > new Date();
@@ -175,14 +240,15 @@ function inTrial(user) {
 function hasFullAccess(user) { return isPro(user) || inTrial(user); }
 function maxBuyBoxesFor(user) {
   if (isAdminUser(user)) return Number.MAX_SAFE_INTEGER;
+  if (isWholesale(user)) return PRICING.maxBuyBoxes.wholesale;
   if (isPlatinum(user)) return PRICING.maxBuyBoxes.platinum;
   return PRICING.maxBuyBoxes[user.role] || 1;
 }
 function accessFor(user) {
   if (!user) return null;
   return {
-    pro: isPro(user), platinum: isPlatinum(user), trial: inTrial(user), full: hasFullAccess(user),
-    adminUnlimited: isAdminUser(user)
+    pro: isPro(user), platinum: isPlatinum(user), wholesale: isWholesale(user), trial: inTrial(user), full: hasFullAccess(user),
+    adminUnlimited: isAdminUser(user), companyId: user.companyId || null, companyRole: user.companyRole || null
   };
 }
 // Buy boxes moved from a single object to an array (Platinum can have
@@ -209,6 +275,7 @@ app.post('/api/signup', async (req, res) => {
   const trialUntil = new Date(Date.now() + PRICING.signupTrialDays * 86400000).toISOString();
   const user = {
     id: crypto.randomUUID(), name: name.trim(), email: cleanEmail,
+    username: null,
     passwordHash: bcrypt.hashSync(password, 10),
     role: policy.resolveRole(cleanEmail, role),
     bio: '', phone: '', location: '', avatarUrl: null, points: 0,
@@ -225,6 +292,7 @@ app.post('/api/signup', async (req, res) => {
     referredBy: referrer ? referrer.id : null, referralPaid: false,
     createdAt: new Date().toISOString()
   };
+  ensureUsername(db, user);
   db.users.push(user);
   const vtok = crypto.randomBytes(24).toString('hex');
   db.tokens.push({ token: vtok, userId: user.id, kind: 'verify', expires: Date.now() + 7 * 86400000 });
@@ -237,20 +305,30 @@ app.post('/api/signup', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body || {};
   const db = await loadDB();
-  const user = db.users.find(u => u.email === (email || '').trim().toLowerCase());
+  const login = String(email || '').trim().toLowerCase().replace(/^@/, '');
+  const user = db.users.find(u => u.email === login || normalizeUsername(u.username) === login);
   if (!user || !bcrypt.compareSync(password || '', user.passwordHash)) return res.status(401).json({ error: 'Incorrect email or password.' });
   // Re-derive the role from the allowlist on each login. Adding or removing
   // an address in ADMIN_EMAILS takes effect immediately, and an 'admin'
   // value written into the database by any other means is overwritten here.
   const correctRole = policy.resolveRole(user.email, user.role === 'admin' ? 'buyer' : user.role);
-  if (user.role !== correctRole) { user.role = correctRole; await saveDB(db); }
+  let changed = false;
+  if (user.role !== correctRole) { user.role = correctRole; changed = true; }
+  if (ensureUsername(db, user)) changed = true;
+  if (syncOneCompanyMember(db, user)) changed = true;
+  if (changed) await saveDB(db);
   req.session.userId = user.id;
-  res.json({ user: publicUser(user) });
+  res.json({ user: publicUser(user), access: accessFor(user) });
 });
 app.post('/api/logout', async (req, res) => { req.session = null; res.json({ ok: true }); });
 app.get('/api/me', async (req, res) => {
   const db = await loadDB();
   const u = db.users.find(x => x.id === req.session.userId);
+  if (u) {
+    let changed = ensureUsername(db, u);
+    if (syncOneCompanyMember(db, u)) changed = true;
+    if (changed) await saveDB(db);
+  }
   res.json({
     user: publicUser(u),
     pricing: PRICING,
@@ -341,13 +419,125 @@ app.get('/api/site/status', async (req, res) => res.json({ mailConfigured: maile
 
 /* ============================ PROFILE ============================ */
 app.patch('/api/me', requireAuth, async (req, res) => {
-  const { name, bio, phone, location, avatarData } = req.body || {};
+  const { name, username, bio, phone, location, avatarData } = req.body || {};
   if (name !== undefined) req.user.name = String(name).trim() || req.user.name;
+  if (username !== undefined) {
+    const clean = normalizeUsername(username);
+    if (!usernameValid(clean)) return res.status(400).json({ error: 'Username must be 3–30 characters using letters, numbers, dots or underscores.' });
+    if (usernameTaken(req.db, clean, req.user.id)) return res.status(409).json({ error: 'That username is already taken.' });
+    if (normalizeUsername(req.user.username) !== clean) {
+      const last = req.user.usernameChangedAt ? new Date(req.user.usernameChangedAt).getTime() : 0;
+      const wait = 7 * 86400000;
+      if (last && Date.now() - last < wait && !isAdminUser(req.user)) {
+        const days = Math.max(1, Math.ceil((wait - (Date.now() - last)) / 86400000));
+        return res.status(429).json({ error: `You can change your username again in ${days} day${days === 1 ? '' : 's'}.` });
+      }
+      req.user.username = clean;
+      req.user.usernameChangedAt = new Date().toISOString();
+    }
+  }
   if (bio !== undefined) req.user.bio = String(bio).slice(0, 400);
   if (phone !== undefined) req.user.phone = String(phone).slice(0, 40);
   if (location !== undefined) req.user.location = String(location).trim().slice(0, 80);
   if (avatarData) { const url = await writeImage(avatarData); if (url) req.user.avatarUrl = url; }
   await saveDB(req.db); res.json({ user: publicUser(req.user) });
+});
+
+app.post('/api/me/password', requireAuth, async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword || '');
+  const newPassword = String(req.body?.newPassword || '');
+  if (!bcrypt.compareSync(currentPassword, req.user.passwordHash)) return res.status(401).json({ error: 'Current password is incorrect.' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  if (bcrypt.compareSync(newPassword, req.user.passwordHash)) return res.status(400).json({ error: 'Choose a password different from your current one.' });
+  req.user.passwordHash = bcrypt.hashSync(newPassword, 10);
+  req.user.passwordChangedAt = new Date().toISOString();
+  req.db.tokens = req.db.tokens.filter(t => !(t.userId === req.user.id && t.kind === 'reset'));
+  await saveDB(req.db);
+  res.json({ ok: true });
+});
+
+app.delete('/api/me', requireAuth, async (req, res) => {
+  const password = String(req.body?.password || '');
+  const confirmation = String(req.body?.confirmation || '').trim().toUpperCase();
+  if (confirmation !== 'DELETE') return res.status(400).json({ error: 'Type DELETE to confirm account deletion.' });
+  if (!bcrypt.compareSync(password, req.user.passwordHash)) return res.status(401).json({ error: 'Password is incorrect.' });
+
+  // Never orphan an active recurring charge. If Stripe cannot accept the
+  // cancellation request, keep the account intact and tell the user instead.
+  if (req.user.stripeSubscriptionId && payments.enabled()) {
+    try { await payments.cancelSubscription(req.user.stripeSubscriptionId); }
+    catch (e) { return res.status(400).json({ error: 'We could not stop your subscription yet, so the account was not deleted. Please try again.' }); }
+  }
+
+  const userId = req.user.id;
+  const walletBalance = balanceOf(req.db, userId);
+  if (walletBalance > 0) return res.status(409).json({ error: `Withdraw your remaining wallet balance of ${money(walletBalance)} before deleting your account.` });
+  const activeOrder = req.db.orders.find(o => (o.buyerId === userId || o.sellerId === userId) && !['shipped','delivered','cancelled','refunded'].includes(String(o.shipStatus || o.status || '').toLowerCase()));
+  if (activeOrder) return res.status(409).json({ error: 'You still have an active marketplace order. Finish or resolve it before deleting your account so nobody loses shipping or transaction access.' });
+  const deletedId = 'deleted:' + crypto.createHash('sha256').update(userId).digest('hex').slice(0, 18);
+  const ownedListingIds = new Set(req.db.listings.filter(l => l.ownerId === userId).map(l => l.id));
+  const boughtOrderIds = new Set(req.db.orders.filter(o => o.buyerId === userId).map(o => o.id));
+
+  const company = companyForUser(req.db, req.user);
+  if (company) {
+    if (company.ownerId === userId) {
+      for (const member of req.db.users.filter(u => u.companyId === company.id && u.id !== userId)) {
+        member.companyId = null; member.companyRole = null; member.companyPlanUntil = null;
+        req.db.listings.filter(l => l.ownerId === member.id).forEach(l => { l.companyId = null; l.companyName = null; });
+      }
+      req.db.companyInvites = req.db.companyInvites.filter(i => i.companyId !== company.id);
+      req.db.companies = req.db.companies.filter(c => c.id !== company.id);
+    } else {
+      company.memberIds = (company.memberIds || []).filter(id => id !== userId);
+    }
+  }
+
+  // Public/profile content is removed. Financial/order records that may be
+  // required for accounting are retained but stripped of the deleted user's PII.
+  req.db.listings = req.db.listings.filter(l => l.ownerId !== userId);
+  req.db.shopItems = req.db.shopItems.filter(i => i.sellerId !== userId);
+  req.db.saves = req.db.saves.filter(x => x.userId !== userId && !ownedListingIds.has(x.listingId));
+  req.db.follows = req.db.follows.filter(x => x.followerId !== userId && x.followingId !== userId);
+  req.db.friendRequests = req.db.friendRequests.filter(x => x.fromUserId !== userId && x.toUserId !== userId);
+  req.db.friendships = req.db.friendships.filter(x => x.userAId !== userId && x.userBId !== userId);
+  req.db.messages = req.db.messages.filter(x => x.fromUserId !== userId && x.toUserId !== userId);
+  req.db.unlocks = req.db.unlocks.filter(x => x.userId !== userId && !ownedListingIds.has(x.listingId));
+  req.db.views = req.db.views.filter(x => x.userId !== userId && !ownedListingIds.has(x.listingId));
+  req.db.promotions = req.db.promotions.filter(x => x.userId !== userId && !ownedListingIds.has(x.listingId));
+  req.db.alerts = req.db.alerts.filter(x => x.userId !== userId);
+  req.db.tokens = req.db.tokens.filter(x => x.userId !== userId);
+  req.db.companyInvites = req.db.companyInvites.filter(x => x.invitedBy !== userId && x.email !== req.user.email);
+  req.db.dealNotes = req.db.dealNotes.filter(x => x.userId !== userId && !ownedListingIds.has(x.listingId));
+  req.db.reviews = req.db.reviews.filter(x => x.aboutUserId !== userId && x.byUserId !== userId);
+
+  for (const o of req.db.offers) {
+    if (o.buyerId === userId) { o.buyerId = deletedId; o.buyerName = 'Deleted account'; }
+    if (o.sellerId === userId) { o.sellerId = deletedId; }
+  }
+  for (const o of req.db.orders) {
+    if (o.buyerId === userId) {
+      o.buyerId = deletedId; o.buyerName = 'Deleted account'; o.buyerEmail = null; o.shipping = null;
+    }
+    if (o.sellerId === userId) { o.sellerId = deletedId; o.sellerName = 'Deleted account'; }
+  }
+  for (const so of req.db.supplierOrders) {
+    if (boughtOrderIds.has(so.orderId)) {
+      if ('buyerName' in so) so.buyerName = 'Deleted account';
+      if ('buyerEmail' in so) so.buyerEmail = null;
+      if ('shipping' in so) so.shipping = null;
+    }
+  }
+  for (const l of req.db.ledger) { if (l.userId === userId) l.userId = deletedId; if (l.description && req.user.name) l.description = String(l.description).split(req.user.name).join('Deleted account'); }
+  for (const p of req.db.payouts) if (p.userId === userId) p.userId = deletedId;
+  for (const r of req.db.reports) {
+    if (r.buyerId === userId) { r.buyerId = deletedId; r.buyerName = 'Deleted account'; r.buyerEmail = null; }
+    if (r.sellerId === userId) { r.sellerId = deletedId; r.sellerName = 'Deleted account'; }
+  }
+
+  req.db.users = req.db.users.filter(u => u.id !== userId);
+  await saveDB(req.db);
+  req.session = null;
+  res.json({ ok: true });
 });
 app.patch('/api/me/settings', requireAuth, async (req, res) => {
   req.user.settings = { ...defaultSettings(), ...req.user.settings, ...(req.body || {}) };
@@ -368,6 +558,199 @@ app.patch('/api/email-preferences', requireAuth, async (req, res) => {
   }
   await saveDB(req.db);
   res.json({ marketingOptIn: req.user.marketingOptIn });
+});
+
+
+/* ============================ WHOLESALE COMPANIES ============================ */
+function companyMemberIds(db, company) {
+  return db.users.filter(u => u.companyId === company.id).map(u => u.id);
+}
+function requireActiveCompany(req, res) {
+  const company = companyForUser(req.db, req.user);
+  if (!company) { res.status(404).json({ error: 'You are not part of a company workspace.' }); return null; }
+  if (!isWholesale(req.user)) { res.status(403).json({ error: 'An active Better Wholesale Teams plan is required for this workspace.' }); return null; }
+  return company;
+}
+function requireCompanyManager(req, res, company) {
+  if (!company || !['owner','admin'].includes(req.user.companyRole)) { res.status(403).json({ error: 'Company owner or admin access is required.' }); return false; }
+  return true;
+}
+function sanitizeCompanyBuyBox(b = {}) {
+  return {
+    id: String(b.id || crypto.randomUUID()),
+    label: String(b.label || 'Company buy box').slice(0, 60),
+    minPrice: Math.max(0, Number(b.minPrice) || 0),
+    maxPrice: Math.max(0, Number(b.maxPrice) || 2000000),
+    cities: Array.isArray(b.cities) ? b.cities.map(x => String(x).trim()).filter(Boolean).slice(0, 20) : String(b.cities || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 20),
+    propertyTypes: Array.isArray(b.propertyTypes) ? b.propertyTypes.map(x => String(x)).slice(0, 12) : [],
+    minSpread: Math.max(0, Number(b.minSpread) || 0),
+    active: b.active !== false
+  };
+}
+
+app.get('/api/company', requireAuth, async (req, res) => {
+  const company = requireActiveCompany(req, res); if (!company) return;
+  const members = req.db.users.filter(u => u.companyId === company.id).map(u => ({ ...publicProfileUser(u), companyRole: u.companyRole || (u.id === company.ownerId ? 'owner' : 'member') }));
+  const pendingInvites = ['owner','admin'].includes(req.user.companyRole)
+    ? req.db.companyInvites.filter(i => i.companyId === company.id && i.status === 'pending' && i.expires > Date.now()).map(i => ({ id: i.id, email: i.email, role: i.role, expires: i.expires, createdAt: i.createdAt }))
+    : [];
+  const memberIds = new Set(companyMemberIds(req.db, company));
+  const listings = req.db.listings.filter(l => l.companyId === company.id || memberIds.has(l.ownerId));
+  const listingIds = new Set(listings.map(l => l.id));
+  const views = req.db.views.filter(v => listingIds.has(v.listingId));
+  const inquiryMessages = req.db.messages.filter(m => m.listingId && listingIds.has(m.listingId));
+  res.json({ company: publicCompany(company), role: req.user.companyRole, members, pendingInvites, sharedBuyBoxes: company.buyBoxes || [], analytics: { listings: listings.length, views: views.length, uniqueViewers: new Set(views.map(v => v.userId)).size, inquiries: inquiryMessages.length } });
+});
+
+app.post('/api/company', requireAuth, async (req, res) => {
+  if (!isWholesale(req.user)) return res.status(403).json({ error: 'Subscribe to Better Wholesale Teams before creating a company workspace.' });
+  if (req.user.companyId) return res.status(409).json({ error: 'Your account is already connected to a company.' });
+  const name = String(req.body?.name || '').trim().slice(0, 90);
+  if (name.length < 2) return res.status(400).json({ error: 'Enter your company name.' });
+  const company = {
+    id: crypto.randomUUID(), name, slug: uniqueCompanySlug(req.db, name), ownerId: req.user.id,
+    logoUrl: null, bio: '', website: '', markets: [], seatLimit: PRICING.wholesale.seats,
+    memberIds: [req.user.id], buyBoxes: [sanitizeCompanyBuyBox({ label: 'Company buy box' })], createdAt: new Date().toISOString()
+  };
+  req.db.companies.push(company);
+  req.user.companyId = company.id; req.user.companyRole = 'owner'; req.user.companyPlanUntil = null;
+  req.db.listings.filter(l => l.ownerId === req.user.id).forEach(l => { l.companyId = company.id; l.companyName = company.name; });
+  await saveDB(req.db);
+  res.json({ company: publicCompany(company), role: 'owner' });
+});
+
+app.patch('/api/company', requireAuth, async (req, res) => {
+  const company = requireActiveCompany(req, res); if (!company) return;
+  if (!requireCompanyManager(req, res, company)) return;
+  const { name, bio, website, markets, logoData } = req.body || {};
+  if (name !== undefined) {
+    const clean = String(name).trim().slice(0, 90); if (clean.length < 2) return res.status(400).json({ error: 'Company name is too short.' });
+    company.name = clean; company.slug = uniqueCompanySlug(req.db, clean, company.id);
+    req.db.listings.filter(l => l.companyId === company.id).forEach(l => { l.companyName = clean; });
+  }
+  if (bio !== undefined) company.bio = String(bio).slice(0, 700);
+  if (website !== undefined) company.website = String(website).trim().slice(0, 240);
+  if (markets !== undefined) company.markets = (Array.isArray(markets) ? markets : String(markets).split(',')).map(x => String(x).trim()).filter(Boolean).slice(0, 20);
+  if (logoData) { const url = await writeImage(logoData); if (url) company.logoUrl = url; }
+  await saveDB(req.db);
+  res.json({ company: publicCompany(company) });
+});
+
+app.patch('/api/company/buyboxes', requireAuth, async (req, res) => {
+  const company = requireActiveCompany(req, res); if (!company) return;
+  if (!requireCompanyManager(req, res, company)) return;
+  const boxes = Array.isArray(req.body?.buyBoxes) ? req.body.buyBoxes.slice(0, 10).map(sanitizeCompanyBuyBox) : [];
+  if (!boxes.length) return res.status(400).json({ error: 'Keep at least one company buy box.' });
+  company.buyBoxes = boxes;
+  await saveDB(req.db);
+  res.json({ buyBoxes: company.buyBoxes });
+});
+
+app.get('/api/company/listings', requireAuth, async (req, res) => {
+  const company = requireActiveCompany(req, res); if (!company) return;
+  const ids = new Set(companyMemberIds(req.db, company));
+  const listings = req.db.listings.filter(l => l.companyId === company.id || ids.has(l.ownerId)).map(l => ({ ...gateListing(l, req.user, req.db), owner: publicProfileUser(req.db.users.find(u => u.id === l.ownerId)) }));
+  res.json({ listings });
+});
+
+app.get('/api/company/inbox', requireAuth, async (req, res) => {
+  const company = requireActiveCompany(req, res); if (!company) return;
+  const ids = new Set(companyMemberIds(req.db, company));
+  const listingMap = new Map(req.db.listings.filter(l => l.companyId === company.id || ids.has(l.ownerId)).map(l => [l.id, l]));
+  const messages = req.db.messages.filter(m => m.listingId && listingMap.has(m.listingId)).sort((a,b) => new Date(b.at)-new Date(a.at)).slice(0, 100).map(m => {
+    const listing = listingMap.get(m.listingId);
+    const customerId = ids.has(m.fromUserId) ? m.toUserId : m.fromUserId;
+    const customer = req.db.users.find(u => u.id === customerId);
+    const teammate = req.db.users.find(u => u.id === (ids.has(m.fromUserId) ? m.fromUserId : m.toUserId));
+    return { id: m.id, body: m.body, at: m.at, read: !!m.read, listingId: m.listingId, listingAddress: gateListing(listing, req.user, req.db).address, customer: customer ? publicProfileUser(customer) : null, teammate: teammate ? publicProfileUser(teammate) : null };
+  });
+  res.json({ messages });
+});
+
+app.post('/api/company/invites', requireAuth, async (req, res) => {
+  const company = requireActiveCompany(req, res); if (!company) return;
+  if (!requireCompanyManager(req, res, company)) return;
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const role = req.body?.role === 'admin' ? 'admin' : 'member';
+  if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+  const existingMember = req.db.users.find(u => u.email === email && u.companyId === company.id);
+  if (existingMember) return res.status(409).json({ error: 'That person is already on your company team.' });
+  const existingUser = req.db.users.find(u => u.email === email);
+  if (existingUser?.companyId && existingUser.companyId !== company.id) return res.status(409).json({ error: 'That account already belongs to another company.' });
+  const members = req.db.users.filter(u => u.companyId === company.id).length;
+  const pending = req.db.companyInvites.filter(i => i.companyId === company.id && i.status === 'pending' && i.expires > Date.now()).length;
+  if (members + pending >= (company.seatLimit || PRICING.wholesale.seats)) return res.status(409).json({ error: `This plan includes ${company.seatLimit || PRICING.wholesale.seats} seats. Remove a pending invite or team member before inviting another.` });
+  req.db.companyInvites = req.db.companyInvites.filter(i => !(i.companyId === company.id && i.email === email && i.status === 'pending'));
+  const token = crypto.randomBytes(24).toString('hex');
+  const invite = { id: crypto.randomUUID(), token, companyId: company.id, email, role, invitedBy: req.user.id, status: 'pending', createdAt: new Date().toISOString(), expires: Date.now() + 7 * 86400000 };
+  req.db.companyInvites.push(invite);
+  await saveDB(req.db);
+  const appUrl = String(process.env.APP_URL || 'http://localhost:8888').replace(/\/$/, '');
+  const inviteUrl = `${appUrl}/?view=companyjoin&invite=${encodeURIComponent(token)}`;
+  mailer.sendCompanyInvite?.(email, company.name, req.user.name, inviteUrl).catch(e => console.error('[mail]', e.message));
+  res.json({ invite: { id: invite.id, email, role, expires: invite.expires }, inviteUrl, accountExists: !!existingUser });
+});
+
+app.post('/api/company/invites/accept', requireAuth, async (req, res) => {
+  const token = String(req.body?.token || '');
+  const invite = req.db.companyInvites.find(i => i.token === token && i.status === 'pending');
+  if (!invite || invite.expires < Date.now()) return res.status(400).json({ error: 'That company invitation is invalid or has expired.' });
+  if (invite.email !== req.user.email) return res.status(403).json({ error: `This invite was sent to ${invite.email}. Sign in with that email to accept it.` });
+  if (req.user.companyId && req.user.companyId !== invite.companyId) return res.status(409).json({ error: 'Leave your current company before joining another.' });
+  const company = req.db.companies.find(c => c.id === invite.companyId);
+  if (!company) return res.status(404).json({ error: 'Company not found.' });
+  const owner = req.db.users.find(u => u.id === company.ownerId);
+  if (!owner || !isWholesale(owner)) return res.status(403).json({ error: 'This company workspace is not currently active.' });
+  const members = req.db.users.filter(u => u.companyId === company.id).length;
+  if (members >= (company.seatLimit || PRICING.wholesale.seats)) return res.status(409).json({ error: 'This company has used all available seats.' });
+  req.user.companyId = company.id; req.user.companyRole = invite.role === 'admin' ? 'admin' : 'member'; req.user.companyPlanUntil = companyEntitlementUntilForOwner(owner);
+  company.memberIds = [...new Set([...(company.memberIds || []), req.user.id])];
+  req.db.listings.filter(l => l.ownerId === req.user.id).forEach(l => { l.companyId = company.id; l.companyName = company.name; });
+  invite.status = 'accepted'; invite.acceptedAt = new Date().toISOString();
+  await saveDB(req.db);
+  res.json({ company: publicCompany(company), role: req.user.companyRole, access: accessFor(req.user) });
+});
+
+app.patch('/api/company/members/:userId', requireAuth, async (req, res) => {
+  const company = requireActiveCompany(req, res); if (!company) return;
+  if (req.user.companyRole !== 'owner') return res.status(403).json({ error: 'Only the company owner can change team roles.' });
+  const member = req.db.users.find(u => u.id === req.params.userId && u.companyId === company.id);
+  if (!member || member.id === company.ownerId) return res.status(404).json({ error: 'Team member not found.' });
+  member.companyRole = req.body?.role === 'admin' ? 'admin' : 'member';
+  await saveDB(req.db); res.json({ member: publicProfileUser(member), role: member.companyRole });
+});
+
+app.delete('/api/company/members/:userId', requireAuth, async (req, res) => {
+  const company = requireActiveCompany(req, res); if (!company) return;
+  if (!requireCompanyManager(req, res, company)) return;
+  const member = req.db.users.find(u => u.id === req.params.userId && u.companyId === company.id);
+  if (!member || member.id === company.ownerId) return res.status(404).json({ error: 'Team member not found.' });
+  if (req.user.companyRole === 'admin' && member.companyRole === 'admin') return res.status(403).json({ error: 'Only the owner can remove another company admin.' });
+  member.companyId = null; member.companyRole = null; member.companyPlanUntil = null;
+  req.db.listings.filter(l => l.ownerId === member.id).forEach(l => { l.companyId = null; l.companyName = null; });
+  company.memberIds = (company.memberIds || []).filter(id => id !== member.id);
+  await saveDB(req.db); res.json({ ok: true });
+});
+
+app.post('/api/company/leave', requireAuth, async (req, res) => {
+  const company = companyForUser(req.db, req.user);
+  if (!company) return res.status(404).json({ error: 'You are not part of a company.' });
+  if (company.ownerId === req.user.id) return res.status(400).json({ error: 'The company owner cannot leave. Remove team members or delete the company/account instead.' });
+  req.user.companyId = null; req.user.companyRole = null; req.user.companyPlanUntil = null;
+  req.db.listings.filter(l => l.ownerId === req.user.id).forEach(l => { l.companyId = null; l.companyName = null; });
+  company.memberIds = (company.memberIds || []).filter(id => id !== req.user.id);
+  await saveDB(req.db); res.json({ ok: true });
+});
+
+app.get('/api/companies/:id', async (req, res) => {
+  const db = await loadDB();
+  const company = db.companies.find(c => c.id === req.params.id || c.slug === req.params.id);
+  if (!company) return res.status(404).json({ error: 'Company not found.' });
+  const viewer = db.users.find(u => u.id === req.session.userId);
+  const memberIds = new Set(companyMemberIds(db, company));
+  const members = db.users.filter(u => u.companyId === company.id).map(publicProfileUser);
+  const listings = db.listings.filter(l => l.companyId === company.id || memberIds.has(l.ownerId)).map(l => gateListing(l, viewer, db));
+  res.json({ company: publicCompany(company), members, listings });
 });
 app.patch('/api/me/buybox', requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -534,7 +917,7 @@ function maybePayReferral(db, user) {
 app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
   if (isAdminUser(req.user)) return res.json({ user: publicUser(req.user), adminUnlimited: true });
   const period = req.body?.period === 'annual' ? 'annual' : 'monthly';
-  const tier = req.body?.tier === 'platinum' ? 'platinum' : 'pro';
+  const tier = ['pro','platinum','wholesale'].includes(req.body?.tier) ? req.body.tier : 'pro';
   const tierConfig = PRICING[tier];
   try {
     if (!payments.enabled()) {
@@ -546,6 +929,7 @@ app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
       const base = (req.user.plan === tier && isPro(req.user)) ? new Date(req.user.planUntil).getTime() : Date.now();
       req.user.plan = tier; req.user.planPeriod = period;
       req.user.planUntil = new Date(base + days * 86400000).toISOString();
+      syncCompanyMemberEntitlements(req.db, req.user);
       ledgerAdd(req.db, req.user.id, 'purchase', 0, `${tierConfig.label} — ${period} (simulated — Stripe not configured)`, { simulated: true });
       maybePayReferral(req.db, req.user);
       await saveDB(req.db);
@@ -577,6 +961,8 @@ app.post('/api/billing/cancel', requireAuth, async (req, res) => {
       return res.json({ user: publicUser(req.user), cancelsAtPeriodEnd: true });
     }
     req.user.plan = 'free';
+    req.user.planUntil = null;
+    syncCompanyMemberEntitlements(req.db, req.user);
     await saveDB(req.db);
     res.json({ user: publicUser(req.user) });
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -599,8 +985,11 @@ app.post('/api/listings', requireAuth, async (req, res) => {
   const b = req.body || {};
   if (!b.address || !b.city || !b.asking) return res.status(400).json({ error: 'Address, city, and asking price are required.' });
   const photos = (await Promise.all((Array.isArray(b.photos) ? b.photos : []).slice(0, 12).map(writeImage))).filter(Boolean);
+  const activeCompany = companyForUser(req.db, req.user);
   const listing = {
     id: crypto.randomUUID(), ownerId: req.user.id, ownerName: req.user.name, ownerEmail: req.user.email,
+    companyId: activeCompany && isWholesale(req.user) ? activeCompany.id : null,
+    companyName: activeCompany && isWholesale(req.user) ? activeCompany.name : null,
     address: String(b.address).trim(), city: String(b.city).trim(),
     propertyType: b.propertyType || 'Single family', situation: b.situation || 'Motivated seller',
     asking: Number(b.asking), arv: b.arv ? Number(b.arv) : null, rehab: b.rehab ? Number(b.rehab) : null,
@@ -661,9 +1050,12 @@ app.get('/api/listings/:id', async (req, res) => {
   const gated = gateListing(listing, viewer, db);
   const others = db.listings.filter(l => l.ownerId === listing.ownerId && l.id !== listing.id)
     .map(l => ({ id: l.id, address: gated.locked ? 'Address hidden' : l.address, asking: l.asking, photos: l.photos }));
+  const ownerCompany = owner?.companyId ? db.companies.find(c => c.id === owner.companyId) : null;
+  const gatedOwner = owner ? { ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone } : null;
+  if (gatedOwner && ownerCompany) gatedOwner.company = publicCompany(ownerCompany);
   res.json({
     listing: gated,
-    owner: owner ? { ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone } : null,
+    owner: gatedOwner,
     otherListings: others,
     unlockCredits: viewer ? viewer.unlockCredits : 0,
     access: accessFor(viewer),
@@ -703,8 +1095,10 @@ app.get('/api/users/:id/listings', async (req, res) => {
   const owner = db.users.find(u => u.id === req.params.id);
   if (!owner) return res.status(404).json({ error: 'User not found.' });
   const viewer = db.users.find(u => u.id === req.session.userId);
+  const ownerCompany = owner.companyId ? db.companies.find(c => c.id === owner.companyId) : null;
   res.json({
     owner: publicProfileUser(owner),
+    company: ownerCompany ? publicCompany(ownerCompany) : null,
     listings: db.listings.filter(l => l.ownerId === owner.id).map(l => gateListing(l, viewer, db)),
     followerCount: db.follows.filter(f => f.followingId === owner.id).length,
     friendCount: db.friendships.filter(f => f.userAId === owner.id || f.userBId === owner.id).length,
@@ -1889,7 +2283,7 @@ app.post('/api/payments/webhook',
         const user = db.users.find(u => u.id === sess.metadata?.userId);
         if (user && sess.mode === 'subscription') {
           const period = sess.metadata?.period === 'annual' ? 'annual' : 'monthly';
-          const tier = sess.metadata?.tier === 'platinum' ? 'platinum' : 'pro';
+          const tier = ['pro','platinum','wholesale'].includes(sess.metadata?.tier) ? sess.metadata.tier : 'pro';
           user.plan = tier;
           user.planPeriod = period;
           user.stripeSubscriptionId = sess.subscription;
@@ -1897,6 +2291,7 @@ app.post('/api/payments/webhook',
           // below fires moments later with Stripe's exact period end and
           // corrects this. Good enough as a starting value in the meantime.
           user.planUntil = new Date(Date.now() + (period === 'annual' ? 365 : 30) * 86400000).toISOString();
+          syncCompanyMemberEntitlements(db, user);
           maybePayReferral(db, user);
           await saveDB(db);
         }
@@ -1916,8 +2311,10 @@ app.post('/api/payments/webhook',
           // above (or stays whatever it already was on a renewal) — this
           // event only needs to correct the exact expiry timestamp.
           user.planUntil = periodEnd ? new Date(periodEnd * 1000).toISOString() : new Date(Date.now() + 31 * 86400000).toISOString();
-          const isRenewal = db.ledger.some(l => l.userId === user.id && l.description?.startsWith('Better Pro'));
-          ledgerAdd(db, user.id, 'purchase', 0, isRenewal ? 'Better Pro — renewed automatically' : 'Better Pro — subscribed', { invoiceId: inv.id, charged: inv.amount_paid });
+          if (user.plan === 'wholesale') syncCompanyMemberEntitlements(db, user);
+          const planLabel = user.plan === 'wholesale' ? PRICING.wholesale.label : user.plan === 'platinum' ? PRICING.platinum.label : PRICING.pro.label;
+          const isRenewal = db.ledger.some(l => l.userId === user.id && l.description?.startsWith(planLabel));
+          ledgerAdd(db, user.id, 'purchase', 0, isRenewal ? `${planLabel} — renewed automatically` : `${planLabel} — subscribed`, { invoiceId: inv.id, charged: inv.amount_paid });
           await saveDB(db);
         }
       }
@@ -1925,7 +2322,7 @@ app.post('/api/payments/webhook',
       if (event.type === 'customer.subscription.deleted') {
         const sub = event.data.object;
         const user = db.users.find(u => u.stripeSubscriptionId === sub.id);
-        if (user) { user.plan = 'free'; user.stripeSubscriptionId = null; await saveDB(db); }
+        if (user) { user.plan = 'free'; user.planUntil = null; user.stripeSubscriptionId = null; syncCompanyMemberEntitlements(db, user); await saveDB(db); }
       }
 
       if (event.type === 'charge.dispute.created') {
