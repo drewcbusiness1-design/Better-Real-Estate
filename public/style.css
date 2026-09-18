@@ -60,7 +60,7 @@ a{color:var(--navy);cursor:pointer;}
 #topbar{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line);}
 #topbar .bar{max-width:780px;margin:0 auto;padding:13px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .brand{display:flex;align-items:center;cursor:pointer;min-width:0;}
-.brand .brand-logo{display:block;height:46px;width:auto;max-width:min(60vw,320px);object-fit:contain;}
+.brand .brand-logo{display:block;height:52px;width:auto;max-width:min(68vw,360px);object-fit:contain;}
 .heroslogan{display:none;}
 .navlinks{display:flex;align-items:center;gap:5px;}
 .navlinks button{background:none;border:none;padding:7px 13px;border-radius:8px;font-size:13.5px;font-weight:500;color:var(--ink-soft);transition:background .16s,color .16s;}
@@ -392,11 +392,15 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
   .dhead h2{font-size:26px;}
   .page h2{font-size:26px;}
 }
+@media(max-width:560px){
+  .profilehero{gap:14px;padding:16px;}
+  .personav.profile{width:76px;height:76px;flex-basis:76px;font-size:21px;}
+}
 @media(max-width:430px){
   /* "Better Real Estate" crowds the top bar next to the icon buttons on a
      phone screen — drop to just "Better" (still has the accent dot as a
      mark) rather than let it wrap or overflow. */
-  .brand .brand-logo{height:34px;max-width:min(68vw,250px);}
+  .brand .brand-logo{height:38px;max-width:min(74vw,290px);}
 }
 @media(min-width:601px) and (max-width:860px){
   .herogrid2{grid-template-columns:1fr;gap:32px;}
@@ -516,7 +520,19 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .personmain{display:flex;gap:12px;align-items:center;cursor:pointer;min-width:0;}
 .personav{width:46px;height:46px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--ink-soft);overflow:hidden;flex:0 0 46px;}
 .personav.small{width:34px;height:34px;flex-basis:34px;font-size:11px;}
+.personav.profile{width:96px;height:96px;flex:0 0 96px;font-size:26px;border:1px solid var(--line);box-shadow:var(--shadow-sm);background:var(--surface-2);}
 .personav img{width:100%;height:100%;object-fit:cover;}
+.profilehero{display:flex;align-items:flex-start;gap:20px;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:var(--shadow-sm);margin:8px 0 22px;}
+.profileherobody{min-width:0;flex:1;}
+.profileherobody h2{margin:1px 0 5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.profileherobody .sub{margin-bottom:6px;}
+.profilelocation{font-size:13px;color:var(--ink-soft);font-weight:600;margin-top:5px;}
+.profilebio{font-size:14px;line-height:1.55;color:var(--ink-2);margin:10px 0 0;max-width:560px;}
+.profileeditbtn{margin-top:12px;padding:8px 13px;}
+.profilephotopicker{display:flex;align-items:center;gap:13px;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;background:var(--surface-2);cursor:pointer;transition:border-color .15s,background .15s;}
+.profilephotopicker:hover{border-color:var(--ink-soft);background:var(--surface);}
+.profilephotopreview{width:58px;height:58px;flex:0 0 58px;border-radius:50%;overflow:hidden;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--ink-soft);}
+.profilephotopreview img{width:100%;height:100%;object-fit:cover;display:block;}
 .personmeta{min-width:0;flex:1;}
 .personname{font-weight:700;font-size:15px;display:flex;align-items:center;gap:5px;}
 .personsub,.personstats{font-size:12.5px;color:var(--ink-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}

@@ -49,3 +49,15 @@ assert(store.includes("'friendRequests','friendships'"), 'friend collections mis
 assert(toml.includes('social.js'), 'Netlify bundle must include social.js');
 ['renderNetwork', 'renderChat', 'Find people', 'Add friend', 'friendRequestCount'].forEach(s => assert(app.includes(s), `missing client wiring ${s}`));
 console.log('✓ Social network, friends, search & chat tests passed');
+
+// Profile photos are visible on profile pages and production storage must not
+// write into Netlify's read-only /var/task/public/uploads fallback.
+{
+  const fs = require('fs');
+  const appJs = fs.readFileSync(require('path').join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  const storageJs = fs.readFileSync(require('path').join(__dirname, '..', 'storage.js'), 'utf8');
+  if (!appJs.includes("avatarNode(owner, 'profile')")) throw new Error('Public profile must render the profile avatar.');
+  if (!appJs.includes("avatarNode(state.user, 'profile')")) throw new Error('Own profile must render the profile avatar.');
+  if (!storageJs.includes('bre_image_blobs')) throw new Error('Production image storage database fallback missing.');
+  if (!storageJs.includes('if (!IS_SERVERLESS)')) throw new Error('Serverless filesystem write guard missing.');
+}

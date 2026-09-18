@@ -106,8 +106,17 @@ async function refreshUnread() {
   try { const f = await api('GET', '/api/friends/requests'); state.friendRequestCount = Number(f.incoming?.length || 0); } catch {}
   return state.unreadCount || 0;
 }
+let viewPollTimer = null;
+function stopViewPolling() { if (viewPollTimer) { clearInterval(viewPollTimer); viewPollTimer = null; } }
+function startViewPolling(fn, ms = 5000) {
+  stopViewPolling();
+  viewPollTimer = setInterval(() => {
+    if (document.hidden) return;
+    Promise.resolve().then(fn).catch(() => {});
+  }, ms);
+}
 function go(view, extra = {}) { Object.assign(state, { view }, extra); window.scrollTo(0, 0); render(); }
-function render() { renderTop(); renderTabs(); renderApp(); renderFooter(); }
+function render() { stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter(); }
 
 function renderTop() {
   const brandEl = document.querySelector('.brand');
@@ -1884,20 +1893,41 @@ async function renderMessages() {
     el('div', {}, [el('h2', {}, 'Messages'), el('div', { class: 'sub' }, 'Your conversations with other members.')]),
     el('button', { class: 'btn-ghost', onclick: () => go('network') }, 'Find people')
   ]));
-  const { conversations } = await api('GET', '/api/conversations');
-  await refreshUnread();
-  if (!conversations.length) { wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No conversations yet'), el('p', {}, 'Message a seller from a listing, a friend, or someone you find in Network.'), el('button', { class: 'btn-primary', onclick: () => go('network') }, 'Open Network')])); return wrap; }
-  const card = el('div', { class: 'chatlist' });
-  conversations.forEach(c => card.appendChild(el('div', { class: 'chatrow' + (c.unreadCount ? ' unread' : ''), onclick: () => go('chat', { chatUserId: c.other.id }) }, [
-    avatarNode(c.other),
-    el('div', { class: 'chatpreview' }, [
-      el('div', { class: 'chatpreviewtop' }, [el('b', {}, c.other.name), el('span', {}, formatChatTime(c.latest.at))]),
-      el('div', { class: 'chatpreviewbody' }, (c.latest.outgoing ? 'You: ' : '') + c.latest.body),
-      c.latest.listingAddress ? el('div', { class: 'chatcontext' }, 'Property: ' + c.latest.listingAddress) : null
-    ]),
-    c.unreadCount ? el('span', { class: 'unreadpill' }, String(c.unreadCount)) : null
-  ])));
-  wrap.appendChild(card);
+  const listHost = el('div');
+  wrap.appendChild(listHost);
+
+  const paint = async () => {
+    const { conversations } = await api('GET', '/api/conversations');
+    await refreshUnread();
+    renderTop();
+    renderTabs();
+    listHost.innerHTML = '';
+    if (!conversations.length) {
+      listHost.appendChild(el('div', { class: 'empty' }, [
+        el('h3', {}, 'No conversations yet'),
+        el('p', {}, 'Message a seller from a listing, a friend, or someone you find in Network.'),
+        el('button', { class: 'btn-primary', onclick: () => go('network') }, 'Open Network')
+      ]));
+      return;
+    }
+    const card = el('div', { class: 'chatlist' });
+    conversations.forEach(c => card.appendChild(el('div', { class: 'chatrow' + (c.unreadCount ? ' unread' : ''), onclick: () => go('chat', { chatUserId: c.other.id }) }, [
+      avatarNode(c.other),
+      el('div', { class: 'chatpreview' }, [
+        el('div', { class: 'chatpreviewtop' }, [el('b', {}, c.other.name), el('span', {}, formatChatTime(c.latest.at))]),
+        el('div', { class: 'chatpreviewbody' }, (c.latest.outgoing ? 'You: ' : '') + c.latest.body),
+        c.latest.listingAddress ? el('div', { class: 'chatcontext' }, 'Property: ' + c.latest.listingAddress) : null
+      ]),
+      c.unreadCount ? el('span', { class: 'unreadpill' }, String(c.unreadCount)) : null
+    ])));
+    listHost.appendChild(card);
+  };
+
+  await paint();
+  startViewPolling(async () => {
+    if (state.view !== 'messages') return;
+    await paint();
+  }, 7000);
   return wrap;
 }
 function formatChatTime(iso) {
@@ -1908,8 +1938,10 @@ function formatChatTime(iso) {
 }
 async function renderChat() {
   if (!state.chatUserId) return renderMessages();
-  const { other, messages } = await api('GET', '/api/conversations/' + encodeURIComponent(state.chatUserId));
+  let { other, messages } = await api('GET', '/api/conversations/' + encodeURIComponent(state.chatUserId));
   await refreshUnread();
+  renderTop();
+  renderTabs();
   const wrap = el('div', { class: 'page chatpage' });
   wrap.appendChild(el('div', { class: 'chathead' }, [
     el('button', { class: 'backbtn', onclick: () => go('messages') }, '← Messages'),
@@ -1917,29 +1949,66 @@ async function renderChat() {
     friendButton(other, () => {})
   ]));
   const stream = el('div', { class: 'chatstream' });
-  if (!messages.length) stream.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'Start the conversation.')));
-  messages.forEach(m => {
-    const bubble = el('div', { class: 'bubble ' + (m.outgoing ? 'mine' : 'theirs') }, [
-      m.listingAddress ? el('button', { class: 'bubblelisting', onclick: () => m.listingId && go('detail', { detailId: m.listingId, photoIdx: 0 }) }, 'Property · ' + m.listingAddress) : null,
-      el('div', { class: 'bubbletext' }, m.body),
-      el('div', { class: 'bubbletime' }, formatChatTime(m.at))
-    ]);
-    stream.appendChild(bubble);
-  });
   wrap.appendChild(stream);
   const input = el('textarea', { placeholder: 'Write a message…', rows: '2' });
   const send = el('button', { class: 'btn-primary' }, 'Send');
   const composer = el('div', { class: 'chatcomposer' }, [input, send]);
+  wrap.appendChild(composer);
+
+  let lastSignature = '';
+  const renderMessagesIntoStream = list => {
+    const prevBottomGap = stream.scrollHeight - stream.scrollTop - stream.clientHeight;
+    const shouldStickToBottom = prevBottomGap < 72;
+    stream.innerHTML = '';
+    if (!list.length) stream.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'Start the conversation.')));
+    list.forEach(m => {
+      const bubble = el('div', { class: 'bubble ' + (m.outgoing ? 'mine' : 'theirs') }, [
+        m.listingAddress ? el('button', { class: 'bubblelisting', onclick: () => m.listingId && go('detail', { detailId: m.listingId, photoIdx: 0 }) }, 'Property · ' + m.listingAddress) : null,
+        el('div', { class: 'bubbletext' }, m.body),
+        el('div', { class: 'bubbletime' }, formatChatTime(m.at))
+      ]);
+      stream.appendChild(bubble);
+    });
+    if (shouldStickToBottom) stream.scrollTop = stream.scrollHeight;
+  };
+  const signatureFor = list => list.map(m => [m.id || m.at, m.body, m.outgoing ? '1' : '0'].join(':')).join('|');
+  const syncChat = async ({ force = false } = {}) => {
+    const currentUserId = state.chatUserId;
+    const fresh = await api('GET', '/api/conversations/' + encodeURIComponent(currentUserId));
+    if (state.view !== 'chat' || state.chatUserId !== currentUserId) return;
+    other = fresh.other;
+    messages = fresh.messages || [];
+    const sig = signatureFor(messages);
+    if (force || sig !== lastSignature) {
+      lastSignature = sig;
+      renderMessagesIntoStream(messages);
+    }
+    await refreshUnread();
+    renderTop();
+    renderTabs();
+  };
+
+  renderMessagesIntoStream(messages);
+  lastSignature = signatureFor(messages);
+
   const doSend = async () => {
     const body = input.value.trim(); if (!body) return;
     send.disabled = true;
-    try { await api('POST', '/api/messages', { toUserId: other.id, body }); input.value = ''; await refreshUnread(); render(); }
-    catch (e) { toast(e.message, 'err'); send.disabled = false; }
+    try {
+      await api('POST', '/api/messages', { toUserId: other.id, body });
+      input.value = '';
+      await syncChat({ force: true });
+    }
+    catch (e) { toast(e.message, 'err'); }
+    finally { send.disabled = false; }
   };
   send.onclick = doSend;
   input.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); } };
-  wrap.appendChild(composer);
   setTimeout(() => { stream.scrollTop = stream.scrollHeight; input.focus(); }, 0);
+  startViewPolling(async () => {
+    if (state.view !== 'chat' || !state.chatUserId) return;
+    await syncChat();
+  }, 3000);
   return wrap;
 }
 
@@ -1948,8 +2017,17 @@ async function renderMe() {
   const wrap = el('div', { class: 'page' });
   const d = await api('GET', '/api/users/' + state.user.id + '/listings');
   const w = await api('GET', '/api/wallet');
-  wrap.appendChild(el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]));
-  wrap.appendChild(el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`));
+  const mineHeader = el('div', { class: 'profilehero' }, [
+    avatarNode(state.user, 'profile'),
+    el('div', { class: 'profileherobody' }, [
+      el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
+      el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`),
+      state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
+      state.user.bio ? el('p', { class: 'profilebio' }, state.user.bio) : null,
+      el('button', { class: 'btn-ghost profileeditbtn', onclick: () => go('settings') }, state.user.avatarUrl ? 'Edit profile' : 'Add profile photo')
+    ])
+  ]);
+  wrap.appendChild(mineHeader);
 
   wrap.appendChild(el('div', { class: 'statgrid' }, [
     stat(cents(w.balance), 'Wallet'), stat(state.user.unlockCredits, 'Unlocks'), stat(d.listings.length, 'Listings')
@@ -2020,10 +2098,15 @@ async function renderProfile() {
   const { owner, listings, followerCount, friendCount, friendship, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
-  wrap.appendChild(el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
-  wrap.appendChild(el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (owner.location ? ` · ${owner.location}` : '') + (avg ? ` · ★ ${avg} (${reviews.length})` : '')));
-  if (owner.bio) wrap.appendChild(el('p', { class: 'dnotes' }, owner.bio));
+  const profileBody = el('div', { class: 'profileherobody' }, [
+    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
+    el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')),
+    owner.location ? el('div', { class: 'profilelocation' }, owner.location) : null,
+    owner.bio ? el('p', { class: 'profilebio' }, owner.bio) : null
+  ]);
+  const profileHero = el('div', { class: 'profilehero' }, [avatarNode(owner, 'profile'), profileBody]);
+  wrap.appendChild(profileHero);
 
   if (state.user && state.user.id !== owner.id) {
     const actions = el('div', { class: 'profileactions' });
@@ -2142,8 +2225,22 @@ async function renderSettings() {
   const locationI = el('input', { value: state.user.location || '', placeholder: 'e.g. Newark, NJ or South Jersey' });
   const avFile = el('input', { type: 'file', accept: 'image/*', style: 'display:none' });
   let avData = null;
-  const avPrev = el('div', { class: 'picker', onclick: () => avFile.click() }, state.user.avatarUrl ? 'Change profile photo' : 'Add a profile photo');
-  avFile.onchange = async () => { if (avFile.files[0]) { avData = await downscale(avFile.files[0], 400); avPrev.textContent = 'Photo ready — save to apply'; } };
+  const avPreviewImg = state.user.avatarUrl ? el('img', { src: state.user.avatarUrl, alt: 'Current profile photo' }) : null;
+  const avPrev = el('div', { class: 'profilephotopicker', onclick: () => avFile.click() }, [
+    el('div', { class: 'profilephotopreview' }, avPreviewImg || initials(state.user.name)),
+    el('div', {}, [
+      el('b', {}, state.user.avatarUrl ? 'Change profile photo' : 'Add a profile photo'),
+      el('div', { class: 'hint' }, 'JPG, PNG or WebP. We resize it automatically.')
+    ])
+  ]);
+  avFile.onchange = async () => {
+    if (!avFile.files[0]) return;
+    avData = await downscale(avFile.files[0], 400);
+    const preview = avPrev.querySelector('.profilephotopreview');
+    preview.innerHTML = '';
+    preview.appendChild(el('img', { src: avData, alt: 'New profile photo preview' }));
+    const label = avPrev.querySelector('b'); if (label) label.textContent = 'Photo ready — save to apply';
+  };
   pbox.appendChild(el('label', {}, 'Display name')); pbox.appendChild(nameI);
   pbox.appendChild(el('label', {}, 'Phone (shown after unlock)')); pbox.appendChild(phoneI);
   pbox.appendChild(el('label', {}, 'Market / location')); pbox.appendChild(locationI);

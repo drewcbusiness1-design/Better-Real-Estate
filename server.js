@@ -1938,7 +1938,7 @@ app.post('/api/payments/webhook',
     res.json({ received: true });
   });
 
-/* ============================ IMAGES (Netlify Blobs) ============================ */
+/* ============================ IMAGES (Blobs + durable DB fallback) ============================ */
 app.get('/api/img/:key', async (req, res) => {
   try {
     const img = await readImage(req.params.key);
