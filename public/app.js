@@ -170,6 +170,7 @@ function renderHome() {
       el('div', { class: 'herokicker' }, 'A social feed for off-market property'),
       el('h1', {}, ['Off-market property, ', el('em', {}, 'first.')]),
       el('p', {}, `Scroll properties like a social feed. Follow the people posting them, make offers, and buy the fixtures and materials to rehab what you close. Free for ${p?.signupTrialDays || 7} days, no card required.`),
+      el('div', { class: 'heroslogan' }, 'Make better your standard.'),
       el('div', { class: 'herobtns' }, [
         el('button', { class: 'btn-primary', onclick: () => { state.authMode = 'signup'; go('auth'); } }, 'Start free trial'),
         el('button', { class: 'btn-ghost', onclick: () => { state.authMode = 'login'; go('auth'); } }, 'Sign in')

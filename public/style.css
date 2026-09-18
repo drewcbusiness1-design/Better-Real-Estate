@@ -59,9 +59,10 @@ a{color:var(--navy);cursor:pointer;}
 /* ================= top bar ================= */
 #topbar{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line);}
 #topbar .bar{max-width:780px;margin:0 auto;padding:13px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
-.brand{font-family:'Bricolage Grotesque',sans-serif;font-size:23px;display:flex;align-items:center;gap:9px;color:var(--ink);letter-spacing:-.02em;cursor:pointer;}
-.brand .mark{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,var(--accent-2),var(--accent));box-shadow:0 0 0 3px var(--accent-soft);}
+.brand{font-family:'Bricolage Grotesque',sans-serif;font-size:23px;display:flex;align-items:center;gap:10px;color:var(--ink);letter-spacing:-.02em;cursor:pointer;}
+.brand .mark{width:26px;height:26px;display:block;object-fit:contain;flex:0 0 26px;}
 .brand .brandthin{font-style:normal;font-weight:400;color:var(--ink-soft);}
+.heroslogan{margin:14px 0 0;font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);}
 .navlinks{display:flex;align-items:center;gap:5px;}
 .navlinks button{background:none;border:none;padding:7px 13px;border-radius:8px;font-size:13.5px;font-weight:500;color:var(--ink-soft);transition:background .16s,color .16s;}
 .navlinks button:hover{background:var(--surface-2);color:var(--ink);}
@@ -397,7 +398,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
      phone screen — drop to just "Better" (still has the accent dot as a
      mark) rather than let it wrap or overflow. */
   .brand .brandthin{display:none;}
-  .brand{font-size:20px;}
+  .brand{font-size:20px;gap:8px;}
+  .brand .mark{width:22px;height:22px;flex-basis:22px;}
 }
 @media(min-width:601px) and (max-width:860px){
   .herogrid2{grid-template-columns:1fr;gap:32px;}
