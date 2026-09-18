@@ -5,6 +5,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const client = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+const social = fs.readFileSync(path.join(root, 'social.js'), 'utf8');
 const toml = fs.readFileSync(path.join(root, 'netlify.toml'), 'utf8');
 const env = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 
@@ -121,7 +122,7 @@ assert.ok(env.includes('MARKETING_POSTAL_ADDRESS='), 'Commercial email footer ad
 assert.ok(toml.includes('[functions."marketing-cron"]'), 'Netlify scheduled marketing function must be configured');
 assert.ok(toml.includes('schedule = "0 15 * * *"'), 'Marketing scheduler should run once daily and enforce 48h per-user eligibility');
 assert.ok(server.includes('marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount'), 'Marketing/AI usage metadata must not leak through public user serializers');
-assert.ok(server.includes('const publicProfileUser = u => u ? ({'), 'Public profiles need a strict allowlist serializer');
+assert.ok(server.includes('const publicProfileUser = social.publicProfileUser;') && social.includes('function publicProfileUser(u)'), 'Public profiles need a strict allowlist serializer');
 assert.ok(server.includes('owner: publicProfileUser(owner)'), 'Public profile route must not reuse the private account serializer');
 assert.ok(server.includes('{ ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone }'), 'Listing detail should add contact info only through the unlock gate');
 assert.ok(client.includes("'/api/users/' + encodeURIComponent(state.profileId) + '/listings'"), 'Profile screen must call the server route that actually exists');

@@ -31,6 +31,9 @@ if (process.argv.includes('--clear')) {
   db.users = db.users.filter(u => !u.demo);
   db.saves = db.saves.filter(s => !demoUserIds.includes(s.userId));
   db.follows = db.follows.filter(f => !demoUserIds.includes(f.followerId) && !demoUserIds.includes(f.followingId));
+  db.friendRequests = db.friendRequests.filter(r => !demoUserIds.includes(r.fromUserId) && !demoUserIds.includes(r.toUserId));
+  db.friendships = db.friendships.filter(f => !demoUserIds.includes(f.userAId) && !demoUserIds.includes(f.userBId));
+  db.messages = db.messages.filter(m => !demoUserIds.includes(m.fromUserId) && !demoUserIds.includes(m.toUserId));
   await saveDB(db);
   console.log('Demo data cleared. Real accounts and listings untouched.');
   return;
@@ -46,7 +49,7 @@ function makeUser(name, email, role, bio, phone, opts = {}) {
   const u = {
     id: crypto.randomUUID(), name, email,
     passwordHash: bcrypt.hashSync(opts.password || 'demo1234', 10),
-    role, bio, phone, avatarUrl: null, points: opts.points || 0,
+    role, bio, phone, location: opts.location || '', avatarUrl: null, points: opts.points || 0,
     buyBox: { minPrice: 0, maxPrice: 2000000, cities: [], propertyTypes: [], minSpread: 0, active: true },
     settings: { theme: 'light', feedDensity: 'comfortable', notifyOnMessage: true, notifyOnMatch: true },
     plan: 'free', planUntil: null, trialUntil: new Date(now + 7 * 86400000).toISOString(),

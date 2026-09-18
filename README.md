@@ -180,3 +180,10 @@ Two optional systems are included and stay disabled until their server-side keys
 ## Admin unlimited access
 
 Any account whose email is present in `ADMIN_EMAILS` is treated as a permanent admin super-account. Admin access does not expire and does not require Pro or Platinum billing. Admins receive all Pro/Platinum feature gates, unlimited AI listing assistance, unlimited buy boxes, unlimited included listing promotions, and unlimited listing unlock access. This bypass is enforced on the server and remains active as long as the email stays in `ADMIN_EMAILS`. Normal marketplace purchases and other real-world transaction charges are not made free by admin status.
+
+
+## Social network & messaging
+
+Better Real Estate includes a member Network area for finding other users by name, role, bio, market/location, or listing market. Follow remains a one-way relationship, while Friends are mutual connections managed through friend requests. The Messages area groups direct messages into conversation threads, preserves property context when a conversation starts from a listing, and tracks unread messages. Users can add an optional market/location in Settings to improve member discovery.
+
+The social tables (`friendRequests` and `friendships`) are created automatically by the existing data layer on deployment; no manual database migration or new environment variable is required.

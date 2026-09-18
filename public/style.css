@@ -59,10 +59,9 @@ a{color:var(--navy);cursor:pointer;}
 /* ================= top bar ================= */
 #topbar{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line);}
 #topbar .bar{max-width:780px;margin:0 auto;padding:13px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
-.brand{font-family:'Bricolage Grotesque',sans-serif;font-size:23px;display:flex;align-items:center;gap:10px;color:var(--ink);letter-spacing:-.02em;cursor:pointer;}
-.brand .mark{width:26px;height:26px;display:block;object-fit:contain;flex:0 0 26px;}
-.brand .brandthin{font-style:normal;font-weight:400;color:var(--ink-soft);}
-.heroslogan{margin:14px 0 0;font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);}
+.brand{display:flex;align-items:center;cursor:pointer;min-width:0;}
+.brand .brand-logo{display:block;height:34px;width:auto;object-fit:contain;}
+.heroslogan{display:none;}
 .navlinks{display:flex;align-items:center;gap:5px;}
 .navlinks button{background:none;border:none;padding:7px 13px;border-radius:8px;font-size:13.5px;font-weight:500;color:var(--ink-soft);transition:background .16s,color .16s;}
 .navlinks button:hover{background:var(--surface-2);color:var(--ink);}
@@ -397,9 +396,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
   /* "Better Real Estate" crowds the top bar next to the icon buttons on a
      phone screen — drop to just "Better" (still has the accent dot as a
      mark) rather than let it wrap or overflow. */
-  .brand .brandthin{display:none;}
-  .brand{font-size:20px;gap:8px;}
-  .brand .mark{width:22px;height:22px;flex-basis:22px;}
+  .brand .brand-logo{height:26px;max-width:min(62vw,220px);}
 }
 @media(min-width:601px) and (max-width:860px){
   .herogrid2{grid-template-columns:1fr;gap:32px;}
@@ -504,3 +501,70 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .aibox .btn-ghost{align-self:flex-start}
 .marketingopt{display:flex!important;align-items:flex-start;gap:9px;margin:12px 0 4px!important;font-size:13px;line-height:1.4;color:var(--muted,#40474F);font-weight:400!important}
 .marketingopt input{margin-top:2px!important;flex:0 0 auto}
+
+/* ================= network / friends / chat ================= */
+.msgbadge{position:absolute;top:-6px;right:-7px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--accent);color:#fff;border:2px solid var(--bg);font-size:9px;font-weight:800;line-height:13px;display:flex;align-items:center;justify-content:center;}
+.pageheadrow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:10px;}
+.pageheadrow h2{margin-bottom:4px;}
+.pageheadrow .sub{margin-bottom:0;}
+.networktabs{display:flex;gap:7px;margin:18px 0 16px;padding:4px;background:var(--surface-2);border-radius:11px;width:max-content;max-width:100%;}
+.networktabs button{border:0;background:transparent;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--ink-soft);}
+.networktabs button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-sm);}
+.networksearch{display:grid;grid-template-columns:1fr 145px;gap:9px;margin-bottom:16px;}
+.peoplegrid{display:grid;gap:10px;}
+.personcard{border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:var(--shadow-sm);padding:14px 15px;}
+.personmain{display:flex;gap:12px;align-items:center;cursor:pointer;min-width:0;}
+.personav{width:46px;height:46px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--ink-soft);overflow:hidden;flex:0 0 46px;}
+.personav.small{width:34px;height:34px;flex-basis:34px;font-size:11px;}
+.personav img{width:100%;height:100%;object-fit:cover;}
+.personmeta{min-width:0;flex:1;}
+.personname{font-weight:700;font-size:15px;display:flex;align-items:center;gap:5px;}
+.personsub,.personstats{font-size:12.5px;color:var(--ink-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.personstats{font-size:11.5px;}
+.personactions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap;}
+.personactions button,.friendbtn,.profileactions button{border:1px solid var(--line-strong);background:var(--bg-elev);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:650;}
+.personactions button.primary,.profileactions .btn-primary{background:var(--navy-deep);color:var(--onaccent);border-color:var(--navy-deep);}
+.profileactions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px;}
+.networkloading{padding:24px;text-align:center;color:var(--ink-soft);font-size:13px;}
+.empty.compact{padding:18px;margin:8px 0;}
+.chatlist{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden;}
+.chatrow{display:flex;align-items:center;gap:12px;padding:14px 15px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .14s;}
+.chatrow:last-child{border-bottom:0;}
+.chatrow:hover,.chatrow.unread{background:var(--surface-2);}
+.chatpreview{min-width:0;flex:1;}
+.chatpreviewtop{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:14px;}
+.chatpreviewtop span{font-size:11px;color:var(--ink-soft);white-space:nowrap;}
+.chatpreviewbody{font-size:12.5px;color:var(--ink-soft);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.chatrow.unread .chatpreviewbody{color:var(--ink);font-weight:600;}
+.chatcontext{font-size:10.5px;color:var(--accent-text);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.unreadpill{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+.chatpage{max-width:780px;}
+.chathead{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-bottom:14px;}
+.chathead .backbtn{margin:0;}
+.chatperson{display:flex;align-items:center;gap:9px;cursor:pointer;min-width:0;}
+.chatperson>div:last-child{display:flex;flex-direction:column;min-width:0;}
+.chatperson span{font-size:11px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.chatstream{height:min(58vh,560px);min-height:340px;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);padding:16px;display:flex;flex-direction:column;gap:9px;scroll-behavior:smooth;}
+.bubble{max-width:78%;padding:10px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--line);align-self:flex-start;box-shadow:var(--shadow-sm);}
+.bubble.mine{align-self:flex-end;background:var(--navy-deep);color:var(--onaccent);border-color:var(--navy-deep);border-bottom-right-radius:5px;}
+.bubble.theirs{border-bottom-left-radius:5px;}
+.bubbletext{font-size:14px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;}
+.bubbletime{font-size:9.5px;opacity:.62;margin-top:5px;text-align:right;}
+.bubblelisting{display:block;max-width:100%;border:0;background:var(--accent-soft);color:var(--accent-text);border-radius:7px;padding:6px 8px;margin-bottom:7px;font-size:10.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bubble.mine .bubblelisting{background:rgba(255,255,255,.14);color:inherit;}
+.chatcomposer{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:end;margin-top:10px;}
+.chatcomposer textarea{min-height:48px;max-height:120px;resize:vertical;margin:0;}
+.chatcomposer .btn-primary{height:48px;padding:0 20px;}
+@media(max-width:600px){
+  .pageheadrow{align-items:center;}
+  .pageheadrow .btn-ghost{padding:9px 12px;}
+  .networksearch{grid-template-columns:1fr;}
+  .personactions button{flex:1;}
+  .chathead{grid-template-columns:auto 1fr;}
+  .chathead>.friendbtn{grid-column:1 / -1;justify-self:start;}
+  .chatstream{height:56vh;min-height:300px;padding:12px;}
+  .bubble{max-width:86%;}
+  .chatcomposer{grid-template-columns:1fr 76px;}
+}
+.tabbar button .ic{position:relative;}
+.tabalert{position:absolute;top:-4px;right:-7px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg);}

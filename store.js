@@ -26,7 +26,7 @@ try { ({ neon } = require('@neondatabase/serverless')); } catch {}
 try { ({ Pool } = require('pg')); } catch {}
 
 const COLLECTIONS = [
-  'users','listings','saves','follows','messages','ledger','unlocks',
+  'users','listings','saves','follows','friendRequests','friendships','messages','ledger','unlocks',
   'shopItems','orders','offers','reviews','views','promotions','payouts',
   'alerts','tokens','suppliers','supplierOrders','reports','dealNotes'
 ];

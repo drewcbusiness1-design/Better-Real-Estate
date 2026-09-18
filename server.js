@@ -14,6 +14,7 @@ const policy = require('./policy');
 const payments = require('./payments');
 const ai = require('./ai');
 const marketing = require('./marketing');
+const social = require('./social');
 const app = express();
 
 /* Every app.get/post/patch/delete below is an async function. Express 4
@@ -75,10 +76,9 @@ app.use(cookieSession({
 }));
 
 const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, ...r } = u; return r; };
-const publicProfileUser = u => u ? ({
-  id: u.id, name: u.name, role: u.role, bio: u.bio || '', avatarUrl: u.avatarUrl || null,
-  points: Number(u.points || 0), verified: !!u.verified, createdAt: u.createdAt || null
-}) : null;
+const publicProfileUser = social.publicProfileUser;
+const friendRelationship = social.friendRelationship;
+const socialUserCard = social.socialUserCard;
 async function requireAuth(req, res, next) {
   const db = await loadDB();
   const user = db.users.find(u => u.id === req.session.userId);
@@ -211,7 +211,7 @@ app.post('/api/signup', async (req, res) => {
     id: crypto.randomUUID(), name: name.trim(), email: cleanEmail,
     passwordHash: bcrypt.hashSync(password, 10),
     role: policy.resolveRole(cleanEmail, role),
-    bio: '', phone: '', avatarUrl: null, points: 0,
+    bio: '', phone: '', location: '', avatarUrl: null, points: 0,
     buyBoxes: [defaultBuyBox()], settings: defaultSettings(),
     plan: 'free', planUntil: null, trialUntil,
     unlockCredits: PRICING.freeUnlocks,
@@ -341,10 +341,11 @@ app.get('/api/site/status', async (req, res) => res.json({ mailConfigured: maile
 
 /* ============================ PROFILE ============================ */
 app.patch('/api/me', requireAuth, async (req, res) => {
-  const { name, bio, phone, avatarData } = req.body || {};
+  const { name, bio, phone, location, avatarData } = req.body || {};
   if (name !== undefined) req.user.name = String(name).trim() || req.user.name;
   if (bio !== undefined) req.user.bio = String(bio).slice(0, 400);
   if (phone !== undefined) req.user.phone = String(phone).slice(0, 40);
+  if (location !== undefined) req.user.location = String(location).trim().slice(0, 80);
   if (avatarData) { const url = await writeImage(avatarData); if (url) req.user.avatarUrl = url; }
   await saveDB(req.db); res.json({ user: publicUser(req.user) });
 });
@@ -706,6 +707,8 @@ app.get('/api/users/:id/listings', async (req, res) => {
     owner: publicProfileUser(owner),
     listings: db.listings.filter(l => l.ownerId === owner.id).map(l => gateListing(l, viewer, db)),
     followerCount: db.follows.filter(f => f.followingId === owner.id).length,
+    friendCount: db.friendships.filter(f => f.userAId === owner.id || f.userBId === owner.id).length,
+    friendship: viewer ? friendRelationship(db, viewer.id, owner.id) : { status: 'none', requestId: null },
     reviews: db.reviews.filter(r => r.aboutUserId === owner.id)
   });
 });
@@ -1546,6 +1549,88 @@ app.post('/api/workspace/notes', requireAuth, async (req, res) => {
   res.json({ note: entry });
 });
 
+/* ============================ SOCIAL NETWORK ============================ */
+app.get('/api/network/users', requireAuth, async (req, res) => {
+  res.json({ users: social.searchUsers(req.db, req.user.id, req.query.q, req.query.role) });
+});
+
+app.get('/api/friends', requireAuth, async (req, res) => {
+  const ids = new Set();
+  req.db.friendships.forEach(f => {
+    if (f.userAId === req.user.id) ids.add(f.userBId);
+    if (f.userBId === req.user.id) ids.add(f.userAId);
+  });
+  const friends = [...ids].map(id => req.db.users.find(u => u.id === id)).filter(Boolean).map(u => socialUserCard(req.db, req.user.id, u));
+  friends.sort((a, b) => a.name.localeCompare(b.name));
+  res.json({ friends });
+});
+
+app.get('/api/friends/requests', requireAuth, async (req, res) => {
+  const pending = req.db.friendRequests.filter(r => r.status === 'pending' && (r.fromUserId === req.user.id || r.toUserId === req.user.id));
+  const incoming = pending.filter(r => r.toUserId === req.user.id).map(r => ({ ...r, user: socialUserCard(req.db, req.user.id, req.db.users.find(u => u.id === r.fromUserId)) })).filter(r => r.user);
+  const outgoing = pending.filter(r => r.fromUserId === req.user.id).map(r => ({ ...r, user: socialUserCard(req.db, req.user.id, req.db.users.find(u => u.id === r.toUserId)) })).filter(r => r.user);
+  res.json({ incoming, outgoing });
+});
+
+app.get('/api/friends/status/:userId', requireAuth, async (req, res) => {
+  res.json(friendRelationship(req.db, req.user.id, req.params.userId));
+});
+
+app.post('/api/friends/request', requireAuth, async (req, res) => {
+  const userId = String(req.body?.userId || '');
+  if (!userId || userId === req.user.id) return res.status(400).json({ error: "You can't friend yourself." });
+  const other = req.db.users.find(u => u.id === userId);
+  if (!other) return res.status(404).json({ error: 'User not found.' });
+  const rel = friendRelationship(req.db, req.user.id, userId);
+  if (rel.status === 'friends') return res.json({ status: 'friends' });
+  const pendingOut = req.db.friendRequests.filter(r => r.fromUserId === req.user.id && r.status === 'pending').length;
+  if (rel.status === 'none' && pendingOut >= 100) return res.status(429).json({ error: 'You have too many pending friend requests. Cancel some before sending more.' });
+  if (rel.status === 'outgoing_pending') return res.json({ status: 'outgoing_pending', requestId: rel.requestId });
+  if (rel.status === 'incoming_pending') {
+    const i = req.db.friendRequests.findIndex(r => r.id === rel.requestId);
+    if (i >= 0) req.db.friendRequests.splice(i, 1);
+    req.db.friendships.push({ id: crypto.randomUUID(), userAId: req.user.id, userBId: userId, at: new Date().toISOString() });
+    await saveDB(req.db);
+    return res.json({ status: 'friends' });
+  }
+  const request = { id: crypto.randomUUID(), fromUserId: req.user.id, toUserId: userId, status: 'pending', at: new Date().toISOString() };
+  req.db.friendRequests.push(request);
+  await saveDB(req.db);
+  res.json({ status: 'outgoing_pending', requestId: request.id });
+});
+
+app.post('/api/friends/requests/:id/respond', requireAuth, async (req, res) => {
+  const action = String(req.body?.action || '').toLowerCase();
+  const i = req.db.friendRequests.findIndex(r => r.id === req.params.id && r.toUserId === req.user.id && r.status === 'pending');
+  if (i < 0) return res.status(404).json({ error: 'Friend request not found.' });
+  const request = req.db.friendRequests[i];
+  if (!['accept','decline'].includes(action)) return res.status(400).json({ error: 'Choose accept or decline.' });
+  req.db.friendRequests.splice(i, 1);
+  if (action === 'accept') {
+    const exists = req.db.friendships.some(f => (f.userAId === req.user.id && f.userBId === request.fromUserId) || (f.userAId === request.fromUserId && f.userBId === req.user.id));
+    if (!exists) req.db.friendships.push({ id: crypto.randomUUID(), userAId: request.fromUserId, userBId: req.user.id, at: new Date().toISOString() });
+  }
+  await saveDB(req.db);
+  res.json({ status: action === 'accept' ? 'friends' : 'none' });
+});
+
+app.delete('/api/friends/request/:id', requireAuth, async (req, res) => {
+  const i = req.db.friendRequests.findIndex(r => r.id === req.params.id && r.fromUserId === req.user.id && r.status === 'pending');
+  if (i < 0) return res.status(404).json({ error: 'Friend request not found.' });
+  req.db.friendRequests.splice(i, 1);
+  await saveDB(req.db);
+  res.json({ status: 'none' });
+});
+
+app.delete('/api/friends/:userId', requireAuth, async (req, res) => {
+  const userId = req.params.userId;
+  const before = req.db.friendships.length;
+  req.db.friendships = req.db.friendships.filter(f => !((f.userAId === req.user.id && f.userBId === userId) || (f.userAId === userId && f.userBId === req.user.id)));
+  if (before === req.db.friendships.length) return res.status(404).json({ error: 'Friendship not found.' });
+  await saveDB(req.db);
+  res.json({ status: 'none' });
+});
+
 app.post('/api/follow', requireAuth, async (req, res) => {
   const { userId } = req.body || {};
   if (userId === req.user.id) return res.status(400).json({ error: "You can't follow yourself." });
@@ -1559,16 +1644,68 @@ app.get('/api/follow/status/:userId', requireAuth, async (req, res) =>
 
 app.post('/api/messages', requireAuth, async (req, res) => {
   const { toUserId, listingId, body } = req.body || {};
-  if (!toUserId || !body) return res.status(400).json({ error: 'Message body is required.' });
-  const msg = { id: crypto.randomUUID(), fromUserId: req.user.id, fromName: req.user.name, toUserId, listingId: listingId || null, body: String(body).slice(0, 2000), at: new Date().toISOString(), read: false };
+  const clean = String(body || '').trim();
+  if (!toUserId || !clean) return res.status(400).json({ error: 'Message body is required.' });
+  if (toUserId === req.user.id) return res.status(400).json({ error: "You can't message yourself." });
+  const other = req.db.users.find(u => u.id === toUserId);
+  if (!other) return res.status(404).json({ error: 'User not found.' });
+  const recentCount = req.db.messages.filter(m => m.fromUserId === req.user.id && Date.now() - new Date(m.at).getTime() < 60_000).length;
+  if (recentCount >= 30) return res.status(429).json({ error: 'Too many messages at once. Try again in a minute.' });
+  const listing = listingId ? req.db.listings.find(l => l.id === listingId) : null;
+  const msg = { id: crypto.randomUUID(), fromUserId: req.user.id, fromName: req.user.name, toUserId, listingId: listing?.id || null, body: clean.slice(0, 2000), at: new Date().toISOString(), read: false };
   req.db.messages.push(msg); await saveDB(req.db); res.json({ message: msg });
 });
+
+app.get('/api/conversations', requireAuth, async (req, res) => {
+  const mine = req.db.messages.filter(m => m.toUserId === req.user.id || m.fromUserId === req.user.id).sort((a, b) => new Date(b.at) - new Date(a.at));
+  const map = new Map();
+  for (const m of mine) {
+    const otherId = m.fromUserId === req.user.id ? m.toUserId : m.fromUserId;
+    if (!map.has(otherId)) {
+      const other = req.db.users.find(u => u.id === otherId);
+      if (!other) continue;
+      const listing = m.listingId ? req.db.listings.find(l => l.id === m.listingId) : null;
+      const visibleListing = listing ? gateListing(listing, req.user, req.db) : null;
+      map.set(otherId, {
+        other: socialUserCard(req.db, req.user.id, other),
+        latest: { id: m.id, body: m.body, at: m.at, outgoing: m.fromUserId === req.user.id, listingId: m.listingId || null, listingAddress: visibleListing?.address || null },
+        unreadCount: 0
+      });
+    }
+    if (m.toUserId === req.user.id && !m.read) map.get(otherId).unreadCount += 1;
+  }
+  res.json({ conversations: [...map.values()] });
+});
+
+app.get('/api/conversations/:userId', requireAuth, async (req, res) => {
+  const other = req.db.users.find(u => u.id === req.params.userId);
+  if (!other) return res.status(404).json({ error: 'User not found.' });
+  let changed = false;
+  const messages = req.db.messages
+    .filter(m => (m.fromUserId === req.user.id && m.toUserId === other.id) || (m.fromUserId === other.id && m.toUserId === req.user.id))
+    .sort((a, b) => new Date(a.at) - new Date(b.at))
+    .map(m => {
+      if (m.toUserId === req.user.id && !m.read) { m.read = true; m.readAt = new Date().toISOString(); changed = true; }
+      const listing = m.listingId ? req.db.listings.find(l => l.id === m.listingId) : null;
+      const visibleListing = listing ? gateListing(listing, req.user, req.db) : null;
+      return { id: m.id, body: m.body, at: m.at, outgoing: m.fromUserId === req.user.id, listingId: m.listingId || null, listingAddress: visibleListing?.address || null, read: !!m.read };
+    });
+  if (changed) await saveDB(req.db);
+  res.json({ other: socialUserCard(req.db, req.user.id, other), messages });
+});
+
+app.get('/api/messages/unread-count', requireAuth, async (req, res) => {
+  res.json({ unreadCount: req.db.messages.filter(m => m.toUserId === req.user.id && !m.read).length });
+});
+
+// Backward-compatible flat inbox for older clients.
 app.get('/api/messages', requireAuth, async (req, res) => {
   const mine = req.db.messages.filter(m => m.toUserId === req.user.id || m.fromUserId === req.user.id).map(m => {
     const otherId = m.fromUserId === req.user.id ? m.toUserId : m.fromUserId;
     const other = req.db.users.find(u => u.id === otherId);
     const listing = m.listingId ? req.db.listings.find(l => l.id === m.listingId) : null;
-    return { ...m, otherName: other?.name || 'Unknown', otherId, listingAddress: listing?.address || null, outgoing: m.fromUserId === req.user.id };
+    const visibleListing = listing ? gateListing(listing, req.user, req.db) : null;
+    return { ...m, otherName: other?.name || 'Unknown', otherId, listingAddress: visibleListing?.address || null, outgoing: m.fromUserId === req.user.id };
   }).sort((a, b) => new Date(b.at) - new Date(a.at));
   res.json({ messages: mine });
 });

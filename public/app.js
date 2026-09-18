@@ -1,7 +1,8 @@
 let state = {
   view: 'home', user: null, authMode: 'signup', pricing: null, access: null,
   detailId: null, profileId: null, photoIdx: 0, composePhotos: [], shopPhotos: [],
-  shopCat: 'All', shopQ: '', shopItemId: null, shopEditId: null, shopEditPhotos: [], shopManageQ: ''
+  shopCat: 'All', shopQ: '', shopItemId: null, shopEditId: null, shopEditPhotos: [], shopManageQ: '',
+  networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -90,13 +91,20 @@ async function boot() {
   if (state.verifyToken) state.view = 'verify';
   else if (state.resetToken) state.view = 'reset';
   else if (state.user) {
-    const allowedDeepLinks = new Set(['feed','shop','shopmanage','orders','settings','me','saved','messages','workspace','upgrade']);
+    const allowedDeepLinks = new Set(['feed','shop','shopmanage','orders','settings','me','saved','messages','network','workspace','upgrade']);
     state.view = allowedDeepLinks.has(requestedView) ? requestedView : 'feed';
   }
+  if (state.user) await refreshUnread();
   render();
 }
 async function refreshMe() {
   try { const d = await api('GET', '/api/me'); state.user = d.user; state.access = d.access; } catch {}
+}
+async function refreshUnread() {
+  if (!state.user) { state.unreadCount = 0; state.friendRequestCount = 0; return 0; }
+  try { const d = await api('GET', '/api/messages/unread-count'); state.unreadCount = Number(d.unreadCount || 0); } catch {}
+  try { const f = await api('GET', '/api/friends/requests'); state.friendRequestCount = Number(f.incoming?.length || 0); } catch {}
+  return state.unreadCount || 0;
 }
 function go(view, extra = {}) { Object.assign(state, { view }, extra); window.scrollTo(0, 0); render(); }
 function render() { renderTop(); renderTabs(); renderApp(); renderFooter(); }
@@ -119,7 +127,9 @@ function renderTop() {
     }
   }, document.documentElement.getAttribute('data-theme') === 'dark' ? '☀' : '☾'));
   if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
-  nav.appendChild(el('button', { class: 'iconbtn', title: 'Inbox', onclick: () => go('messages') }, '✉'));
+  const inboxBtn = el('button', { class: 'iconbtn', title: 'Messages', onclick: () => go('messages') }, '✉');
+  if (state.unreadCount > 0) inboxBtn.appendChild(el('span', { class: 'msgbadge' }, state.unreadCount > 99 ? '99+' : String(state.unreadCount)));
+  nav.appendChild(inboxBtn);
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Boost a listing', onclick: () => go('boostpicker') }, '⚡'));
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Wallet', onclick: () => go('wallet') }, '▤'));
   nav.appendChild(el('button', { onclick: () => go('settings'), class: state.view === 'settings' ? 'active' : '' }, 'Settings'));
@@ -129,12 +139,14 @@ function renderTabs() {
   const tabs = document.getElementById('tabbar');
   tabs.innerHTML = '';
   if (!state.user) return;
-  const items = [['feed','⌂','Feed'], ['shop','▦','Shop'], ['compose','＋','Post'], ['leaderboard','♦','Board'], ['me','◍','Profile']];
+  const items = [['feed','⌂','Feed'], ['shop','▦','Shop'], ['compose','＋','Post'], ['network','◎','Network'], ['me','◍','Profile']];
   items.forEach(([v, ic, label]) => {
     const active = state.view === v || (v === 'shop' && ['shopitem','sellitem','shopmanage','shopedit'].includes(state.view));
+    const icon = el('span', { class: 'ic' }, ic);
+    if (v === 'network' && state.friendRequestCount > 0) icon.appendChild(el('span', { class: 'tabalert' }));
     tabs.appendChild(el('button', {
       class: active ? 'active' : '', onclick: () => go(v)
-    }, [el('span', { class: 'ic' }, ic), el('span', {}, label)]));
+    }, [icon, el('span', {}, label)]));
   });
 }
 
@@ -143,7 +155,7 @@ async function renderApp() {
   app.innerHTML = '';
   const views = {
     home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
-    compose: renderCompose, saved: renderSaved, messages: renderMessages,
+    compose: renderCompose, saved: renderSaved, messages: renderMessages, chat: renderChat, network: renderNetwork,
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
@@ -170,7 +182,6 @@ function renderHome() {
       el('div', { class: 'herokicker' }, 'A social feed for off-market property'),
       el('h1', {}, ['Off-market property, ', el('em', {}, 'first.')]),
       el('p', {}, `Scroll properties like a social feed. Follow the people posting them, make offers, and buy the fixtures and materials to rehab what you close. Free for ${p?.signupTrialDays || 7} days, no card required.`),
-      el('div', { class: 'heroslogan' }, 'Make better your standard.'),
       el('div', { class: 'herobtns' }, [
         el('button', { class: 'btn-primary', onclick: () => { state.authMode = 'signup'; go('auth'); } }, 'Start free trial'),
         el('button', { class: 'btn-ghost', onclick: () => { state.authMode = 'login'; go('auth'); } }, 'Sign in')
@@ -603,7 +614,7 @@ async function renderDetail() {
     const mb = el('button', { class: 'submitbtn' }, 'Send message');
     mb.onclick = async () => {
       if (!msg.value.trim()) return;
-      try { await api('POST', '/api/messages', { toUserId: owner.id, listingId: listing.id, body: msg.value.trim() }); msg.value = ''; mst.textContent = 'Sent.'; }
+      try { await api('POST', '/api/messages', { toUserId: owner.id, listingId: listing.id, body: msg.value.trim() }); msg.value = ''; await refreshUnread(); go('chat', { chatUserId: owner.id }); }
       catch (e) { mst.className = 'errmsg'; mst.textContent = e.message; }
     };
     wrap.appendChild(el('div', { class: 'dsection' }, [el('h3', {}, 'Message the seller'), msg, mb, mst]));
@@ -1733,22 +1744,202 @@ async function renderSaved() {
   return wrap;
 }
 
+function avatarNode(user, sizeClass = '') {
+  return el('div', { class: 'personav ' + sizeClass }, user?.avatarUrl ? el('img', { src: user.avatarUrl, alt: '' }) : initials(user?.name));
+}
+function friendLabel(status) {
+  return status === 'friends' ? 'Friends ✓' : status === 'outgoing_pending' ? 'Requested' : status === 'incoming_pending' ? 'Accept friend' : 'Add friend';
+}
+function friendButton(user, onChanged) {
+  const b = el('button', { class: 'friendbtn' }, friendLabel(user.friendStatus));
+  b.onclick = async (ev) => {
+    ev?.stopPropagation?.();
+    try {
+      if (user.friendStatus === 'none' || !user.friendStatus) {
+        const r = await api('POST', '/api/friends/request', { userId: user.id });
+        user.friendStatus = r.status; user.friendRequestId = r.requestId || null;
+      } else if (user.friendStatus === 'incoming_pending') {
+        const r = await api('POST', '/api/friends/requests/' + encodeURIComponent(user.friendRequestId) + '/respond', { action: 'accept' });
+        user.friendStatus = r.status; user.friendRequestId = null;
+      } else if (user.friendStatus === 'outgoing_pending') {
+        await api('DELETE', '/api/friends/request/' + encodeURIComponent(user.friendRequestId));
+        user.friendStatus = 'none'; user.friendRequestId = null;
+      } else if (user.friendStatus === 'friends') {
+        if (!confirm('Remove ' + user.name + ' from your friends?')) return;
+        await api('DELETE', '/api/friends/' + encodeURIComponent(user.id));
+        user.friendStatus = 'none'; user.friendRequestId = null;
+      }
+      await refreshUnread();
+      b.textContent = friendLabel(user.friendStatus);
+      if (onChanged) onChanged(user);
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  return b;
+}
+function personCard(user, opts = {}) {
+  const card = el('div', { class: 'personcard' });
+  const main = el('div', { class: 'personmain', onclick: () => go('profile', { profileId: user.id }) }, [
+    avatarNode(user),
+    el('div', { class: 'personmeta' }, [
+      el('div', { class: 'personname' }, [user.name, user.verified ? el('span', { class: 'vbadge' }, '✓') : null]),
+      el('div', { class: 'personsub' }, [user.role, ...(user.markets || []), user.location].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3).join(' · ')),
+      el('div', { class: 'personstats' }, `${user.listingCount || 0} listings · ${user.followerCount || 0} followers · ${user.friendCount || 0} friends`)
+    ])
+  ]);
+  card.appendChild(main);
+  const actions = el('div', { class: 'personactions' });
+  const follow = el('button', {}, user.following ? 'Following' : 'Follow');
+  follow.onclick = async () => {
+    try { const r = await api('POST', '/api/follow', { userId: user.id }); user.following = r.following; follow.textContent = r.following ? 'Following' : 'Follow'; }
+    catch (e) { toast(e.message, 'err'); }
+  };
+  actions.appendChild(follow);
+  actions.appendChild(friendButton(user, opts.onFriendChanged));
+  actions.appendChild(el('button', { class: 'primary', onclick: () => go('chat', { chatUserId: user.id }) }, 'Message'));
+  card.appendChild(actions);
+  return card;
+}
+
+async function renderNetwork() {
+  const wrap = el('div', { class: 'page networkpage' });
+  wrap.appendChild(el('div', { class: 'pageheadrow' }, [
+    el('div', {}, [el('h2', {}, 'Network'), el('div', { class: 'sub' }, 'Find buyers, sellers and people you want to work with.')]),
+    el('button', { class: 'btn-ghost', onclick: () => go('leaderboard') }, 'Leaderboard')
+  ]));
+  const tabs = el('div', { class: 'networktabs' });
+  [['discover','Discover'],['friends','Friends'],['requests','Requests']].forEach(([key, label]) => {
+    tabs.appendChild(el('button', { class: state.networkTab === key ? 'active' : '', onclick: () => { state.networkTab = key; render(); } }, label));
+  });
+  wrap.appendChild(tabs);
+
+  if (state.networkTab === 'friends') {
+    const { friends } = await api('GET', '/api/friends');
+    wrap.appendChild(el('div', { class: 'sub' }, friends.length ? `${friends.length} friend${friends.length === 1 ? '' : 's'}` : 'People you mutually connect with will show here.'));
+    if (!friends.length) {
+      wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No friends yet'), el('p', {}, 'Use Discover to find people and send a friend request.'), el('button', { class: 'btn-primary', onclick: () => { state.networkTab = 'discover'; render(); } }, 'Find people')]));
+      return wrap;
+    }
+    const list = el('div', { class: 'peoplegrid' });
+    friends.forEach(u => list.appendChild(personCard(u, { onFriendChanged: () => render() })));
+    wrap.appendChild(list); return wrap;
+  }
+
+  if (state.networkTab === 'requests') {
+    const { incoming, outgoing } = await api('GET', '/api/friends/requests');
+    wrap.appendChild(el('div', { class: 'sectiontitle' }, `Incoming${incoming.length ? ' · ' + incoming.length : ''}`));
+    if (!incoming.length) wrap.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'No incoming friend requests.')));
+    else {
+      const card = el('div', { class: 'card' });
+      incoming.forEach(r => {
+        const accept = el('button', {}, 'Accept');
+        accept.onclick = async () => { try { await api('POST', '/api/friends/requests/' + encodeURIComponent(r.id) + '/respond', { action: 'accept' }); await refreshUnread(); render(); } catch (e) { toast(e.message, 'err'); } };
+        const decline = el('button', {}, 'Decline');
+        decline.onclick = async () => { try { await api('POST', '/api/friends/requests/' + encodeURIComponent(r.id) + '/respond', { action: 'decline' }); await refreshUnread(); render(); } catch (e) { toast(e.message, 'err'); } };
+        card.appendChild(el('div', { class: 'listrow' }, [avatarNode(r.user, 'small'), el('div', { class: 'grow', onclick: () => go('profile', { profileId: r.user.id }) }, [el('div', { class: 't' }, r.user.name), el('div', { class: 's' }, [r.user.role, ...(r.user.markets || [])].filter(Boolean).slice(0, 2).join(' · '))]), accept, decline]));
+      });
+      wrap.appendChild(card);
+    }
+    wrap.appendChild(el('div', { class: 'sectiontitle' }, `Sent${outgoing.length ? ' · ' + outgoing.length : ''}`));
+    if (!outgoing.length) wrap.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'No pending requests sent.')));
+    else {
+      const card = el('div', { class: 'card' });
+      outgoing.forEach(r => {
+        const cancel = el('button', {}, 'Cancel');
+        cancel.onclick = async () => { try { await api('DELETE', '/api/friends/request/' + encodeURIComponent(r.id)); await refreshUnread(); render(); } catch (e) { toast(e.message, 'err'); } };
+        card.appendChild(el('div', { class: 'listrow' }, [avatarNode(r.user, 'small'), el('div', { class: 'grow', onclick: () => go('profile', { profileId: r.user.id }) }, [el('div', { class: 't' }, r.user.name), el('div', { class: 's' }, 'Request pending')]), cancel]));
+      });
+      wrap.appendChild(card);
+    }
+    return wrap;
+  }
+
+  const controls = el('div', { class: 'networksearch' });
+  const q = el('input', { placeholder: 'Search name, market, role or bio…', value: state.networkQ || '' });
+  const role = el('select');
+  [['all','All people'],['buyer','Buyers'],['seller','Sellers']].forEach(([v,l]) => role.appendChild(el('option', { value: v, selected: state.networkRole === v ? 'selected' : null }, l)));
+  controls.appendChild(q); controls.appendChild(role); wrap.appendChild(controls);
+  const results = el('div', { class: 'peoplegrid' }); wrap.appendChild(results);
+  let searchTimer = null, seq = 0;
+  const load = async () => {
+    const mine = ++seq;
+    state.networkQ = q.value; state.networkRole = role.value;
+    results.innerHTML = '<div class="networkloading">Searching…</div>';
+    try {
+      const data = await api('GET', '/api/network/users?q=' + encodeURIComponent(q.value) + '&role=' + encodeURIComponent(role.value));
+      if (mine !== seq) return;
+      results.innerHTML = '';
+      if (!data.users.length) { results.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No people found'), el('p', {}, 'Try another name, market, role or keyword.')])); return; }
+      data.users.forEach(u => results.appendChild(personCard(u)));
+    } catch (e) { if (mine === seq) { results.innerHTML = ''; results.appendChild(el('div', { class: 'errmsg' }, e.message)); } }
+  };
+  q.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 260); };
+  role.onchange = load;
+  await load();
+  return wrap;
+}
+
 async function renderMessages() {
   const wrap = el('div', { class: 'page' });
-  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
-  wrap.appendChild(el('h2', {}, 'Inbox'));
-  const { messages } = await api('GET', '/api/messages');
-  wrap.appendChild(el('div', { class: 'sub' }, messages.length + ' message(s).'));
-  if (!messages.length) { wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No messages'), el('p', {}, 'Message a seller from any listing.')])); return wrap; }
-  const card = el('div', { class: 'card' });
-  messages.forEach(m => card.appendChild(el('div', { class: 'listrow' }, [
-    el('div', { class: 'grow' }, [
-      el('div', { class: 't' }, (m.outgoing ? 'To ' : 'From ') + m.otherName + (m.listingAddress ? ' · ' + m.listingAddress : '')),
-      el('div', { class: 's' }, m.body)
+  wrap.appendChild(el('div', { class: 'pageheadrow' }, [
+    el('div', {}, [el('h2', {}, 'Messages'), el('div', { class: 'sub' }, 'Your conversations with other members.')]),
+    el('button', { class: 'btn-ghost', onclick: () => go('network') }, 'Find people')
+  ]));
+  const { conversations } = await api('GET', '/api/conversations');
+  await refreshUnread();
+  if (!conversations.length) { wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No conversations yet'), el('p', {}, 'Message a seller from a listing, a friend, or someone you find in Network.'), el('button', { class: 'btn-primary', onclick: () => go('network') }, 'Open Network')])); return wrap; }
+  const card = el('div', { class: 'chatlist' });
+  conversations.forEach(c => card.appendChild(el('div', { class: 'chatrow' + (c.unreadCount ? ' unread' : ''), onclick: () => go('chat', { chatUserId: c.other.id }) }, [
+    avatarNode(c.other),
+    el('div', { class: 'chatpreview' }, [
+      el('div', { class: 'chatpreviewtop' }, [el('b', {}, c.other.name), el('span', {}, formatChatTime(c.latest.at))]),
+      el('div', { class: 'chatpreviewbody' }, (c.latest.outgoing ? 'You: ' : '') + c.latest.body),
+      c.latest.listingAddress ? el('div', { class: 'chatcontext' }, 'Property: ' + c.latest.listingAddress) : null
     ]),
-    el('span', { class: 'pill ' + (m.outgoing ? 'warn' : 'good') }, m.outgoing ? 'Sent' : 'New')
+    c.unreadCount ? el('span', { class: 'unreadpill' }, String(c.unreadCount)) : null
   ])));
   wrap.appendChild(card);
+  return wrap;
+}
+function formatChatTime(iso) {
+  const d = new Date(iso); if (!Number.isFinite(d.getTime())) return '';
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+async function renderChat() {
+  if (!state.chatUserId) return renderMessages();
+  const { other, messages } = await api('GET', '/api/conversations/' + encodeURIComponent(state.chatUserId));
+  await refreshUnread();
+  const wrap = el('div', { class: 'page chatpage' });
+  wrap.appendChild(el('div', { class: 'chathead' }, [
+    el('button', { class: 'backbtn', onclick: () => go('messages') }, '← Messages'),
+    el('div', { class: 'chatperson', onclick: () => go('profile', { profileId: other.id }) }, [avatarNode(other, 'small'), el('div', {}, [el('b', {}, other.name), el('span', {}, [other.role, ...(other.markets || [])].filter(Boolean).slice(0,2).join(' · '))])]),
+    friendButton(other, () => {})
+  ]));
+  const stream = el('div', { class: 'chatstream' });
+  if (!messages.length) stream.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'Start the conversation.')));
+  messages.forEach(m => {
+    const bubble = el('div', { class: 'bubble ' + (m.outgoing ? 'mine' : 'theirs') }, [
+      m.listingAddress ? el('button', { class: 'bubblelisting', onclick: () => m.listingId && go('detail', { detailId: m.listingId, photoIdx: 0 }) }, 'Property · ' + m.listingAddress) : null,
+      el('div', { class: 'bubbletext' }, m.body),
+      el('div', { class: 'bubbletime' }, formatChatTime(m.at))
+    ]);
+    stream.appendChild(bubble);
+  });
+  wrap.appendChild(stream);
+  const input = el('textarea', { placeholder: 'Write a message…', rows: '2' });
+  const send = el('button', { class: 'btn-primary' }, 'Send');
+  const composer = el('div', { class: 'chatcomposer' }, [input, send]);
+  const doSend = async () => {
+    const body = input.value.trim(); if (!body) return;
+    send.disabled = true;
+    try { await api('POST', '/api/messages', { toUserId: other.id, body }); input.value = ''; await refreshUnread(); render(); }
+    catch (e) { toast(e.message, 'err'); send.disabled = false; }
+  };
+  send.onclick = doSend;
+  input.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); } };
+  wrap.appendChild(composer);
+  setTimeout(() => { stream.scrollTop = stream.scrollHeight; input.focus(); }, 0);
   return wrap;
 }
 
@@ -1758,7 +1949,7 @@ async function renderMe() {
   const d = await api('GET', '/api/users/' + state.user.id + '/listings');
   const w = await api('GET', '/api/wallet');
   wrap.appendChild(el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]));
-  wrap.appendChild(el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`));
+  wrap.appendChild(el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`));
 
   wrap.appendChild(el('div', { class: 'statgrid' }, [
     stat(cents(w.balance), 'Wallet'), stat(state.user.unlockCredits, 'Unlocks'), stat(d.listings.length, 'Listings')
@@ -1767,7 +1958,7 @@ async function renderMe() {
   const nav = el('div', { class: 'card' });
   [['Wallet & payouts', () => go('wallet')], ['Offers', () => go('offers')], ['Orders', () => go('orders')],
    [state.user.role === 'admin' ? 'Admin — shop listings' : 'My shop listings', () => go('shopmanage')],
-   ['Saved properties', () => go('saved')], ['Buy box', () => go('buybox')],
+   ['Saved properties', () => go('saved')], ['Network & friends', () => go('network')], ['Messages', () => go('messages')], ['Buy box', () => go('buybox')],
    ['Investor workspace' + (state.access?.platinum ? '' : ' 🔒'), () => go('workspace')],
    ['Plans & billing', () => go('upgrade')],
    ...(state.user.role === 'admin' ? [
@@ -1826,19 +2017,24 @@ async function renderMe() {
 }
 
 async function renderProfile() {
-  const { owner, listings, followerCount, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
+  const { owner, listings, followerCount, friendCount, friendship, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
   wrap.appendChild(el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
-  wrap.appendChild(el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')));
+  wrap.appendChild(el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (owner.location ? ` · ${owner.location}` : '') + (avg ? ` · ★ ${avg} (${reviews.length})` : '')));
   if (owner.bio) wrap.appendChild(el('p', { class: 'dnotes' }, owner.bio));
 
   if (state.user && state.user.id !== owner.id) {
+    const actions = el('div', { class: 'profileactions' });
     const fb = el('button', { class: 'btn-ghost' }, 'Follow');
     api('GET', '/api/follow/status/' + owner.id).then(({ following }) => fb.textContent = following ? 'Following' : 'Follow').catch(() => {});
     fb.onclick = async () => { const { following } = await api('POST', '/api/follow', { userId: owner.id }); fb.textContent = following ? 'Following' : 'Follow'; };
-    wrap.appendChild(fb);
+    actions.appendChild(fb);
+    const friendUser = { ...owner, friendStatus: friendship?.status || 'none', friendRequestId: friendship?.requestId || null };
+    actions.appendChild(friendButton(friendUser, () => render()));
+    actions.appendChild(el('button', { class: 'btn-primary', onclick: () => go('chat', { chatUserId: owner.id }) }, 'Message'));
+    wrap.appendChild(actions);
   }
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Listings'));
   const grid = el('div', { class: 'minigrid' });
@@ -1943,17 +2139,19 @@ async function renderSettings() {
   const nameI = el('input', { value: state.user.name });
   const bioI = el('textarea', {}); bioI.value = state.user.bio || '';
   const phoneI = el('input', { value: state.user.phone || '' });
+  const locationI = el('input', { value: state.user.location || '', placeholder: 'e.g. Newark, NJ or South Jersey' });
   const avFile = el('input', { type: 'file', accept: 'image/*', style: 'display:none' });
   let avData = null;
   const avPrev = el('div', { class: 'picker', onclick: () => avFile.click() }, state.user.avatarUrl ? 'Change profile photo' : 'Add a profile photo');
   avFile.onchange = async () => { if (avFile.files[0]) { avData = await downscale(avFile.files[0], 400); avPrev.textContent = 'Photo ready — save to apply'; } };
   pbox.appendChild(el('label', {}, 'Display name')); pbox.appendChild(nameI);
   pbox.appendChild(el('label', {}, 'Phone (shown after unlock)')); pbox.appendChild(phoneI);
+  pbox.appendChild(el('label', {}, 'Market / location')); pbox.appendChild(locationI);
   pbox.appendChild(el('label', {}, 'Bio')); pbox.appendChild(bioI);
   pbox.appendChild(el('label', {}, 'Profile photo')); pbox.appendChild(avPrev); pbox.appendChild(avFile);
   const pst = el('div', { class: 'okmsg' });
   pbox.appendChild(el('button', { class: 'submitbtn', onclick: async () => {
-    try { const { user } = await api('PATCH', '/api/me', { name: nameI.value, bio: bioI.value, phone: phoneI.value, avatarData: avData }); state.user = user; pst.textContent = 'Saved.'; }
+    try { const { user } = await api('PATCH', '/api/me', { name: nameI.value, bio: bioI.value, phone: phoneI.value, location: locationI.value, avatarData: avData }); state.user = user; pst.textContent = 'Saved.'; }
     catch (e) { pst.className = 'errmsg'; pst.textContent = e.message; }
   } }, 'Save profile'));
   pbox.appendChild(pst);
@@ -2144,7 +2342,7 @@ function pageTerms() {
 function pagePrivacy() {
   return staticPage('Privacy Policy', 'Last updated September 17, 2026.', [
     [null, 'This policy explains what Better Real Estate collects, why we use it, which service providers may receive it, and the choices available to you.'],
-    ['What we collect', 'Account information you give us, including your name, email address, phone number if you add one, profile photo and bio. Content you post, including property listings, addresses, photos, notes and marketplace items. Activity such as what you view, save, unlock, offer on, buy or sell, plus messages you send through the site. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
+    ['What we collect', 'Account information you give us, including your name, email address, phone number if you add one, profile photo, bio and optional market/location. Content you post, including property listings, addresses, photos, notes and marketplace items. Activity such as what you view, save, unlock, offer on, buy or sell, people you follow, friend requests and friendships, plus messages you send through the site. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
     ['Address autofill and autocomplete', el('span', {}, [
       'Your browser may offer its own saved-address autofill. When typed address suggestions are enabled, partial address text and an autocomplete session identifier are sent through our server to Google Maps Platform so suggestions can be returned. If you select a suggestion, Google may return address components such as street, city, state and ZIP to fill the checkout form. We do not use device geolocation for this feature. We keep the shipping address needed for the order, but we do not intentionally store the list of autocomplete suggestions. Google handles its data under the ',
       el('a', { href: 'https://policies.google.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Google Privacy Policy'),
@@ -2161,8 +2359,8 @@ function pagePrivacy() {
       el('a', { href: 'https://stripe.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Privacy Policy'),
       '.'
     ])],
-    ['Why we collect it', 'To run your account, rank your feed against your buy box, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, send transactional messages such as confirmations, shipping notices and password resets, provide AI-assisted listing tools when you invoke them, and send optional marketing messages when you opt in.'],
-    ['What other users can see', 'Your name, role, bio, profile photo, listing count, follower count, points, verification status and reviews may be public. Your email address and phone number are shown to another user only where the product requires it, such as after a listing unlock or when you message them. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
+    ['Why we collect it', 'To run your account, rank your feed against your buy box, power member search, friend connections and direct messaging, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, send transactional messages such as confirmations, shipping notices and password resets, provide AI-assisted listing tools when you invoke them, and send optional marketing messages when you opt in.'],
+    ['What other users can see', 'Your name, role, bio, optional market/location, profile photo, listing count, follower count, friend count, points, verification status and reviews may be public and may appear in member search. Your email address and phone number are shown to another user only where the product requires it, such as after they unlock one of your property listings. Direct messaging does not by itself reveal your email address or phone number. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
     ['Who we share it with', 'We share information only as needed to operate the service: Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; OpenAI for AI-assisted listing generation when you choose that feature; email providers for transactional and opted-in marketing messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising.'],
     ['Cookies and similar technology', 'We use a session cookie to keep you signed in. Payment providers such as Stripe may use cookies, browser/device information and similar signals for payment security and fraud prevention. We do not operate third-party advertising trackers on the site.'],
     ['Your choices', 'You can edit your profile and manage your marketplace listings from the site. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. Marketing email can be turned on or off in Settings or through the unsubscribe link in any marketing message. AI writing features are optional and only send content when you choose to use them. To request a copy of your data, correction, or account deletion, email drewcbusiness1@gmail.com. Additional legal rights may apply depending on where you live.'],
