@@ -101,4 +101,46 @@ async function generateListingCopy({ kind = 'shop', facts = {}, images = [], all
   return parsed;
 }
 
-module.exports = { configured, model, generateListingCopy, _extractOutputText: extractOutputText, _safeImageUrl: safeImageUrl };
+
+const dealImportSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['address','city','propertyType','situation','asking','arv','rehab','beds','baths','sqft','year','timeline','notes','contractDeadline','warnings'],
+  properties: {
+    address: { type: 'string' }, city: { type: 'string' }, propertyType: { type: 'string' }, situation: { type: 'string' },
+    asking: { anyOf: [{ type: 'number' }, { type: 'null' }] }, arv: { anyOf: [{ type: 'number' }, { type: 'null' }] }, rehab: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+    beds: { anyOf: [{ type: 'number' }, { type: 'null' }] }, baths: { anyOf: [{ type: 'number' }, { type: 'null' }] }, sqft: { anyOf: [{ type: 'number' }, { type: 'null' }] }, year: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+    timeline: { type: 'string' }, notes: { type: 'string' }, contractDeadline: { type: 'string' }, warnings: { type: 'array', items: { type: 'string' }, maxItems: 6 }
+  }
+};
+
+async function generateDealImport(rawText) {
+  if (!configured()) throw new Error('AI deal import is not configured.');
+  const body = {
+    model: OPENAI_MODEL,
+    instructions: [
+      'You extract a real-estate investment/wholesale listing from messy deal-marketing text for Better Real Estate.',
+      'Use ONLY facts explicitly present in the text. Never invent numbers, condition, address, dates, occupancy, repairs or property characteristics.',
+      'Normalize money into plain numeric dollar values. Normalize city into City, ST when the state is present.',
+      'propertyType must be one of: Single family, Multi-family, Condo, Townhouse, Land, Mobile home, Commercial. Use Single family only if the text clearly indicates a house/SFR; otherwise leave propertyType as an empty string.',
+      'For fields that are not provided, use empty string or null as appropriate.',
+      'notes should preserve useful deal facts that do not have a dedicated field, but omit phone numbers, email addresses and marketing hype.',
+      'contractDeadline should be YYYY-MM-DD only when an explicit deadline/date is present and unambiguous; otherwise empty string.',
+      'Do not infer protected-class information or neighborhood demographics.'
+    ].join('\n'),
+    input: [{ role: 'user', content: [{ type: 'input_text', text: String(rawText || '').slice(0, 16000) }] }],
+    text: { format: { type: 'json_schema', name: 'better_real_estate_deal_import', schema: dealImportSchema, strict: true } },
+    max_output_tokens: 1200
+  };
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST', headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((payload?.error?.message || `OpenAI request failed (${res.status}).`).slice(0, 300));
+  const text = extractOutputText(payload);
+  if (!text) throw new Error('AI returned no deal import.');
+  let parsed; try { parsed = JSON.parse(text); } catch { throw new Error('AI returned an unreadable deal import.'); }
+  parsed.warnings = Array.isArray(parsed.warnings) ? parsed.warnings.map(x => String(x).trim()).filter(Boolean).slice(0, 6) : [];
+  return parsed;
+}
+
+module.exports = { configured, model, generateListingCopy, generateDealImport, _extractOutputText: extractOutputText, _safeImageUrl: safeImageUrl };

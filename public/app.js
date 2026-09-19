@@ -3,7 +3,7 @@ let state = {
   detailId: null, profileId: null, photoIdx: 0, composePhotos: [], shopPhotos: [],
   shopCat: 'All', shopQ: '', shopItemId: null, shopEditId: null, shopEditPhotos: [], shopManageQ: '',
   networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0,
-  companyId: null, companyInviteToken: null
+  companyId: null, companyInviteToken: null, buyerPortalType: null, buyerPortalId: null
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -63,7 +63,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','leaderboard','admin','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','admin','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -76,6 +76,8 @@ function applyRouteParams(params) {
   if (state.view === 'shopitem') state.shopItemId = itemId || null;
   if (state.view === 'shopedit') state.shopEditId = itemId || null;
   if (state.view === 'company') state.companyId = params.get('company') || null;
+  if (state.view === 'network') state.networkTab = params.get('tab') || 'discover';
+  if (state.view === 'buyerportal') { state.buyerPortalType = params.get('type') || null; state.buyerPortalId = params.get('target') || null; }
   if (params.get('invite')) state.companyInviteToken = params.get('invite');
   return requested;
 }
@@ -88,6 +90,8 @@ function routeUrl(view = state.view) {
   if (view === 'shopitem' && state.shopItemId) p.set('item', state.shopItemId);
   if (view === 'shopedit' && state.shopEditId) p.set('item', state.shopEditId);
   if (view === 'company' && state.companyId) p.set('company', state.companyId);
+  if (view === 'network' && state.networkTab && state.networkTab !== 'discover') p.set('tab', state.networkTab);
+  if (view === 'buyerportal' && state.buyerPortalType && state.buyerPortalId) { p.set('type', state.buyerPortalType); p.set('target', state.buyerPortalId); }
   if ((view === 'companyjoin' || view === 'auth') && state.companyInviteToken) p.set('invite', state.companyInviteToken);
   const q = p.toString();
   return location.pathname + (q ? '?' + q : '');
@@ -217,7 +221,7 @@ async function renderApp() {
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
-    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin,
+    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
@@ -252,6 +256,8 @@ function renderHome() {
     heroPreviewCard()
   ])));
   wrap.appendChild(el('div', { class: 'container' }, el('div', { class: 'featgrid' }, [
+    feat('Better Dispo', 'Paste a deal once, turn it into a listing, match active buyers, and generate Facebook, Instagram, SMS, email and flyer assets from one place.'),
+    feat('Buyers Looking', 'See public buy boxes from investors who are actively acquiring — market, price range, property type and strategy.'),
     feat('A real feed', 'Photo-first cards ranked against the buy box you set — price, market, property type, minimum spread.'),
     feat('Promote your listing', 'Boost for 24 hours to a week, or Super Boost for the top slot. Sellers pay for reach, buyers see fresh inventory.'),
     feat('Marketplace', 'Furniture, flooring, cabinet and door hardware — the stuff every rehab needs, from people who just finished one.'),
@@ -549,6 +555,48 @@ function propertyCard(l) {
   ]);
 }
 
+/* ================= BETTER DISPO HELPERS ================= */
+async function copyTextValue(text, label = 'Copied') {
+  try { await navigator.clipboard.writeText(String(text || '')); toast(label, 'ok'); }
+  catch { prompt('Copy:', String(text || '')); }
+}
+function escapeHtml(v) { return String(v ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch])); }
+function openDealFlyer(pack, listing) {
+  const w = window.open('', '_blank'); if (!w) { toast('Allow pop-ups to open the printable flyer.', 'err'); return; }
+  const facts = (pack.flyer?.facts || []).map(x => `<div class="fact">${escapeHtml(x)}</div>`).join('');
+  const photo = listing.photos?.[0] ? `<img class="heroimg" src="${escapeHtml(listing.photos[0])}">` : '';
+  w.document.write(`<!doctype html><html><head><title>${escapeHtml(pack.flyer?.headline || 'Deal flyer')}</title><meta name="viewport" content="width=device-width"><style>
+    body{font-family:Arial,sans-serif;color:#111;margin:0;background:#fafaf8}.sheet{max-width:820px;margin:28px auto;background:#fff;border:1px solid #ddd;border-radius:18px;overflow:hidden}.top{padding:28px;background:#111;color:white}.brand{font-weight:800;letter-spacing:.04em;color:#ffc531}.top h1{font-size:34px;margin:12px 0 4px}.heroimg{width:100%;max-height:420px;object-fit:cover}.body{padding:28px}.facts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:0 0 22px}.fact{padding:12px;background:#f5f5f1;border-radius:10px;font-weight:600}.notes{white-space:pre-wrap;line-height:1.55}.url{word-break:break-all;padding:14px;background:#fff4e8;border:1px solid #ffd4af;border-radius:10px;margin-top:24px}.foot{font-size:12px;color:#666;margin-top:20px}.print{margin:0 0 18px;padding:10px 16px}@media print{.print{display:none}.sheet{border:0;margin:0;max-width:none}}
+  </style></head><body><div class="sheet"><div class="top"><div class="brand">BETTER REAL ESTATE</div><h1>${escapeHtml(pack.flyer?.headline || '')}</h1><div>Make better your standard.</div></div>${photo}<div class="body"><button class="print" onclick="window.print()">Print / Save as PDF</button><div class="facts">${facts}</div><div class="notes">${escapeHtml(pack.flyer?.notes || '')}</div><div class="url">${escapeHtml(pack.url || '')}</div><div class="foot">Property details are seller-provided. Buyers should independently verify all figures, condition, title, availability and transaction terms.</div></div></div></body></html>`);
+  w.document.close();
+}
+
+async function downloadStoryCard(pack, listing) {
+  const canvas = document.createElement('canvas'); canvas.width = 1080; canvas.height = 1920;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#111111'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (listing.photos?.[0]) {
+    try {
+      const img = await new Promise((resolve, reject) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => resolve(i); i.onerror = reject; i.src = listing.photos[0]; });
+      const scale = Math.max(canvas.width / img.width, canvas.height / img.height); const w = img.width * scale, h = img.height * scale;
+      ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    } catch {}
+  }
+  const g = ctx.createLinearGradient(0, 0, 0, canvas.height); g.addColorStop(0, 'rgba(0,0,0,.28)'); g.addColorStop(.45, 'rgba(0,0,0,.38)'); g.addColorStop(1, 'rgba(0,0,0,.92)'); ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#FFC531'; ctx.font = '700 42px Arial'; ctx.fillText('BETTER REAL ESTATE', 72, 110);
+  ctx.fillStyle = '#ffffff'; ctx.font = '700 72px Arial';
+  const headline = String(pack.flyer?.headline || listing.city || 'Off-market property').slice(0,52);
+  const words = headline.split(' '); let line = '', y = 1340;
+  for (const word of words) { const test = line ? line + ' ' + word : word; if (ctx.measureText(test).width > 930 && line) { ctx.fillText(line,72,y); y += 84; line = word; } else line = test; }
+  if (line) { ctx.fillText(line,72,y); y += 98; }
+  ctx.font = '500 38px Arial'; ctx.fillStyle = '#f2f2f2';
+  (pack.flyer?.facts || []).slice(0,3).forEach(f => { ctx.fillText(String(f).slice(0,58),72,y); y += 54; });
+  ctx.fillStyle = '#E8590C'; ctx.fillRect(72, 1730, 936, 2);
+  ctx.fillStyle = '#ffffff'; ctx.font = '700 40px Arial'; ctx.fillText('View the full deal on Better Real Estate',72,1800);
+  ctx.fillStyle = '#FFC531'; ctx.font = '600 32px Arial'; ctx.fillText('BetterRealEstate.org',72,1855);
+  const a = document.createElement('a'); a.download = `better-real-estate-${String(listing.city || 'deal').toLowerCase().replace(/[^a-z0-9]+/g,'-')}-story.png`; a.href = canvas.toDataURL('image/png'); a.click();
+}
+
 /* ================= DETAIL ================= */
 async function renderDetail() {
   const d = await api('GET', '/api/listings/' + state.detailId);
@@ -575,7 +623,7 @@ async function renderDetail() {
 
   const spread = listing.arv ? listing.arv - listing.asking : null;
   wrap.appendChild(el('div', { class: 'dhead' }, [
-    el('div', {}, [el('h2', {}, listing.address), el('div', { class: 'c' }, listing.city)]),
+    el('div', {}, [el('h2', {}, listing.address), el('div', { class: 'c' }, listing.city), listing.freshness ? el('div', { class: 'freshnessline' }, [el('span', { class: 'freshnesspill' + (listing.freshness.needsConfirmation ? ' warn' : '') }, listing.freshness.needsConfirmation ? 'Needs seller confirmation' : `Confirmed ${listing.freshness.confirmedDaysAgo === 0 ? 'today' : listing.freshness.confirmedDaysAgo + 'd ago'}`), listing.contractDeadline ? el('span', {}, `Deadline ${listing.contractDeadline}`) : null]) : null]),
     el('div', { class: 'dprice' }, money(listing.asking))
   ]));
 
@@ -586,7 +634,8 @@ async function renderDetail() {
     listing.beds ? ['Beds', listing.beds] : null,
     listing.baths ? ['Baths', listing.baths] : null,
     listing.sqft ? ['Sq ft', listing.sqft.toLocaleString()] : null,
-    listing.year ? ['Year built', listing.year] : null
+    listing.year ? ['Year built', listing.year] : null,
+    listing.contractDeadline ? ['Deal deadline', listing.contractDeadline] : null
   ].filter(Boolean);
   wrap.appendChild(el('div', { class: 'dgrid' }, cells.map(([l, v]) => el('div', { class: 'dcell' }, [el('div', { class: 'l' }, l), el('div', { class: 'v' }, String(v))]))));
 
@@ -690,11 +739,50 @@ async function renderDetail() {
   }
 
   if (state.user && state.user.id === owner.id) {
-    wrap.appendChild(el('div', { class: 'dsection' }, [
-      el('h3', {}, 'Your listing'),
-      el('button', { class: 'submitbtn', onclick: () => go('promote', { detailId: listing.id }) }, 'Promote this listing'),
-      el('button', { class: 'btn-ghost', style: 'width:100%;margin-top:10px', onclick: () => go('analytics', { detailId: listing.id }) }, 'View analytics')
+    const dispo = el('div', { class: 'dsection betterdispopanel' });
+    dispo.appendChild(el('div', { class: 'dispoeyebrow' }, 'BETTER DISPO'));
+    dispo.appendChild(el('h3', {}, 'Move this deal'));
+    const matchHost = el('div', { class: 'matchsummary' }, 'Checking buyer demand…');
+    dispo.appendChild(matchHost);
+    try {
+      const m = await api('GET', '/api/listings/' + encodeURIComponent(listing.id) + '/matches');
+      matchHost.innerHTML = '';
+      matchHost.appendChild(el('div', { class: 'matchbig' }, String(m.totalMatches || 0)));
+      matchHost.appendChild(el('div', {}, [el('b', {}, `buyer${m.totalMatches === 1 ? '' : 's'} currently match this deal`), el('div', { class: 'hint' }, m.publicMatches?.length ? `${m.publicMatches.length} have public buy boxes you can review now.` : 'Private buy boxes can still receive matching-deal alerts without exposing their criteria.') ]));
+      const notify = el('button', { class: 'btn-primary' }, 'Notify matching buyers');
+      notify.onclick = async () => { notify.disabled = true; notify.textContent = 'Notifying…'; try { const r = await api('POST', '/api/listings/' + encodeURIComponent(listing.id) + '/notify-matches'); toast(`${r.notified} matched buyer${r.notified === 1 ? '' : 's'} notified.`, 'ok'); notify.textContent = 'Buyers notified'; } catch (e) { toast(e.message, 'err'); notify.disabled = false; notify.textContent = 'Notify matching buyers'; } };
+      dispo.appendChild(notify);
+      if (m.publicMatches?.length) {
+        const pm = el('div', { class: 'publicmatchlist' });
+        m.publicMatches.slice(0,6).forEach(x => pm.appendChild(el('div', { class: 'publicmatchrow' }, [avatarNode(x.user, 'small'), el('div', { class: 'grow' }, [el('b', {}, x.user.name), el('div', { class: 'hint' }, [x.buyBox.label, x.buyBox.strategy, ...(x.buyBox.cities || [])].filter(Boolean).slice(0,3).join(' · '))]), el('button', { onclick: () => go('chat', { chatUserId: x.user.id }) }, 'Message')])));
+        dispo.appendChild(pm);
+      }
+    } catch (e) { matchHost.textContent = e.message; }
+
+    const distHost = el('div', { class: 'distributionbox' });
+    try {
+      const { pack } = await api('GET', '/api/listings/' + encodeURIComponent(listing.id) + '/distribution');
+      distHost.appendChild(el('h4', {}, 'Post once → distribute everywhere'));
+      distHost.appendChild(el('div', { class: 'hint' }, 'These are ready to paste into the channels you already use. Nothing is auto-posted without you choosing to share it.'));
+      const grid = el('div', { class: 'distributiongrid' });
+      [['Facebook', pack.facebook], ['Instagram', pack.instagram], ['SMS', pack.sms], ['Buyer email', pack.emailBody]].forEach(([label, text]) => grid.appendChild(el('button', { class: 'distbtn', onclick: () => copyTextValue(text, label + ' copy copied') }, [el('b', {}, label), el('span', {}, 'Copy')])));
+      grid.appendChild(el('button', { class: 'distbtn', onclick: () => copyTextValue(pack.url, 'Public deal link copied') }, [el('b', {}, 'Deal link'), el('span', {}, 'Copy') ]));
+      grid.appendChild(el('button', { class: 'distbtn', onclick: () => openDealFlyer(pack, listing) }, [el('b', {}, 'Deal flyer'), el('span', {}, 'Print / PDF') ]));
+      grid.appendChild(el('button', { class: 'distbtn', onclick: () => downloadStoryCard(pack, listing) }, [el('b', {}, 'Story card'), el('span', {}, 'Download 9:16 PNG') ]));
+      if (navigator.share) grid.appendChild(el('button', { class: 'distbtn', onclick: async () => { try { await navigator.share({ title: pack.flyer?.headline || 'Property deal', text: pack.sms, url: pack.url }); } catch {} } }, [el('b', {}, 'Share'), el('span', {}, 'Open share sheet') ]));
+      distHost.appendChild(grid);
+    } catch (e) { distHost.appendChild(el('div', { class: 'errmsg' }, e.message)); }
+    dispo.appendChild(distHost);
+
+    const freshnessActions = el('div', { class: 'freshnessactions' });
+    freshnessActions.appendChild(el('button', { class: 'btn-ghost', onclick: async () => { try { await api('POST', '/api/listings/' + encodeURIComponent(listing.id) + '/confirm-active'); toast('Listing confirmed active for 14 more days.', 'ok'); render(); } catch (e) { toast(e.message, 'err'); } } }, '✓ Still available'));
+    freshnessActions.appendChild(el('button', { class: 'btn-ghost', onclick: async () => { if (!confirm('Archive this listing? It will disappear from public feeds but will not be deleted.')) return; try { await api('POST', '/api/listings/' + encodeURIComponent(listing.id) + '/archive'); toast('Listing archived.', 'ok'); go('me'); } catch (e) { toast(e.message, 'err'); } } }, 'Archive listing'));
+    dispo.appendChild(freshnessActions);
+    dispo.appendChild(el('div', { class: 'row2', style: 'margin-top:12px' }, [
+      el('button', { class: 'submitbtn', onclick: () => go('promote', { detailId: listing.id }) }, 'Promote listing'),
+      el('button', { class: 'btn-ghost', onclick: () => go('analytics', { detailId: listing.id }) }, 'View analytics')
     ]));
+    wrap.appendChild(dispo);
   }
   return wrap;
 }
@@ -748,20 +836,6 @@ function renderUpgrade() {
 
   wrap.appendChild(el('div', { class: 'tiergrid4' }, [
     tierCard({
-      key: 'free', name: 'Free', tagline: '7-day trial, then pay as you browse',
-      priceLine: 'Free',
-      perks: ['Browse the whole feed, always', '5 free listing unlocks', `${cents(p.unlockCredit)} per unlock after that`],
-      current: currentTier === 'free'
-    }),
-    tierCard({
-      key: 'pro', name: p.pro.label, tagline: 'For anyone unlocking regularly',
-      priceLine: cents(p.pro.monthly) + '/mo or ' + cents(p.pro.annual) + '/yr',
-      perks: ['Unlimited listing unlocks', 'Analytics on your own listings', 'Pro badge on your profile'],
-      current: currentTier === 'pro',
-      onMonthly: adminUnlimited ? null : () => subscribeTo('pro', 'monthly', st),
-      onAnnual: adminUnlimited ? null : () => subscribeTo('pro', 'annual', st)
-    }),
-    tierCard({
       key: 'platinum', name: p.platinum.label, tagline: 'The full toolkit for active investors',
       priceLine: cents(p.platinum.monthly) + '/mo or ' + cents(p.platinum.annual) + '/yr',
       featured: true,
@@ -772,6 +846,7 @@ function renderUpgrade() {
         'Seller verification included free (normally ' + cents(p.verificationFee) + ')',
         'One free Super Boost every month (normally ' + cents(p.promotions.superboost.price) + ')',
         'AI listing assistant — titles, descriptions and photo-aware drafts',
+        'Better Dispo — AI-enhanced deal import, buyer matching and distribution tools',
         'Marketplace fee cut to ' + (p.platinumFeeBps / 100) + '% (from ' + (p.marketplaceFeeBps / 100) + '%)',
         'Investor workspace — compare saved properties, keep deal notes'
       ],
@@ -789,13 +864,29 @@ function renderUpgrade() {
         'Shared team property inventory',
         'Shared company-listing inquiry inbox',
         'Company acquisition buy box and team analytics',
+        'Company buyer-list capture page',
         'Owner, admin and member permissions'
       ],
       current: currentTier === 'wholesale',
       onMonthly: adminUnlimited || companySeatAccess ? null : () => subscribeTo('wholesale', 'monthly', st),
       onAnnual: adminUnlimited || companySeatAccess ? null : () => subscribeTo('wholesale', 'annual', st)
+    }),
+    tierCard({
+      key: 'pro', name: p.pro.label, tagline: 'For anyone unlocking regularly',
+      priceLine: cents(p.pro.monthly) + '/mo or ' + cents(p.pro.annual) + '/yr',
+      perks: ['Unlimited listing unlocks', 'Analytics on your own listings', 'Pro badge on your profile'],
+      current: currentTier === 'pro',
+      onMonthly: adminUnlimited ? null : () => subscribeTo('pro', 'monthly', st),
+      onAnnual: adminUnlimited ? null : () => subscribeTo('pro', 'annual', st)
+    }),
+    tierCard({
+      key: 'free', name: 'Free', tagline: '7-day trial, then pay as you browse',
+      priceLine: 'Free',
+      perks: ['Browse the whole feed, always', '5 free listing unlocks', `${cents(p.unlockCredit)} per unlock after that`, 'Smart deal-import parser and public buyer-list page'],
+      current: currentTier === 'free'
     })
   ]));
+
   if (companySeatAccess) wrap.appendChild(el('div', { class: 'hint', style: 'margin-top:10px' }, 'Your Wholesale Teams access is provided by your company. Billing is managed by the company owner.'));
   if (currentTier === 'wholesale' && !companySeatAccess) wrap.appendChild(el('button', { class: 'btn-ghost', style: 'margin-top:12px', onclick: () => go('companyworkspace') }, state.user.companyId ? 'Open company workspace' : 'Set up company workspace'));
   wrap.appendChild(st);
@@ -845,8 +936,8 @@ async function subscribeTo(tier, period, st) {
   } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
 }
 
-function tierCard({ name, tagline, priceLine, perks, current, featured, onMonthly, onAnnual }) {
-  const card = el('div', { class: 'tiercard' + (featured ? ' featured' : '') });
+function tierCard({ key, name, tagline, priceLine, perks, current, featured, onMonthly, onAnnual }) {
+  const card = el('div', { class: 'tiercard' + (featured ? ' featured' : '') + (key === 'wholesale' ? ' teamfeatured' : '') });
   if (featured) card.appendChild(el('div', { class: 'tierribbon' }, 'MOST POWERFUL'));
   card.appendChild(el('h3', { class: 'tiercard-name' }, name));
   card.appendChild(el('div', { class: 'tiercard-tagline' }, tagline));
@@ -1720,9 +1811,39 @@ async function renderCompose() {
     sqft: el('input', { type: 'number', placeholder: '1450' }),
     year: el('input', { type: 'number', placeholder: '1978' }),
     timeline: el('select', {}, ['ASAP','2-4 weeks','1-2 months','Flexible'].map(s => el('option', { value: s }, s))),
+    contractDeadline: el('input', { type: 'date' }),
     videoUrl: el('input', { placeholder: 'https://youtube.com/… (optional walkthrough)' }),
     notes: el('textarea', { placeholder: 'Condition, access, why they\'re selling.' })
   };
+  const importText = el('textarea', { placeholder: 'Paste your existing Facebook deal post, email blast, text message or deal notes here…', style: 'min-height:130px' });
+  const importStatus = el('div', { class: 'hint' });
+  const importBtn = el('button', { class: 'btn-ghost', type: 'button' }, 'Import existing deal');
+  importBtn.onclick = async () => {
+    if (!importText.value.trim()) { importStatus.textContent = 'Paste an existing deal first.'; return; }
+    importBtn.disabled = true; importBtn.textContent = 'Reading deal…'; importStatus.textContent = '';
+    try {
+      const r = await api('POST', '/api/dispo/parse', { text: importText.value });
+      const d = r.deal || {};
+      if (d.address) f.address.value = d.address;
+      if (d.city) f.city.value = d.city;
+      if (d.propertyType) f.propertyType.value = d.propertyType;
+      if (d.situation) f.situation.value = d.situation;
+      ['asking','arv','rehab','beds','baths','sqft','year'].forEach(k => { if (d[k] !== null && d[k] !== undefined && d[k] !== '') f[k].value = d[k]; });
+      if (d.timeline && [...f.timeline.options].some(o => o.value === d.timeline)) f.timeline.value = d.timeline;
+      if (d.contractDeadline) f.contractDeadline.value = d.contractDeadline;
+      if (d.notes) f.notes.value = d.notes;
+      importStatus.textContent = (r.enhanced ? 'AI-enhanced import applied. ' : 'Smart import applied. ') + (d.warnings?.length ? d.warnings.join(' ') : 'Review the fields, add photos, then post.');
+    } catch (e) { importStatus.textContent = e.message; }
+    finally { importBtn.disabled = false; importBtn.textContent = 'Import existing deal'; }
+  };
+  wrap.appendChild(el('div', { class: 'dispoimport' }, [
+    el('div', { class: 'dispoeyebrow' }, 'BETTER DISPO'),
+    el('h3', {}, 'Already wrote this deal somewhere else?'),
+    el('div', { class: 'hint' }, 'Paste the post once. Better Real Estate will pull out the deal facts so you do not have to retype everything.'),
+    (state.access?.platinum || state.access?.wholesale || state.access?.adminUnlimited) ? el('div', { class: 'hint', style: 'margin-top:6px' }, 'On eligible plans, this may use the configured AI provider to improve extraction. Review pasted text before submitting if it contains information you do not want sent to the AI provider.') : null,
+    importText, importBtn, importStatus
+  ]));
+
   state.composePhotos = [];
   const fileInput = el('input', { type: 'file', accept: 'image/*', multiple: true, style: 'display:none' });
   const preview = el('div', { class: 'previewrow' });
@@ -1748,6 +1869,7 @@ async function renderCompose() {
   wrap.appendChild(twoUp('Beds', f.beds, 'Baths', f.baths));
   wrap.appendChild(twoUp('Sq ft', f.sqft, 'Year built', f.year));
   wrap.appendChild(el('label', {}, 'Seller timeline')); wrap.appendChild(f.timeline);
+  wrap.appendChild(el('label', {}, 'Contract / assignment deadline (optional)')); wrap.appendChild(f.contractDeadline);
   wrap.appendChild(el('label', {}, 'Video walkthrough')); wrap.appendChild(f.videoUrl);
   wrap.appendChild(el('label', {}, 'Notes')); wrap.appendChild(f.notes);
   if (state.access?.platinum || state.user?.role === 'admin') {
@@ -1777,8 +1899,10 @@ async function renderCompose() {
     try {
       const payload = { photos: state.composePhotos };
       for (const k in f) payload[k] = f[k].value;
-      await api('POST', '/api/listings', payload);
-      state.composePhotos = []; go('feed');
+      const r = await api('POST', '/api/listings', payload);
+      state.composePhotos = [];
+      toast(r.matchCount ? `Posted — ${r.matchCount} buyer${r.matchCount === 1 ? '' : 's'} currently match this deal.` : 'Posted — Better Dispo is checking buyer demand.', 'ok');
+      go('detail', { detailId: r.listing.id, photoIdx: 0 });
     } catch (e) { err.textContent = e.message; submit.disabled = false; submit.textContent = 'Post to feed'; }
   };
   wrap.appendChild(err); wrap.appendChild(submit);
@@ -1879,6 +2003,33 @@ function personCard(user, opts = {}) {
   return card;
 }
 
+function buyingStatusLabel(v) { return v === 'paused' ? 'Paused' : v === 'selective' ? 'Selective' : 'Actively buying'; }
+function buyerDemandCard(row) {
+  const u = row.user || {};
+  const card = el('div', { class: 'buyerdemandcard' });
+  card.appendChild(el('div', { class: 'buyerdemandhead' }, [
+    avatarNode(u, 'small'),
+    el('div', { class: 'grow' }, [
+      el('div', { class: 'personname', onclick: () => go('profile', { profileId: u.id }) }, [u.name || 'Buyer', u.verified ? el('span', { class: 'vbadge' }, '✓') : null]),
+      u.username ? el('div', { class: 'personhandle' }, '@' + u.username) : null,
+      el('div', { class: 'personsub' }, [row.company?.name, row.strategy, ...(row.cities || [])].filter(Boolean).slice(0,3).join(' · '))
+    ]),
+    el('span', { class: 'buyingstatus ' + (row.buyingStatus || 'active') }, buyingStatusLabel(row.buyingStatus))
+  ]));
+  card.appendChild(el('div', { class: 'buyerdemandtitle' }, row.label || 'Buy box'));
+  const price = `${money(row.minPrice || 0)} – ${money(row.maxPrice || 2000000)}`;
+  card.appendChild(el('div', { class: 'buyerdemandfacts' }, [
+    el('span', {}, price),
+    ...(row.propertyTypes || []).slice(0,3).map(x => el('span', {}, x)),
+    row.minSpread ? el('span', {}, `Min spread ${money(row.minSpread)}`) : null
+  ].filter(Boolean)));
+  card.appendChild(el('div', { class: 'personactions' }, [
+    el('button', { onclick: () => go('profile', { profileId: u.id }) }, 'View profile'),
+    el('button', { class: 'primary', onclick: () => go('chat', { chatUserId: u.id }) }, 'Message buyer')
+  ]));
+  return card;
+}
+
 async function renderNetwork() {
   const wrap = el('div', { class: 'page networkpage' });
   wrap.appendChild(el('div', { class: 'pageheadrow' }, [
@@ -1886,10 +2037,37 @@ async function renderNetwork() {
     el('button', { class: 'btn-ghost', onclick: () => go('leaderboard') }, 'Leaderboard')
   ]));
   const tabs = el('div', { class: 'networktabs' });
-  [['discover','Discover'],['friends','Friends'],['requests','Requests']].forEach(([key, label]) => {
-    tabs.appendChild(el('button', { class: state.networkTab === key ? 'active' : '', onclick: () => { state.networkTab = key; render(); } }, label));
+  [['discover','Discover'],['buyers','Buyers Looking'],['friends','Friends'],['requests','Requests']].forEach(([key, label]) => {
+    tabs.appendChild(el('button', { class: state.networkTab === key ? 'active' : '', onclick: () => { state.networkTab = key; writeRoute('replace'); render(); } }, label));
   });
   wrap.appendChild(tabs);
+
+
+  if (state.networkTab === 'buyers') {
+    const hero = el('div', { class: 'buyerslookinghero' }, [
+      el('div', {}, [el('div', { class: 'dispoeyebrow' }, 'LIVE BUYER DEMAND'), el('h3', {}, 'See what investors are buying right now'), el('div', { class: 'sub' }, 'These are public buy boxes from Better Real Estate members. Message buyers whose criteria fit your deal.')]),
+      el('button', { class: 'btn-primary', onclick: () => go('buybox') }, 'Publish my buy box')
+    ]);
+    wrap.appendChild(hero);
+    const q = el('input', { placeholder: 'Search market, strategy, buyer, company or property type…', value: state.buyerDemandQ || '' });
+    wrap.appendChild(q);
+    const host = el('div', { class: 'buyerdemandgrid' }); wrap.appendChild(host);
+    let timer = null, seq = 0;
+    const load = async () => {
+      const mine = ++seq; state.buyerDemandQ = q.value;
+      host.innerHTML = '<div class="networkloading">Finding active buyers…</div>';
+      try {
+        const r = await api('GET', '/api/buyers-looking?q=' + encodeURIComponent(q.value));
+        if (mine !== seq) return;
+        host.innerHTML = '';
+        if (!r.buyers.length) { host.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'No public buy boxes found'), el('p', {}, 'Be the first buyer to publish what you are looking for.'), el('button', { class: 'btn-primary', onclick: () => go('buybox') }, 'Publish my buy box')])); return; }
+        r.buyers.forEach(x => host.appendChild(buyerDemandCard(x)));
+      } catch (e) { host.innerHTML = ''; host.appendChild(el('div', { class: 'errmsg' }, e.message)); }
+    };
+    q.oninput = () => { clearTimeout(timer); timer = setTimeout(load, 220); };
+    await load();
+    return wrap;
+  }
 
   if (state.networkTab === 'friends') {
     const { friends } = await api('GET', '/api/friends');
@@ -2154,8 +2332,9 @@ async function renderMe() {
       card.appendChild(el('div', { class: 'listrow' }, [
         el('div', { class: 'grow', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
           el('div', { class: 't' }, l.address),
-          el('div', { class: 's' }, l.city + ' · ' + money(l.asking) + (boosted ? ' · promoted' : ''))
+          el('div', { class: 's' }, l.city + ' · ' + money(l.asking) + (boosted ? ' · promoted' : '') + (l.freshness?.availabilityStatus === 'archived' ? ' · archived' : l.freshness?.needsConfirmation ? ' · confirm availability' : ''))
         ]),
+        l.freshness?.availabilityStatus === 'archived' || l.freshness?.needsConfirmation ? el('button', { onclick: async () => { try { await api('POST', '/api/listings/' + encodeURIComponent(l.id) + '/confirm-active'); toast('Listing confirmed active.', 'ok'); render(); } catch (e) { toast(e.message, 'err'); } } }, 'Confirm') : null,
         el('button', { onclick: () => go('analytics', { detailId: l.id }) }, 'Stats'),
         el('button', { onclick: () => go('promote', { detailId: l.id }) }, 'Promote')
       ]));
@@ -2190,6 +2369,7 @@ async function renderProfile() {
     const friendUser = { ...owner, friendStatus: friendship?.status || 'none', friendRequestId: friendship?.requestId || null };
     actions.appendChild(friendButton(friendUser, () => render()));
     actions.appendChild(el('button', { class: 'btn-primary', onclick: () => go('chat', { chatUserId: owner.id }) }, 'Message'));
+    if (owner.role === 'seller') actions.appendChild(el('button', { class: 'btn-ghost', onclick: () => go('buyerportal', { buyerPortalType: 'user', buyerPortalId: owner.id }) }, 'Join buyer list'));
     wrap.appendChild(actions);
   }
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Listings'));
@@ -2212,7 +2392,7 @@ async function renderProfile() {
 }
 
 /* ================= BUY BOX / SETTINGS ================= */
-function renderBuyBox() {
+async function renderBuyBox() {
   const boxes = state.user.buyBoxes || (state.user.buyBox ? [state.user.buyBox] : [{ minPrice: 0, maxPrice: 2000000, cities: [], propertyTypes: [], minSpread: 0, active: true }]);
   if (state.buyBoxIndex === undefined || state.buyBoxIndex >= boxes.length) state.buyBoxIndex = 0;
   const idx = state.buyBoxIndex;
@@ -2249,6 +2429,13 @@ function renderBuyBox() {
   const maxPrice = el('input', { type: 'number', value: bb.maxPrice ?? 2000000 });
   const cities = el('input', { placeholder: 'Austin, San Antonio', value: (bb.cities || []).join(', ') });
   const minSpread = el('input', { type: 'number', value: bb.minSpread ?? 0 });
+  const strategy = el('input', { placeholder: 'e.g. Fix & flip, BRRRR, rental', value: bb.strategy || '' });
+  const buyingStatus = el('select', {}, [
+    el('option', { value: 'active' }, 'Actively buying'),
+    el('option', { value: 'selective' }, 'Selective'),
+    el('option', { value: 'paused' }, 'Paused')
+  ]); buyingStatus.value = state.user.buyingStatus || 'active';
+  const publicBox = el('input', { type: 'checkbox' }); publicBox.checked = bb.public === true;
   const typeWrap = el('div', { class: 'card', style: 'margin-top:8px' });
   const sel = new Set(bb.propertyTypes || []);
   ['Single family','Multi-family','Condo','Townhouse','Land','Mobile home','Commercial'].forEach(t => {
@@ -2260,6 +2447,10 @@ function renderBuyBox() {
   wrap.appendChild(twoUp('Min price ($)', minPrice, 'Max price ($)', maxPrice));
   wrap.appendChild(el('label', {}, 'Markets (comma separated)')); wrap.appendChild(cities);
   wrap.appendChild(el('label', {}, 'Minimum spread ($)')); wrap.appendChild(minSpread);
+  wrap.appendChild(el('label', {}, 'Investment strategy')); wrap.appendChild(strategy);
+  wrap.appendChild(el('label', {}, 'Buying status')); wrap.appendChild(buyingStatus);
+  wrap.appendChild(el('label', { class: 'checkline' }, [publicBox, el('span', {}, 'Show this buy box publicly in Network → Buyers Looking')]));
+  wrap.appendChild(el('div', { class: 'hint' }, 'Public buy boxes show your criteria and public profile only — not your email or phone number.'));
   wrap.appendChild(el('label', {}, 'Property types')); wrap.appendChild(typeWrap);
   const st = el('div', { class: 'okmsg' });
   const btnRow = el('div', { class: 'row2' });
@@ -2268,9 +2459,11 @@ function renderBuyBox() {
     try {
       const { buyBoxes } = await api('PATCH', '/api/me/buybox', {
         index: idx, label: label.value, minPrice: minPrice.value, maxPrice: maxPrice.value, cities: cities.value,
-        minSpread: minSpread.value, propertyTypes: [...sel], active: true
+        minSpread: minSpread.value, propertyTypes: [...sel], active: true,
+        strategy: strategy.value, public: publicBox.checked, buyingStatus: buyingStatus.value
       });
-      state.user.buyBoxes = buyBoxes; st.textContent = 'Saved — feed re-ranked.';
+      state.user.buyBoxes = buyBoxes; state.user.buyingStatus = buyingStatus.value;
+      st.textContent = publicBox.checked ? 'Saved — your criteria are now visible in Buyers Looking.' : 'Saved — feed re-ranked.';
     } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
   };
   btnRow.appendChild(save);
@@ -2284,6 +2477,24 @@ function renderBuyBox() {
     btnRow.appendChild(del);
   }
   wrap.appendChild(btnRow); wrap.appendChild(st);
+  const portalType = state.user.companyId ? 'company' : 'user';
+  const portalTarget = state.user.companyId || state.user.id;
+  const portalUrl = location.origin + location.pathname + '?view=buyerportal&type=' + portalType + '&target=' + encodeURIComponent(portalTarget);
+  wrap.appendChild(el('div', { class: 'buyerlistshare' }, [
+    el('div', {}, [el('b', {}, state.user.companyId ? 'Grow your company buyer list' : 'Grow your own buyer list'), el('div', { class: 'hint' }, "Share one buyer-list page anywhere. Buyers can submit their criteria without seeing anyone else's contact information.")]),
+    el('button', { class: 'btn-ghost', onclick: async () => { try { await navigator.clipboard.writeText(portalUrl); toast('Buyer-list link copied', 'ok'); } catch { prompt('Copy your buyer-list link:', portalUrl); } } }, 'Copy buyer-list link')
+  ]));
+  try {
+    const leadData = await api('GET', '/api/buyer-leads');
+    if (leadData.leads?.length) {
+      wrap.appendChild(el('div', { class: 'sectiontitle' }, `Captured buyers · ${leadData.leads.length}`));
+      const leads = el('div', { class: 'card buyerleadlist' });
+      leadData.leads.slice(0,20).forEach(x => leads.appendChild(el('div', { class: 'listrow' }, [
+        el('div', { class: 'grow' }, [el('div', { class: 't' }, x.name), el('div', { class: 's' }, [x.email, x.phone, ...(x.cities || [])].filter(Boolean).slice(0,4).join(' · ')), el('div', { class: 'hint' }, [x.strategy, x.propertyTypes?.join(', ')].filter(Boolean).join(' · '))])
+      ])));
+      wrap.appendChild(leads);
+    }
+  } catch {}
   return wrap;
 }
 
@@ -2455,6 +2666,7 @@ async function renderCompany() {
     ])
   ]));
   wrap.appendChild(el('div', { class: 'statgrid' }, [stat(members.length, 'Team'), stat(listings.length, 'Listings'), stat(company.seatLimit, 'Seats')]));
+  wrap.appendChild(el('button', { class: 'submitbtn', style: 'margin:8px 0 14px', onclick: () => go('buyerportal', { buyerPortalType: 'company', buyerPortalId: company.id }) }, 'Join ' + company.name + "'s buyer list"));
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Team'));
   const team = el('div', { class: 'peoplegrid' });
   members.forEach(m => team.appendChild(el('div', { class: 'personcard' }, el('div', { class: 'personmain', onclick: () => go('profile', { profileId: m.id }) }, [
@@ -2468,6 +2680,71 @@ async function renderCompany() {
     el('div', { class: 'mt' }, [el('b', {}, l.address), el('span', {}, money(l.asking))])
   ])));
   wrap.appendChild(listings.length ? grid : el('div', { class: 'empty' }, el('p', {}, 'No company listings yet.')));
+  return wrap;
+}
+
+async function renderBuyerPortal() {
+  const wrap = el('div', { class: 'page buyerportalpage' });
+  if (!state.buyerPortalType || !state.buyerPortalId) {
+    wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Buyer list not found'), el('p', {}, 'This buyer-list link is incomplete.') ]));
+    return wrap;
+  }
+  let data;
+  try { data = await api('GET', '/api/buyer-portal/' + encodeURIComponent(state.buyerPortalType) + '/' + encodeURIComponent(state.buyerPortalId)); }
+  catch (e) { wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Buyer list not found'), el('p', {}, e.message)])); return wrap; }
+  const t = data.target;
+  wrap.appendChild(el('div', { class: 'buyerportalhero' }, [
+    t.logoUrl ? el('img', { src: t.logoUrl, class: 'buyerportallogo', alt: '' }) : el('div', { class: 'buyerportallogo fallback' }, initials(t.name)),
+    el('div', {}, [el('div', { class: 'dispoeyebrow' }, 'BUYER LIST'), el('h2', {}, `Tell ${t.name} what you buy`), el('div', { class: 'sub' }, 'Share your real acquisition criteria once. This information goes directly to this wholesaler/company and can be updated later.')])
+  ]));
+  if (t.bio) wrap.appendChild(el('p', { class: 'profilebio' }, t.bio));
+  if (t.markets?.length) wrap.appendChild(el('div', { class: 'buyerportalmarkets' }, t.markets.slice(0,10).map(m => el('span', {}, m))));
+
+  const firstBox = state.user?.buyBoxes?.[0] || {};
+  const name = el('input', { value: state.user?.name || '', placeholder: 'Your name' });
+  const email = el('input', { type: 'email', value: state.user?.email || '', placeholder: 'you@example.com' });
+  const phone = el('input', { value: state.user?.phone || '', placeholder: 'Phone (optional)' });
+  const cities = el('input', { value: (firstBox.cities || []).join(', '), placeholder: 'Philadelphia, South Jersey, Newark' });
+  const minPrice = el('input', { type: 'number', value: firstBox.minPrice ?? 0 });
+  const maxPrice = el('input', { type: 'number', value: firstBox.maxPrice ?? 500000 });
+  const strategy = el('input', { value: firstBox.strategy || '', placeholder: 'Fix & flip, BRRRR, rentals…' });
+  const notes = el('textarea', { placeholder: 'Anything else they should know about what you buy?' });
+  const selected = new Set(firstBox.propertyTypes || []);
+  const types = el('div', { class: 'card buyertypepicker' });
+  ['Single family','Multi-family','Condo','Townhouse','Land','Mobile home','Commercial'].forEach(type => {
+    const c = el('input', { type: 'checkbox' }); c.checked = selected.has(type);
+    c.onchange = () => c.checked ? selected.add(type) : selected.delete(type);
+    types.appendChild(el('label', { class: 'checkline' }, [c, el('span', {}, type)]));
+  });
+  const consent = el('input', { type: 'checkbox' });
+  const saveMine = el('input', { type: 'checkbox' }); saveMine.checked = !!state.user;
+  const st = el('div', { class: 'okmsg' });
+  const form = el('div', { class: 'card buyerportalform' });
+  form.appendChild(twoUp('Name', name, 'Email', email));
+  form.appendChild(el('label', {}, 'Phone')); form.appendChild(phone);
+  form.appendChild(el('label', {}, 'Markets')); form.appendChild(cities);
+  form.appendChild(twoUp('Minimum purchase price ($)', minPrice, 'Maximum purchase price ($)', maxPrice));
+  form.appendChild(el('label', {}, 'Strategy')); form.appendChild(strategy);
+  form.appendChild(el('label', {}, 'Property types')); form.appendChild(types);
+  form.appendChild(el('label', {}, 'Notes')); form.appendChild(notes);
+  form.appendChild(el('label', { class: 'checkline consentline' }, [consent, el('span', {}, `I want to share my contact information and buying criteria with ${t.name}.`)]));
+  if (state.user) form.appendChild(el('label', { class: 'checkline' }, [saveMine, el('span', {}, 'Also save these criteria to my Better Real Estate buy box and publish it in Buyers Looking.')]));
+  else form.appendChild(el('div', { class: 'hint' }, 'You do not need a Better Real Estate account to join this buyer list. Creating one later lets you publish a live buy box and receive matching-deal alerts.'));
+  const submit = el('button', { class: 'submitbtn' }, 'Join buyer list');
+  submit.onclick = async () => {
+    submit.disabled = true; submit.textContent = 'Saving…'; st.textContent = '';
+    try {
+      const r = await api('POST', '/api/buyer-portal/' + encodeURIComponent(state.buyerPortalType) + '/' + encodeURIComponent(state.buyerPortalId), {
+        name: name.value, email: email.value, phone: phone.value, cities: cities.value, minPrice: minPrice.value, maxPrice: maxPrice.value,
+        strategy: strategy.value, propertyTypes: [...selected], notes: notes.value, consent: consent.checked, saveToProfile: !!state.user && saveMine.checked
+      });
+      if (r.savedToProfile) await refreshMe();
+      st.className = 'okmsg'; st.textContent = `You're on ${t.name}'s buyer list.`;
+      submit.textContent = 'Saved';
+    } catch (e) { st.className = 'errmsg'; st.textContent = e.message; submit.disabled = false; submit.textContent = 'Join buyer list'; }
+  };
+  form.appendChild(submit); form.appendChild(st); wrap.appendChild(form);
+  wrap.appendChild(el('div', { class: 'buyerportalfoot' }, [el('b', {}, 'Powered by Better Real Estate'), el('span', {}, 'Make better your standard.') ]));
   return wrap;
 }
 
@@ -2512,6 +2789,20 @@ async function renderCompanyWorkspace() {
     el('button', { class: 'btn-ghost', onclick: () => go('company', { companyId: company.id }) }, 'Public profile')
   ]));
   wrap.appendChild(el('div', { class: 'statgrid' }, [stat(data.analytics.listings, 'Team listings'), stat(data.analytics.views, 'Listing views'), stat(data.analytics.inquiries, 'Inquiries')]));
+  const companyBuyerUrl = location.origin + location.pathname + '?view=buyerportal&type=company&target=' + encodeURIComponent(company.id);
+  const leadData = await api('GET', '/api/buyer-leads').catch(() => ({ leads: [] }));
+  wrap.appendChild(el('div', { class: 'buyerlistshare companybuyershare' }, [
+    el('div', {}, [el('b', {}, 'Company buyer-list link'), el('div', { class: 'hint' }, `${leadData.leads.length} buyer${leadData.leads.length === 1 ? '' : 's'} captured · share one link in your bio, deal posts, email and website.`)]),
+    el('button', { class: 'btn-ghost', onclick: async () => { try { await navigator.clipboard.writeText(companyBuyerUrl); toast('Company buyer-list link copied', 'ok'); } catch { prompt('Copy buyer-list link:', companyBuyerUrl); } } }, 'Copy buyer-list link')
+  ]));
+  if (leadData.leads.length) {
+    const leads = el('div', { class: 'card buyerleadlist' });
+    leadData.leads.slice(0, 12).forEach(x => leads.appendChild(el('div', { class: 'listrow' }, [
+      el('div', { class: 'grow' }, [el('div', { class: 't' }, x.name), el('div', { class: 's' }, [x.email, x.phone, ...(x.cities || [])].filter(Boolean).slice(0,4).join(' · ')), el('div', { class: 'hint' }, [x.strategy, x.propertyTypes?.join(', ')].filter(Boolean).join(' · '))])
+    ])));
+    wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Recent buyer-list signups'));
+    wrap.appendChild(leads);
+  }
 
   if (manager) {
     wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Company profile'));
@@ -2748,7 +3039,7 @@ function pageTerms() {
 function pagePrivacy() {
   return staticPage('Privacy Policy', 'Last updated September 18, 2026.', [
     [null, 'This policy explains what Better Real Estate collects, why we use it, which service providers may receive it, and the choices available to you.'],
-    ['What we collect', 'Account information you give us, including your name, username, email address, phone number if you add one, profile photo, bio and optional market/location. If you use a Wholesale Teams workspace, we also collect company profile details, team membership, role, invitations and shared acquisition criteria. Content you post, including property listings, addresses, photos, notes and marketplace items. Activity such as what you view, save, unlock, offer on, buy or sell, people you follow, friend requests and friendships, plus messages you send through the site. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
+    ['What we collect', 'Account information you give us, including your name, username, email address, phone number if you add one, profile photo, bio and optional market/location. If you use a Wholesale Teams workspace, we also collect company profile details, team membership, role, invitations and shared acquisition criteria. Content you post, including property listings, addresses, photos, notes, deal-import text and marketplace items. If you join a wholesaler or company buyer list, we collect the contact information and acquisition criteria you choose to submit and share those details with the specific wholesaler/company whose buyer-list page you used. Activity such as what you view, save, unlock, offer on, buy or sell, people you follow, friend requests and friendships, plus messages you send through the site. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
     ['Address autofill and autocomplete', el('span', {}, [
       'Your browser may offer its own saved-address autofill. When typed address suggestions are enabled, partial address text and an autocomplete session identifier are sent through our server to Google Maps Platform so suggestions can be returned. If you select a suggestion, Google may return address components such as street, city, state and ZIP to fill the checkout form. We do not use device geolocation for this feature. We keep the shipping address needed for the order, but we do not intentionally store the list of autocomplete suggestions. Google handles its data under the ',
       el('a', { href: 'https://policies.google.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Google Privacy Policy'),
@@ -2765,9 +3056,9 @@ function pagePrivacy() {
       el('a', { href: 'https://stripe.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Privacy Policy'),
       '.'
     ])],
-    ['Why we collect it', 'To run your account, rank your feed against your buy box, power member search, friend connections and direct messaging, operate company workspaces and team permissions, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, send transactional messages such as confirmations, shipping notices and password resets, provide AI-assisted listing tools when you invoke them, and send optional marketing messages when you opt in.'],
+    ['Why we collect it', 'To run your account, rank your feed against your buy box, power Buyers Looking and deal matching, operate buyer-list capture pages, generate Better Dispo distribution tools, power member search, friend connections and direct messaging, operate company workspaces and team permissions, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, send transactional messages such as confirmations, shipping notices and password resets, provide AI-assisted listing/deal-import tools when you invoke them, and send optional marketing messages when you opt in.'],
     ['What other users can see', 'Your name, username, role, bio, optional market/location, profile photo, listing count, follower count, friend count, points, verification status, company affiliation and reviews may be public and may appear in member search. Authorized members of the same Wholesale Teams workspace may see company listings, team analytics, shared acquisition criteria and messages tied to company property listings. Personal direct messages not tied to company listings are not included in the company inbox. Your email address and phone number are shown to another user only where the product requires it, such as after they unlock one of your property listings. Direct messaging does not by itself reveal your email address or phone number. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
-    ['Who we share it with', 'We share information only as needed to operate the service: Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; OpenAI for AI-assisted listing generation when you choose that feature; email providers for transactional and opted-in marketing messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising.'],
+    ['Who we share it with', "We share information only as needed to operate the service: the specific wholesaler/company when you intentionally submit that business's buyer-list form; Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; OpenAI for eligible AI-assisted listing or deal-import generation when you invoke those features; email providers for transactional and opted-in marketing messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising."],
     ['Cookies and similar technology', 'We use a session cookie to keep you signed in. Payment providers such as Stripe may use cookies, browser/device information and similar signals for payment security and fraud prevention. We do not operate third-party advertising trackers on the site.'],
     ['Your choices', 'You can edit your profile, username and password, manage your marketplace listings, and permanently delete your account from Settings. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. Marketing email can be turned on or off in Settings or through the unsubscribe link in any marketing message. AI writing features are optional and only send content when you choose to use them. To request a copy of your data or correction that is not available in the product, email drewcbusiness1@gmail.com. Additional legal rights may apply depending on where you live.'],
     ['Retention and security', 'We keep account, order, payment and transaction records for as long as reasonably needed to provide the service, resolve disputes, prevent fraud, and meet tax, accounting or other legal obligations. When you delete an account, public profile content and ordinary social data are removed; transaction records we must retain are de-identified where practical. Shipping information may remain with the related order record only where reasonably needed for those purposes. Passwords are stored as bcrypt hashes and never in readable form. No system is perfectly secure, so avoid posting sensitive information that is not necessary for a transaction.'],

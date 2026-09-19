@@ -142,6 +142,17 @@ exports.sendMatchAlert = (to, name, listing) =>
        <p style="font-size:12px;color:#40474F">You're seeing this before it's visible to anyone else — that's the Platinum first-look alert.</p>`),
     `New match: ${listing.address}, ${listing.city}, $${listing.asking}. ${APP_URL}`);
 
+
+exports.sendBuyerMatchNotice = (to, name, listing, listingUrl) =>
+  send(to, `New deal matching your buy box — ${listing.city}`,
+    shell('A deal matches what you buy',
+      `<p>Hi ${esc(name || 'there')}, a Better Real Estate seller just shared a property that matches one of your active buy boxes.</p>
+       <p style="font-size:17px;font-weight:600;margin:14px 0 2px">${esc(listing.city || 'New property')}</p>
+       <p style="font-size:13.5px;color:#40474F;margin:0 0 12px">Asking $${Number(listing.asking || 0).toLocaleString()}${listing.arv ? ' · Seller ARV estimate $' + Number(listing.arv).toLocaleString() : ''}</p>
+       ${button(listingUrl || APP_URL, 'View the deal')}
+       <p style="font-size:12px;color:#40474F">Property figures are seller-provided. Verify all deal information independently.</p>`),
+    `New Better Real Estate buy-box match in ${listing.city || 'your market'} — asking $${Number(listing.asking || 0).toLocaleString()}. ${listingUrl || APP_URL}`);
+
 exports.configured = () => !!RESEND_KEY;
 
 

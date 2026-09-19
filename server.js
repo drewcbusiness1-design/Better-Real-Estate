@@ -204,7 +204,7 @@ function normalizeGoogleAddress(place = {}) {
   };
 }
 
-const defaultBuyBox = () => ({ minPrice: 0, maxPrice: 2000000, cities: [], propertyTypes: [], minSpread: 0, active: true });
+const defaultBuyBox = () => ({ minPrice: 0, maxPrice: 2000000, cities: [], propertyTypes: [], minSpread: 0, active: true, public: false, strategy: '', updatedAt: null });
 const defaultSettings = () => ({ theme: 'light', feedDensity: 'comfortable', notifyOnMessage: true, notifyOnMatch: true });
 const badgeFor = p => p >= 500 ? 'Gold' : p >= 200 ? 'Silver' : p >= 100 ? 'Bronze' : null;
 const money = c => '$' + (c / 100).toFixed(2);
@@ -486,6 +486,7 @@ app.delete('/api/me', requireAuth, async (req, res) => {
         req.db.listings.filter(l => l.ownerId === member.id).forEach(l => { l.companyId = null; l.companyName = null; });
       }
       req.db.companyInvites = req.db.companyInvites.filter(i => i.companyId !== company.id);
+      req.db.buyerLeads = (req.db.buyerLeads || []).filter(x => !(x.targetType === 'company' && x.targetId === company.id));
       req.db.companies = req.db.companies.filter(c => c.id !== company.id);
     } else {
       company.memberIds = (company.memberIds || []).filter(id => id !== userId);
@@ -509,6 +510,7 @@ app.delete('/api/me', requireAuth, async (req, res) => {
   req.db.companyInvites = req.db.companyInvites.filter(x => x.invitedBy !== userId && x.email !== req.user.email);
   req.db.dealNotes = req.db.dealNotes.filter(x => x.userId !== userId && !ownedListingIds.has(x.listingId));
   req.db.reviews = req.db.reviews.filter(x => x.aboutUserId !== userId && x.byUserId !== userId);
+  req.db.buyerLeads = (req.db.buyerLeads || []).filter(x => x.userId !== userId && !(x.targetType === 'user' && x.targetId === userId));
 
   for (const o of req.db.offers) {
     if (o.buyerId === userId) { o.buyerId = deletedId; o.buyerName = 'Deleted account'; }
@@ -749,7 +751,7 @@ app.get('/api/companies/:id', async (req, res) => {
   const viewer = db.users.find(u => u.id === req.session.userId);
   const memberIds = new Set(companyMemberIds(db, company));
   const members = db.users.filter(u => u.companyId === company.id).map(publicProfileUser);
-  const listings = db.listings.filter(l => l.companyId === company.id || memberIds.has(l.ownerId)).map(l => gateListing(l, viewer, db));
+  const listings = db.listings.filter(l => (l.companyId === company.id || memberIds.has(l.ownerId)) && listingFreshness(l).availabilityStatus !== 'archived').map(l => gateListing(l, viewer, db));
   res.json({ company: publicCompany(company), members, listings });
 });
 app.patch('/api/me/buybox', requireAuth, async (req, res) => {
@@ -762,10 +764,13 @@ app.patch('/api/me/buybox', requireAuth, async (req, res) => {
     minPrice: Number(b.minPrice) || 0, maxPrice: Number(b.maxPrice) || 2000000,
     cities: Array.isArray(b.cities) ? b.cities : String(b.cities || '').split(',').map(s => s.trim()).filter(Boolean),
     propertyTypes: Array.isArray(b.propertyTypes) ? b.propertyTypes : [],
-    minSpread: Number(b.minSpread) || 0, active: b.active !== false
+    minSpread: Number(b.minSpread) || 0, active: b.active !== false,
+    public: b.public === true, strategy: String(b.strategy || '').trim().slice(0, 50),
+    updatedAt: new Date().toISOString()
   };
   boxes[idx] = built;
   req.user.buyBoxes = boxes;
+  if (['active','selective','paused'].includes(String(b.buyingStatus || ''))) req.user.buyingStatus = String(b.buyingStatus);
   delete req.user.buyBox; // fully migrated to the array now that it's been touched
   await saveDB(req.db);
   res.json({ buyBoxes: req.user.buyBoxes });
@@ -776,7 +781,7 @@ app.post('/api/me/buybox/add', requireAuth, async (req, res) => {
   if (boxes.length >= max) {
     return res.status(403).json({ error: max === 1 ? 'Free and Pro accounts get one buy box — upgrade to Platinum for up to 5.' : `You're at your limit of ${max} buy boxes.` });
   }
-  boxes.push({ ...defaultBuyBox(), label: `Buy box ${boxes.length + 1}` });
+  boxes.push({ ...defaultBuyBox(), label: `Buy box ${boxes.length + 1}`, public: false, strategy: '', updatedAt: new Date().toISOString() });
   req.user.buyBoxes = boxes;
   delete req.user.buyBox;
   await saveDB(req.db);
@@ -979,6 +984,300 @@ app.post('/api/billing/unlock-pack', requireAuth, async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+
+/* ============================ BETTER DISPO ============================ */
+const LISTING_CONFIRM_DAYS = 14;
+
+function numFromText(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const raw = String(v).trim().toLowerCase().replace(/[$,\s]/g, '');
+  const m = raw.match(/-?\d+(?:\.\d+)?/); if (!m) return null;
+  let n = Number(m[0]); if (!Number.isFinite(n)) return null;
+  if (/k\b/.test(raw)) n *= 1000;
+  if (/m\b/.test(raw)) n *= 1000000;
+  return Math.round(n * 100) / 100;
+}
+function normalizePropertyType(v) {
+  const x = String(v || '').toLowerCase();
+  if (/multi|duplex|triplex|fourplex|4plex|2[- ]?4|multifamily/.test(x)) return 'Multi-family';
+  if (/condo/.test(x)) return 'Condo';
+  if (/town/.test(x)) return 'Townhouse';
+  if (/mobile|manufactured/.test(x)) return 'Mobile home';
+  if (/land|lot|acre/.test(x)) return 'Land';
+  if (/commercial|retail|office|warehouse/.test(x)) return 'Commercial';
+  if (/single|sfr|sfh|house\b/.test(x)) return 'Single family';
+  return '';
+}
+function heuristicDealImport(rawText) {
+  const raw = String(rawText || '').replace(/\r/g, '').slice(0, 16000);
+  const lines = raw.split('\n').map(x => x.trim()).filter(Boolean);
+  const one = raw.replace(/\n/g, ' ');
+  const moneyAfter = labels => {
+    for (const label of labels) {
+      const re = new RegExp('(?:' + label + ')\\s*(?:price|estimate)?\\s*[:=-]?\\s*\\$?([0-9][0-9,]*(?:\\.[0-9]+)?\\s*[kKmM]?)', 'i');
+      const hit = one.match(re); if (hit) return numFromText(hit[1]);
+    }
+    return null;
+  };
+  const addressLine = lines.find(x => /^\d{1,7}\s+[^,]{2,80}(?:,\s*[^,]+,?\s*[A-Z]{2}(?:\s+\d{5})?)?$/i.test(x)) || '';
+  let address = '', city = '';
+  if (addressLine) {
+    const parts = addressLine.split(',').map(x => x.trim());
+    address = parts[0] || '';
+    if (parts.length >= 2) city = parts.slice(1).join(', ').replace(/\s+\d{5}(?:-\d{4})?$/, '').trim();
+  }
+  if (!city) {
+    const loc = one.match(/(?:city|market|location)\s*[:=-]\s*([^|•;\n]{2,60})/i);
+    if (loc) city = loc[1].trim().replace(/\s+\d{5}(?:-\d{4})?$/, '');
+  }
+  const beds = one.match(/(?:beds?|bedrooms?|br)\s*[:=-]?\s*(\d+(?:\.\d+)?)/i) || one.match(/(\d+(?:\.\d+)?)\s*(?:beds?|bedrooms?|br)\b/i);
+  const baths = one.match(/(?:baths?|bathrooms?|ba)\s*[:=-]?\s*(\d+(?:\.\d+)?)/i) || one.match(/(\d+(?:\.\d+)?)\s*(?:baths?|bathrooms?|ba)\b/i);
+  const sqft = one.match(/(?:sq\.?\s*ft\.?|sqft|square feet)\s*[:=-]?\s*([0-9,]+)/i) || one.match(/([0-9,]+)\s*(?:sq\.?\s*ft\.?|sqft|square feet)/i);
+  const year = one.match(/(?:year built|built)\s*[:=-]?\s*((?:18|19|20)\d{2})/i);
+  const propType = normalizePropertyType(one);
+  const asking = moneyAfter(['asking', 'ask', 'price', 'assignment price']);
+  const arv = moneyAfter(['arv', 'after repair value']);
+  const rehab = moneyAfter(['rehab', 'repairs?', 'renovation']);
+  const deadline = one.match(/(?:contract|assignment|closing|close|deadline|expires?)\s*(?:date)?\s*[:=-]?\s*(20\d{2}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/20\d{2})/i);
+  let contractDeadline = '';
+  if (deadline) {
+    const v = deadline[1];
+    if (/^20\d{2}-/.test(v)) contractDeadline = v;
+    else { const [m,d,y] = v.split('/'); contractDeadline = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+  }
+  const warnings = [];
+  if (!address) warnings.push('Address was not confidently detected.');
+  if (!asking) warnings.push('Asking price was not confidently detected.');
+  return {
+    address, city, propertyType: propType, situation: '', asking, arv, rehab,
+    beds: beds ? Number(beds[1]) : null, baths: baths ? Number(baths[1]) : null,
+    sqft: sqft ? Number(String(sqft[1]).replace(/,/g,'')) : null, year: year ? Number(year[1]) : null,
+    timeline: '', contractDeadline,
+    notes: raw.slice(0, 1400), warnings
+  };
+}
+function cleanImportedDeal(d = {}) {
+  const types = ['Single family','Multi-family','Condo','Townhouse','Land','Mobile home','Commercial'];
+  const situations = ['Motivated seller','Probate','Divorce','Pre-foreclosure','Investor exit','Inherited property','Tired landlord'];
+  return {
+    address: String(d.address || '').trim().slice(0, 180), city: String(d.city || '').trim().slice(0, 100),
+    propertyType: types.includes(d.propertyType) ? d.propertyType : normalizePropertyType(d.propertyType),
+    situation: situations.includes(d.situation) ? d.situation : '',
+    asking: Number.isFinite(Number(d.asking)) && Number(d.asking) > 0 ? Number(d.asking) : null,
+    arv: Number.isFinite(Number(d.arv)) && Number(d.arv) > 0 ? Number(d.arv) : null,
+    rehab: Number.isFinite(Number(d.rehab)) && Number(d.rehab) >= 0 ? Number(d.rehab) : null,
+    beds: Number.isFinite(Number(d.beds)) && Number(d.beds) >= 0 ? Number(d.beds) : null,
+    baths: Number.isFinite(Number(d.baths)) && Number(d.baths) >= 0 ? Number(d.baths) : null,
+    sqft: Number.isFinite(Number(d.sqft)) && Number(d.sqft) > 0 ? Number(d.sqft) : null,
+    year: Number.isFinite(Number(d.year)) && Number(d.year) > 1700 ? Number(d.year) : null,
+    timeline: String(d.timeline || '').trim().slice(0, 40), notes: String(d.notes || '').trim().slice(0, 1500),
+    contractDeadline: /^20\d{2}-\d{2}-\d{2}$/.test(String(d.contractDeadline || '')) ? String(d.contractDeadline) : '',
+    warnings: Array.isArray(d.warnings) ? d.warnings.map(x => String(x).slice(0,180)).slice(0,6) : []
+  };
+}
+function listingFreshness(listing) {
+  const now = Date.now();
+  const confirmedAt = new Date(listing.lastConfirmedAt || listing.freshAt || listing.createdAt || 0).getTime();
+  const expiresAt = listing.expiresAt ? new Date(listing.expiresAt).getTime() : null;
+  const daysSince = confirmedAt ? Math.max(0, Math.floor((now - confirmedAt) / 86400000)) : null;
+  const expired = listing.availabilityStatus === 'archived' || !!listing.archivedAt || (expiresAt && expiresAt < now);
+  return {
+    availabilityStatus: expired ? 'archived' : (listing.availabilityStatus || 'active'),
+    lastConfirmedAt: listing.lastConfirmedAt || listing.freshAt || listing.createdAt || null,
+    expiresAt: listing.expiresAt || null,
+    needsConfirmation: !expired && daysSince !== null && daysSince >= 7,
+    confirmedDaysAgo: daysSince
+  };
+}
+function buyBoxMatchesListing(bb, listing) {
+  if (!bb || bb.active === false) return false;
+  const asking = Number(listing.asking || 0);
+  if (asking < Number(bb.minPrice || 0) || asking > Number(bb.maxPrice || 2000000)) return false;
+  const cities = Array.isArray(bb.cities) ? bb.cities.filter(Boolean) : [];
+  if (cities.length && !cities.some(c => String(listing.city || '').toLowerCase().includes(String(c).toLowerCase()))) return false;
+  const types = Array.isArray(bb.propertyTypes) ? bb.propertyTypes.filter(Boolean) : [];
+  if (types.length && !types.includes(listing.propertyType)) return false;
+  const spread = listing.arv ? Number(listing.arv) - asking : 0;
+  if (Number(bb.minSpread || 0) > 0 && spread < Number(bb.minSpread)) return false;
+  return true;
+}
+function buyerMatchesForListing(db, listing) {
+  return (db.users || []).filter(u => u.id !== listing.ownerId && String(u.buyingStatus || 'active') !== 'paused').map(u => {
+    const boxes = getBuyBoxes(u).filter(bb => buyBoxMatchesListing(bb, listing));
+    return boxes.length ? { user: u, boxes } : null;
+  }).filter(Boolean);
+}
+function publicBuyerDemand(db, viewerId) {
+  const out = [];
+  for (const u of db.users || []) {
+    if (String(u.buyingStatus || 'active') === 'paused') continue;
+    const company = u.companyId ? (db.companies || []).find(c => c.id === u.companyId) : null;
+    getBuyBoxes(u).forEach((bb, index) => {
+      if (bb.active === false || bb.public !== true) return;
+      out.push({
+        id: `${u.id}:${index}`, index, user: socialUserCard(db, viewerId, u),
+        label: bb.label || 'Buy box', minPrice: Number(bb.minPrice || 0), maxPrice: Number(bb.maxPrice || 2000000),
+        cities: bb.cities || [], propertyTypes: bb.propertyTypes || [], minSpread: Number(bb.minSpread || 0),
+        strategy: String(bb.strategy || '').slice(0,50), buyingStatus: String(u.buyingStatus || 'active'),
+        company: company ? { id: company.id, name: company.name, slug: company.slug } : null,
+        updatedAt: bb.updatedAt || u.updatedAt || null
+      });
+    });
+  }
+  const statusRank = { active: 0, selective: 1, paused: 2 };
+  return out.sort((a,b) => (statusRank[a.buyingStatus] ?? 3) - (statusRank[b.buyingStatus] ?? 3) || (b.updatedAt || '').localeCompare(a.updatedAt || '')).slice(0, 250);
+}
+function listingPublicUrl(listing) {
+  const base = String(process.env.APP_URL || 'http://localhost:8888').replace(/\/$/, '');
+  return `${base}/?view=detail&listing=${encodeURIComponent(listing.id)}`;
+}
+function distributionPack(listing) {
+  const url = listingPublicUrl(listing);
+  const price = `$${Number(listing.asking || 0).toLocaleString()}`;
+  const arv = listing.arv ? ` | ARV est. $${Number(listing.arv).toLocaleString()}` : '';
+  const rehab = listing.rehab !== null && listing.rehab !== undefined ? ` | Rehab est. $${Number(listing.rehab).toLocaleString()}` : '';
+  const specs = [listing.beds ? `${listing.beds} bd` : '', listing.baths ? `${listing.baths} ba` : '', listing.sqft ? `${Number(listing.sqft).toLocaleString()} sqft` : ''].filter(Boolean).join(' | ');
+  const headline = `${listing.city || 'Off-market property'} — ${price}`;
+  const facts = [specs, `Asking ${price}${arv}${rehab}`, listing.propertyType, listing.contractDeadline ? `Deal deadline ${listing.contractDeadline}` : ''].filter(Boolean);
+  const facebook = `${headline}\n\n${facts.join('\n')}\n\n${String(listing.notes || '').slice(0,500)}\n\nFull deal: ${url}`.trim();
+  const instagram = `${headline}\n\n${facts.join('\n')}\n\nDM for details or view the full deal on Better Real Estate.\n${url}\n\n#RealEstateInvesting #WholesaleRealEstate #OffMarket`.trim();
+  const sms = `${listing.city || 'Off-market deal'} | ${price}${listing.arv ? ` | ARV $${Number(listing.arv).toLocaleString()}` : ''}. Details: ${url}`.slice(0, 480);
+  const emailSubject = `Off-market deal: ${listing.city || 'property'} — ${price}`;
+  const emailBody = `${headline}\n\n${facts.join('\n')}\n\n${String(listing.notes || '').slice(0,900)}\n\nView photos and deal details:\n${url}\n\nVerify all property and deal information independently.`.trim();
+  return { url, facebook, instagram, sms, emailSubject, emailBody, flyer: { headline, facts, notes: String(listing.notes || '').slice(0,700) } };
+}
+
+app.post('/api/dispo/parse', requireAuth, async (req, res) => {
+  const rawText = String(req.body?.text || '').trim();
+  if (rawText.length < 12) return res.status(400).json({ error: 'Paste the deal post, email or text you want to import.' });
+  let parsed = heuristicDealImport(rawText); let enhanced = false;
+  if ((isPlatinum(req.user) || isAdminUser(req.user)) && ai.configured()) {
+    const isAdmin = isAdminUser(req.user);
+    const day = new Date().toISOString().slice(0, 10);
+    const limit = 30;
+    if (!isAdmin) {
+      if (req.user.aiUsageDay !== day) { req.user.aiUsageDay = day; req.user.aiUsageCount = 0; }
+      if (Number(req.user.aiUsageCount || 0) < limit) {
+        req.user.aiUsageCount = Number(req.user.aiUsageCount || 0) + 1;
+        await saveDB(req.db);
+        try { parsed = await ai.generateDealImport(rawText); enhanced = true; }
+        catch (e) { console.error('[deal import ai]', e.message); }
+      }
+    } else {
+      try { parsed = await ai.generateDealImport(rawText); enhanced = true; }
+      catch (e) { console.error('[deal import ai]', e.message); }
+    }
+  }
+  res.json({ deal: cleanImportedDeal(parsed), enhanced, mode: enhanced ? 'ai' : 'smart-parser' });
+});
+
+app.get('/api/buyers-looking', requireAuth, async (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const rows = publicBuyerDemand(req.db, req.user.id).filter(x => {
+    if (!q) return true;
+    return [x.user?.name, x.user?.username, x.company?.name, x.label, x.strategy, ...(x.cities || []), ...(x.propertyTypes || [])].filter(Boolean).join(' ').toLowerCase().includes(q);
+  });
+  res.json({ buyers: rows });
+});
+
+app.get('/api/listings/:id/matches', requireAuth, async (req, res) => {
+  const listing = req.db.listings.find(l => l.id === req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+  if (listing.ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Only the listing owner can view buyer matches.' });
+  const matches = buyerMatchesForListing(req.db, listing);
+  const publicMatches = matches.flatMap(m => m.boxes.filter(bb => bb.public === true).map(bb => ({
+    user: socialUserCard(req.db, req.user.id, m.user),
+    buyBox: { label: bb.label || 'Buy box', cities: bb.cities || [], propertyTypes: bb.propertyTypes || [], minPrice: bb.minPrice || 0, maxPrice: bb.maxPrice || 2000000, strategy: bb.strategy || '' }
+  })));
+  res.json({ totalMatches: matches.length, publicMatches: publicMatches.slice(0, 50), lastNotifiedAt: listing.lastMatchNotifyAt || null });
+});
+
+app.post('/api/listings/:id/notify-matches', requireAuth, async (req, res) => {
+  const listing = req.db.listings.find(l => l.id === req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+  if (listing.ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Only the listing owner can notify matched buyers.' });
+  const last = listing.lastMatchNotifyAt ? new Date(listing.lastMatchNotifyAt).getTime() : 0;
+  if (!isAdminUser(req.user) && last && Date.now() - last < 24 * 3600000) return res.status(429).json({ error: 'Matched buyers were notified recently. Try again later.' });
+  const matches = buyerMatchesForListing(req.db, listing).filter(m => m.user.settings?.notifyOnMatch !== false).slice(0, 75);
+  const url = listingPublicUrl(listing);
+  await Promise.all(matches.map(m => mailer.sendBuyerMatchNotice?.(m.user.email, m.user.name, listing, url).catch(e => console.error('[match notify]', e.message))));
+  listing.lastMatchNotifyAt = new Date().toISOString();
+  await saveDB(req.db);
+  res.json({ ok: true, notified: matches.length, at: listing.lastMatchNotifyAt });
+});
+
+app.post('/api/listings/:id/confirm-active', requireAuth, async (req, res) => {
+  const listing = req.db.listings.find(l => l.id === req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+  if (listing.ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Not your listing.' });
+  const now = new Date();
+  listing.availabilityStatus = 'active'; listing.archivedAt = null; listing.lastConfirmedAt = now.toISOString(); listing.freshAt = now.toISOString();
+  listing.expiresAt = new Date(now.getTime() + LISTING_CONFIRM_DAYS * 86400000).toISOString();
+  await saveDB(req.db);
+  res.json({ listing: { ...listing, freshness: listingFreshness(listing) } });
+});
+
+app.post('/api/listings/:id/archive', requireAuth, async (req, res) => {
+  const listing = req.db.listings.find(l => l.id === req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+  if (listing.ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Not your listing.' });
+  listing.availabilityStatus = 'archived'; listing.archivedAt = new Date().toISOString();
+  await saveDB(req.db); res.json({ ok: true });
+});
+
+app.get('/api/listings/:id/distribution', requireAuth, async (req, res) => {
+  const listing = req.db.listings.find(l => l.id === req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+  if (listing.ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Only the listing owner can generate distribution assets.' });
+  res.json({ pack: distributionPack(listing) });
+});
+
+function buyerPortalTarget(db, type, id) {
+  if (type === 'company') {
+    const c = (db.companies || []).find(x => x.id === id || x.slug === id);
+    if (!c) return null;
+    return { type: 'company', id: c.id, name: c.name, slug: c.slug, logoUrl: c.logoUrl || null, bio: c.bio || '', markets: c.markets || [] };
+  }
+  const u = (db.users || []).find(x => x.id === id || normalizeUsername(x.username) === normalizeUsername(id));
+  if (!u) return null;
+  return { type: 'user', id: u.id, name: u.name, username: u.username || null, logoUrl: u.avatarUrl || null, bio: u.bio || '', markets: [u.location].filter(Boolean) };
+}
+app.get('/api/buyer-portal/:type/:id', async (req, res) => {
+  const db = await loadDB(); const target = buyerPortalTarget(db, req.params.type, req.params.id);
+  if (!target) return res.status(404).json({ error: 'Buyer list not found.' });
+  res.json({ target });
+});
+app.post('/api/buyer-portal/:type/:id', async (req, res) => {
+  const db = await loadDB(); const target = buyerPortalTarget(db, req.params.type, req.params.id);
+  if (!target) return res.status(404).json({ error: 'Buyer list not found.' });
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0,100), email = String(b.email || '').trim().toLowerCase().slice(0,180);
+  if (!name || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: 'Name and a valid email are required.' });
+  if (b.consent !== true) return res.status(400).json({ error: 'Confirm that you want to share your buying criteria with this wholesaler/company.' });
+  const user = db.users.find(u => u.id === req.session?.userId) || null;
+  const lead = {
+    id: crypto.randomUUID(), targetType: target.type, targetId: target.id, userId: user?.id || null,
+    name, email, phone: String(b.phone || '').trim().slice(0,40),
+    cities: (Array.isArray(b.cities) ? b.cities : String(b.cities || '').split(',')).map(x => String(x).trim()).filter(Boolean).slice(0,20),
+    propertyTypes: Array.isArray(b.propertyTypes) ? b.propertyTypes.slice(0,10) : [],
+    minPrice: Number(b.minPrice || 0), maxPrice: Number(b.maxPrice || 2000000), strategy: String(b.strategy || '').trim().slice(0,80),
+    notes: String(b.notes || '').trim().slice(0,500), consentAt: new Date().toISOString(), createdAt: new Date().toISOString()
+  };
+  db.buyerLeads = db.buyerLeads || [];
+  const existing = db.buyerLeads.find(x => x.targetType === lead.targetType && x.targetId === lead.targetId && x.email === lead.email);
+  if (existing) Object.assign(existing, lead, { id: existing.id, createdAt: existing.createdAt || lead.createdAt }); else db.buyerLeads.push(lead);
+  if (user && b.saveToProfile === true) {
+    const boxes = getBuyBoxes(user); boxes[0] = { ...defaultBuyBox(), ...(boxes[0] || {}), label: boxes[0]?.label || 'My buy box', minPrice: lead.minPrice, maxPrice: lead.maxPrice, cities: lead.cities, propertyTypes: lead.propertyTypes, strategy: lead.strategy, active: true, public: true, updatedAt: new Date().toISOString() };
+    user.buyBoxes = boxes; delete user.buyBox; user.buyingStatus = user.buyingStatus || 'active';
+  }
+  await saveDB(db); res.json({ ok: true, savedToProfile: !!(user && b.saveToProfile === true) });
+});
+app.get('/api/buyer-leads', requireAuth, async (req, res) => {
+  const company = companyForUser(req.db, req.user);
+  const rows = (req.db.buyerLeads || []).filter(x => company ? (x.targetType === 'company' && x.targetId === company.id) : (x.targetType === 'user' && x.targetId === req.user.id));
+  res.json({ leads: rows.sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,250) });
+});
+
 /* ============================ LISTINGS ============================ */
 app.post('/api/listings', requireAuth, async (req, res) => {
   if (!req.user.emailVerified && !isAdminUser(req.user)) return res.status(403).json({ error: 'Confirm your email before posting a listing.' });
@@ -997,13 +1296,17 @@ app.post('/api/listings', requireAuth, async (req, res) => {
     sqft: b.sqft ? Number(b.sqft) : null, year: b.year ? Number(b.year) : null,
     timeline: b.timeline || 'Flexible', notes: String(b.notes || '').slice(0, 1500),
     videoUrl: String(b.videoUrl || '').slice(0, 300) || null,
+    contractDeadline: /^20\d{2}-\d{2}-\d{2}$/.test(String(b.contractDeadline || '')) ? String(b.contractDeadline) : null,
     photos, boostUntil: null, boostWeight: 0, spotlightUntil: null,
-    freshAt: new Date().toISOString(), closedVerified: false,
+    freshAt: new Date().toISOString(), lastConfirmedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + LISTING_CONFIRM_DAYS * 86400000).toISOString(), availabilityStatus: 'active', archivedAt: null,
+    closedVerified: false,
     createdAt: new Date().toISOString()
   };
   req.db.listings.push(listing); await saveDB(req.db);
   notifyPlatinumMatches(req.db, listing).catch(e => console.error('[alerts]', e.message));
-  res.json({ listing });
+  const matchCount = buyerMatchesForListing(req.db, listing).length;
+  res.json({ listing: { ...listing, freshness: listingFreshness(listing) }, matchCount });
 });
 
 // Platinum: email a match the instant a new listing goes up, before
@@ -1031,9 +1334,9 @@ function gateListing(listing, user, db) {
   // Free users see everything EXCEPT exact address, contact and notes until unlocked.
   const unlocked = user && (hasFullAccess(user) || listing.ownerId === user.id ||
     db.unlocks.some(u => u.userId === user.id && u.listingId === listing.id));
-  if (unlocked) return { ...listing, locked: false };
+  if (unlocked) return { ...listing, freshness: listingFreshness(listing), locked: false };
   const { address, notes, ownerEmail, videoUrl, ...rest } = listing;
-  return { ...rest, address: 'Address hidden', notes: null, ownerEmail: null, videoUrl: null, locked: true };
+  return { ...rest, freshness: listingFreshness(listing), address: 'Address hidden', notes: null, ownerEmail: null, videoUrl: null, locked: true };
 }
 
 app.get('/api/listings/:id', async (req, res) => {
@@ -1099,7 +1402,7 @@ app.get('/api/users/:id/listings', async (req, res) => {
   res.json({
     owner: publicProfileUser(owner),
     company: ownerCompany ? publicCompany(ownerCompany) : null,
-    listings: db.listings.filter(l => l.ownerId === owner.id).map(l => gateListing(l, viewer, db)),
+    listings: db.listings.filter(l => l.ownerId === owner.id && (viewer?.id === owner.id || listingFreshness(l).availabilityStatus !== 'archived')).map(l => gateListing(l, viewer, db)),
     followerCount: db.follows.filter(f => f.followingId === owner.id).length,
     friendCount: db.friendships.filter(f => f.userAId === owner.id || f.userBId === owner.id).length,
     friendship: viewer ? friendRelationship(db, viewer.id, owner.id) : { status: 'none', requestId: null },
@@ -1163,7 +1466,7 @@ app.get('/api/feed', async (req, res) => {
   const viewer = db.users.find(u => u.id === req.session.userId) || null;
   const saved = viewer ? new Set(db.saves.filter(s => s.userId === viewer.id).map(s => s.listingId)) : new Set();
   const now = Date.now();
-  const feed = db.listings.map(l => {
+  const feed = db.listings.filter(l => listingFreshness(l).availabilityStatus !== 'archived').map(l => {
     const { score, reasons } = scoreListing(l, viewer, db);
     const owner = db.users.find(u => u.id === l.ownerId);
     const gated = gateListing(l, viewer, db);

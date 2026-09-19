@@ -9,6 +9,7 @@ function publicProfileUser(u) {
     avatarUrl: u.avatarUrl || null,
     points: Number(u.points || 0),
     verified: !!u.verified,
+    buyingStatus: String(u.buyingStatus || 'active'),
     createdAt: u.createdAt || null
   } : null;
 }

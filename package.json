@@ -11,7 +11,7 @@
     "seed": "node seed.js",
     "seed:clear": "node seed.js --clear",
     "preflight": "node preflight.js",
-    "test": "node tests/cj-adapter.test.js && node tests/dropship.test.js && node tests/ai-marketing.test.js && node tests/integration-wiring.test.js && node tests/social-network.test.js && node tests/account-company.test.js"
+    "test": "node tests/cj-adapter.test.js && node tests/dropship.test.js && node tests/ai-marketing.test.js && node tests/integration-wiring.test.js && node tests/social-network.test.js && node tests/account-company.test.js && node tests/better-dispo.test.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

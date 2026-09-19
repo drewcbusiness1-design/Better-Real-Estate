@@ -610,3 +610,58 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
   .companylogo.large{width:64px;height:64px;border-radius:16px;}
   .companyinquiry{flex-wrap:wrap;}
 }
+
+/* ================= Better Dispo ================= */
+.tiercard.teamfeatured{border:2px solid #2563eb;box-shadow:0 0 0 1px color-mix(in srgb,#2563eb 16%,transparent),var(--shadow);background:linear-gradient(180deg,color-mix(in srgb,#2563eb 9%,var(--surface)) 0%,var(--surface) 24%);}
+.tiercard.teamfeatured .tiercard-perks li::before{color:#2563eb;}
+.dispoimport,.betterdispopanel,.buyerslookinghero,.buyerlistshare,.buyerportalhero{border:1px solid var(--line);background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));border-radius:16px;padding:18px;margin:14px 0;box-shadow:var(--shadow-sm);}
+.dispoimport h3,.buyerslookinghero h3{margin:4px 0 6px;}
+.dispoimport textarea{margin-top:12px;}
+.dispoeyebrow{font-size:10.5px;font-weight:800;letter-spacing:.16em;color:var(--accent-text);text-transform:uppercase;}
+.freshnessline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:11px;color:var(--ink-soft);}
+.freshnesspill{display:inline-flex;padding:4px 7px;border-radius:999px;background:var(--moss-soft);color:var(--moss-text);font-weight:700;border:1px solid color-mix(in srgb,var(--moss) 24%,var(--line));}
+.freshnesspill.warn{background:var(--accent-soft);color:var(--accent-text);border-color:color-mix(in srgb,var(--accent) 28%,var(--line));}
+.matchsummary{display:flex;align-items:center;gap:12px;border:1px solid var(--line);background:var(--surface-2);padding:14px;border-radius:12px;margin:10px 0;}
+.matchbig{font-family:'Bricolage Grotesque',sans-serif;font-size:34px;font-weight:800;line-height:1;color:var(--accent);}
+.publicmatchlist{border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden;background:var(--surface);}
+.publicmatchrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);}
+.publicmatchrow:last-child{border-bottom:0;}
+.publicmatchrow button{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:7px 10px;font-size:11px;}
+.distributionbox{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
+.distributionbox h4{margin:0 0 5px;font-size:15px;}
+.distributiongrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;}
+.distbtn{min-height:68px;border:1px solid var(--line);background:var(--surface);border-radius:11px;padding:10px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:5px;}
+.distbtn:hover{border-color:var(--line-strong);transform:translateY(-1px);}
+.distbtn b{font-size:12px;}.distbtn span{font-size:10.5px;color:var(--ink-soft);}
+.freshnessactions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+.checkline{display:flex!important;align-items:flex-start;gap:9px;margin:12px 0!important;font-size:12.5px;font-weight:600!important;color:var(--ink-2);}
+.checkline input{width:17px!important;height:17px!important;min-width:17px;margin:1px 0 0!important;padding:0!important;}
+.buyerlistshare{display:flex;justify-content:space-between;align-items:center;gap:16px;background:var(--surface);}
+.buyerlistshare .btn-ghost{white-space:nowrap;}
+.networktabs{flex-wrap:wrap;}
+.buyerslookinghero{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:10px 0 14px;}
+.buyerdemandgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;}
+.buyerdemandcard{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);}
+.buyerdemandhead{display:flex;gap:10px;align-items:center;}
+.buyerdemandtitle{font-weight:750;font-size:15px;margin-top:12px;}
+.buyerdemandfacts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.buyerdemandfacts span,.buyerportalmarkets span{font-size:10.5px;padding:5px 7px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2);}
+.buyingstatus{font-size:9.5px;font-weight:800;padding:5px 7px;border-radius:999px;white-space:nowrap;background:var(--moss-soft);color:var(--moss-text);}
+.buyingstatus.selective{background:var(--accent-soft);color:var(--accent-text);}.buyingstatus.paused{background:var(--surface-3);color:var(--ink-soft);}
+.buyerportalpage{max-width:760px;}
+.buyerportalhero{display:flex;gap:16px;align-items:center;margin-top:8px;}
+.buyerportallogo{width:78px;height:78px;border-radius:18px;object-fit:cover;border:1px solid var(--line);background:var(--surface-2);}
+.buyerportallogo.fallback{display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;}
+.buyerportalmarkets{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px;}
+.buyerportalform{padding:18px;margin-top:14px;}
+.buyertypepicker{padding:8px 12px;margin:8px 0 12px;}
+.buyertypepicker .checkline{margin:7px 0!important;}
+.consentline{padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);}
+.buyerportalfoot{display:flex;justify-content:center;gap:8px;align-items:center;color:var(--ink-soft);font-size:11px;margin:18px 0 28px;}
+.buyerleadlist{max-height:420px;overflow:auto;}
+@media(max-width:700px){
+  .distributiongrid,.buyerdemandgrid{grid-template-columns:1fr 1fr;}
+  .buyerslookinghero,.buyerlistshare,.buyerportalhero{align-items:flex-start;flex-direction:column;}
+  .buyerlistshare .btn-ghost{width:100%;}
+}
+@media(max-width:430px){.distributiongrid,.buyerdemandgrid{grid-template-columns:1fr;}}
