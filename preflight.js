@@ -31,9 +31,18 @@ head('Email');
 if (!process.env.RESEND_API_KEY) bad('RESEND_API_KEY not set. Password resets and email confirmation will not send.');
 else ok('Resend API key present.');
 const from = process.env.MAIL_FROM || '';
-if (!from) soft('MAIL_FROM not set — will fall back to Resend\'s sandbox sender, fine for testing only.');
-else if (/@gmail\.com|@yahoo\.|@outlook\.|@hotmail\./i.test(from)) bad('MAIL_FROM uses a free mailbox domain. Gmail\'s DMARC policy will cause rejections — send from your own verified domain and set MAIL_REPLY_TO to your Gmail.');
-else ok('MAIL_FROM uses a custom domain.');
+if (!from) bad('MAIL_FROM not set — the app would fall back to Resend’s sandbox sender, which is not appropriate for real user verification mail. Set Better Real Estate <noreply@betterrealestate.org> after verifying the domain in Resend.');
+else if (/@resend\.dev/i.test(from)) bad('MAIL_FROM is still using Resend’s sandbox sender. Real signup verification should use a verified betterrealestate.org sender.');
+else if (/@gmail\.com|@yahoo\.|@outlook\.|@hotmail\./i.test(from)) bad('MAIL_FROM uses a free mailbox domain. Send from your own verified domain and set MAIL_REPLY_TO to your personal inbox.');
+else {
+  ok('MAIL_FROM uses a custom domain.');
+  try {
+    const appHost = new URL(process.env.APP_URL || 'https://betterrealestate.org').hostname.replace(/^www\./, '');
+    const match = from.match(/@([^>\s]+)>?$/);
+    const fromHost = match ? match[1].toLowerCase() : '';
+    if (fromHost && appHost && fromHost !== appHost) soft(`MAIL_FROM domain (${fromHost}) differs from APP_URL (${appHost}). That can be intentional, but confirm the sender domain is verified in Resend.`);
+  } catch {}
+}
 
 head('Payments');
 if (!process.env.STRIPE_SECRET_KEY) soft('STRIPE_SECRET_KEY not set — purchases run in simulated mode. Fine until you charge real money.');

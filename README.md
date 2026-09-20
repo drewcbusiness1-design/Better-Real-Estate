@@ -187,3 +187,9 @@ Any account whose email is present in `ADMIN_EMAILS` is treated as a permanent a
 Better Real Estate includes a member Network area for finding other users by name, role, bio, market/location, or listing market. Follow remains a one-way relationship, while Friends are mutual connections managed through friend requests. The Messages area groups direct messages into conversation threads, preserves property context when a conversation starts from a listing, and tracks unread messages. Users can add an optional market/location in Settings to improve member discovery.
 
 The social tables (`friendRequests` and `friendships`) are created automatically by the existing data layer on deployment; no manual database migration or new environment variable is required.
+
+
+## v22 communications
+
+Admins now have an Email Center for mail-health diagnostics, test delivery, audience counts, previews, test drafts, scheduled/batched opt-in broadcasts and delivery history. Direct-message recipients can opt into unread-message reminder email with a default one-hour delay and configurable timing. Verification mail is awaited instead of silently fire-and-forget, and delivery failures are surfaced so Resend/domain problems can be diagnosed.
+

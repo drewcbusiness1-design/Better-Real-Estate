@@ -14,6 +14,7 @@ const policy = require('./policy');
 const payments = require('./payments');
 const ai = require('./ai');
 const marketing = require('./marketing');
+const communications = require('./communications');
 const social = require('./social');
 const app = express();
 
@@ -76,7 +77,7 @@ app.use(cookieSession({
   maxAge: 30 * 24 * 60 * 60 * 1000
 }));
 
-const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, ...r } = u; return r; };
+const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, verificationEmailLastError, ...r } = u; return r; };
 const publicProfileUser = social.publicProfileUser;
 const friendRelationship = social.friendRelationship;
 const socialUserCard = social.socialUserCard;
@@ -205,7 +206,7 @@ function normalizeGoogleAddress(place = {}) {
 }
 
 const defaultBuyBox = () => ({ minPrice: 0, maxPrice: 2000000, cities: [], propertyTypes: [], minSpread: 0, active: true, public: false, strategy: '', updatedAt: null });
-const defaultSettings = () => ({ theme: 'light', feedDensity: 'comfortable', notifyOnMessage: true, notifyOnMatch: true });
+const defaultSettings = () => ({ theme: 'light', feedDensity: 'comfortable', notifyOnMessage: true, messageEmailDelayMinutes: 60, notifyOnMatch: true });
 const badgeFor = p => p >= 500 ? 'Gold' : p >= 200 ? 'Silver' : p >= 100 ? 'Bronze' : null;
 const money = c => '$' + (c / 100).toFixed(2);
 
@@ -297,9 +298,23 @@ app.post('/api/signup', async (req, res) => {
   const vtok = crypto.randomBytes(24).toString('hex');
   db.tokens.push({ token: vtok, userId: user.id, kind: 'verify', expires: Date.now() + 7 * 86400000 });
   await saveDB(db);
-  mailer.sendVerification(user.email, user.name, vtok).catch(e => console.error('[mail]', e.message));
+  let verificationEmailSent = false;
+  try {
+    if (!mailer.configured()) throw new Error('RESEND_API_KEY is not configured for this deployment.');
+    await mailer.sendVerification(user.email, user.name, vtok);
+    verificationEmailSent = true;
+    user.verificationEmailLastStatus = 'sent';
+    user.verificationEmailLastAttemptAt = new Date().toISOString();
+    user.verificationEmailLastError = null;
+  } catch (e) {
+    console.error('[mail][verification]', e.message);
+    user.verificationEmailLastStatus = 'failed';
+    user.verificationEmailLastAttemptAt = new Date().toISOString();
+    user.verificationEmailLastError = String(e.message || 'Email delivery failed').slice(0, 500);
+  }
+  await saveDB(db);
   req.session.userId = user.id;
-  res.json({ user: publicUser(user), pricing: PRICING });
+  res.json({ user: publicUser(user), pricing: PRICING, verificationEmailSent, mailConfigured: mailer.configured() });
 });
 
 app.post('/api/login', async (req, res) => {
@@ -372,6 +387,7 @@ app.post('/api/verify-email', async (req, res) => {
   const user = db.users.find(u => u.id === t.userId);
   if (!user) return res.status(404).json({ error: 'Account not found.' });
   user.emailVerified = true;
+  user.verificationEmailLastStatus = 'verified';
   await saveDB(db);
   mailer.sendWelcome(user.email, user.name).catch(e => console.error('[mail]', e.message));
   res.json({ ok: true });
@@ -383,8 +399,22 @@ app.post('/api/resend-verification', requireAuth, async (req, res) => {
   const token = crypto.randomBytes(24).toString('hex');
   req.db.tokens.push({ token, userId: req.user.id, kind: 'verify', expires: Date.now() + 7 * 86400000 });
   await saveDB(req.db);
-  mailer.sendVerification(req.user.email, req.user.name, token).catch(e => console.error('[mail]', e.message));
-  res.json({ ok: true, mailConfigured: mailer.configured() });
+  try {
+    if (!mailer.configured()) throw new Error('RESEND_API_KEY is not configured for this deployment.');
+    await mailer.sendVerification(req.user.email, req.user.name, token);
+    req.user.verificationEmailLastStatus = 'sent';
+    req.user.verificationEmailLastAttemptAt = new Date().toISOString();
+    req.user.verificationEmailLastError = null;
+    await saveDB(req.db);
+    res.json({ ok: true, mailConfigured: true });
+  } catch (e) {
+    console.error('[mail][verification-resend]', e.message);
+    req.user.verificationEmailLastStatus = 'failed';
+    req.user.verificationEmailLastAttemptAt = new Date().toISOString();
+    req.user.verificationEmailLastError = String(e.message || 'Email delivery failed').slice(0, 500);
+    await saveDB(req.db);
+    res.status(502).json({ error: 'The confirmation email could not be sent. The site owner can check Admin → Email Center → Mail health for the exact delivery error.', mailConfigured: mailer.configured() });
+  }
 });
 
 app.post('/api/forgot-password', async (req, res) => {
@@ -542,7 +572,18 @@ app.delete('/api/me', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 app.patch('/api/me/settings', requireAuth, async (req, res) => {
-  req.user.settings = { ...defaultSettings(), ...req.user.settings, ...(req.body || {}) };
+  const body = req.body || {};
+  const next = { ...defaultSettings(), ...req.user.settings };
+  if (body.theme === 'light' || body.theme === 'dark') next.theme = body.theme;
+  if (body.feedDensity === 'comfortable' || body.feedDensity === 'compact') next.feedDensity = body.feedDensity;
+  if (typeof body.notifyOnMessage === 'boolean') next.notifyOnMessage = body.notifyOnMessage;
+  if (typeof body.notifyOnMatch === 'boolean') next.notifyOnMatch = body.notifyOnMatch;
+  if (body.messageEmailDelayMinutes !== undefined) {
+    const n = Number(body.messageEmailDelayMinutes);
+    if (![15,30,60,180,360,720,1440].includes(n)) return res.status(400).json({ error: 'Choose a valid unread-message reminder delay.' });
+    next.messageEmailDelayMinutes = n;
+  }
+  req.user.settings = next;
   await saveDB(req.db); res.json({ settings: req.user.settings });
 });
 
@@ -2445,6 +2486,66 @@ app.get('/api/admin/revenue', requireAuth, requireAdmin, async (req, res) => {
   const subRev = req.db.ledger.filter(l => l.description?.includes('Better Pro')).reduce((s, l) => s + Math.abs(l.meta?.charged || l.amount), 0);
   res.json({ promoRev, feeRev, unlockRev, subRev, total: promoRev + feeRev + unlockRev + subRev,
     users: req.db.users.length, listings: req.db.listings.length, orders: req.db.orders.length });
+});
+
+
+/* ============================ ADMIN EMAIL CENTER ============================ */
+app.get('/api/admin/email-center', requireAuth, requireAdmin, async (req, res) => {
+  const health = mailer.health();
+  const counts = {
+    users: req.db.users.filter(u => u.role !== 'admin').length,
+    emailVerified: req.db.users.filter(u => u.role !== 'admin' && u.emailVerified).length,
+    marketingOptIn: req.db.users.filter(u => u.role !== 'admin' && u.emailVerified && u.marketingOptIn === true && !u.marketingUnsubscribedAt).length,
+    verificationPending: req.db.users.filter(u => u.role !== 'admin' && !u.emailVerified).length
+  };
+  const broadcasts = (req.db.emailBroadcasts || []).slice().sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 30)
+    .map(b => ({ id:b.id, subject:b.subject, audience:b.audience, status:b.status, scheduledAt:b.scheduledAt, createdAt:b.createdAt, sentCount:Number(b.sentCount||0), failedCount:Number(b.failedCount||0), finishedAt:b.finishedAt || null }));
+  const verificationFailures = req.db.users.filter(u => u.role !== 'admin' && u.verificationEmailLastStatus === 'failed').sort((a,b) => new Date(b.verificationEmailLastAttemptAt || 0) - new Date(a.verificationEmailLastAttemptAt || 0)).slice(0, 10).map(u => ({ email:u.email, at:u.verificationEmailLastAttemptAt || null, error:u.verificationEmailLastError || 'Delivery failed' }));
+  res.json({ health, marketingConfigured: marketing.configured(), counts, broadcasts, verificationFailures });
+});
+
+app.post('/api/admin/email-center/preview-audience', requireAuth, requireAdmin, async (req, res) => {
+  const users = communications.eligibleBroadcastUsers(req.db, req.body?.audience || {});
+  res.json({ count: users.length });
+});
+
+app.post('/api/admin/email-center/test', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    if (!mailer.configured()) throw new Error('RESEND_API_KEY is not configured for this deployment.');
+    const result = await mailer.sendMailTest(req.user.email);
+    res.json({ ok: true, result: result?.id ? { id: result.id } : result });
+  } catch (e) {
+    console.error('[mail][admin-test]', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/email-center/broadcast-test', requireAuth, requireAdmin, async (req, res) => {
+  if (!marketing.configured()) return res.status(400).json({ error: 'Marketing email is not fully configured. Check Mail health first.' });
+  let draft;
+  try { draft = communications.normalizeBroadcastInput(req.body || {}, req.user.id); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
+  try {
+    await mailer.sendAdminBroadcast(req.user.email, req.user.name, {
+      subject: `[TEST] ${draft.subject}`, headline: draft.headline, body: draft.body, ctaLabel: draft.ctaLabel, ctaUrl: draft.ctaUrl,
+      unsubscribeUrl: `${String(process.env.APP_URL || '').replace(/\/$/, '')}/?view=settings`,
+      preferencesUrl: `${String(process.env.APP_URL || '').replace(/\/$/, '')}/?view=settings`,
+      postalAddress: String(process.env.MARKETING_POSTAL_ADDRESS || '').trim()
+    });
+    res.json({ ok: true });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.post('/api/admin/email-center/broadcasts', requireAuth, requireAdmin, async (req, res) => {
+  if (!marketing.configured()) return res.status(400).json({ error: 'Marketing email is not fully configured. Check Mail health first.' });
+  let broadcast;
+  try { broadcast = communications.normalizeBroadcastInput(req.body || {}, req.user.id); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
+  req.db.emailBroadcasts.push(broadcast);
+  await saveDB(req.db);
+  const sendNow = new Date(broadcast.scheduledAt).getTime() <= Date.now() + 30_000;
+  const result = sendNow ? await communications.runBroadcastCycle({ broadcastId: broadcast.id, limit: 40 }) : { queued: true };
+  res.json({ ok: true, broadcastId: broadcast.id, status: broadcast.status, result });
 });
 
 

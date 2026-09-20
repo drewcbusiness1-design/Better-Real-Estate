@@ -44,9 +44,9 @@ Netlify → **Site configuration → Environment variables**. Set for all deploy
 
 ```
 SESSION_SECRET      = <run: openssl rand -base64 32>
-APP_URL             = https://yourdomain.com
+APP_URL             = https://betterrealestate.org
 RESEND_API_KEY      = re_xxxxxxxxxxxx
-MAIL_FROM           = Better Real Estate <noreply@yourdomain.com>
+MAIL_FROM           = Better Real Estate <noreply@betterrealestate.org>
 MAIL_REPLY_TO       = drewcbusiness1@gmail.com
 CJ_API_KEY          = <CJdropshipping API key>
 GOOGLE_MAPS_API_KEY = <Google Places API (New) key — optional>
@@ -64,7 +64,7 @@ GOOGLE_MAPS_API_KEY = <Google Places API (New) key — optional>
 2. Add your domain and paste the DNS records it gives you at your registrar. Wait for verification.
 3. Create an API key → set `RESEND_API_KEY`.
 
-**You cannot send "from" a gmail.com address.** Gmail publishes a DMARC policy that tells receiving servers to reject mail claiming to be from gmail.com that didn't originate at Google. Every provider will bounce it. Send from `noreply@yourdomain.com` and set `MAIL_REPLY_TO` to your Gmail so replies still reach you.
+**You cannot send "from" a gmail.com address.** Gmail publishes a DMARC policy that tells receiving servers to reject mail claiming to be from gmail.com that didn't originate at Google. Every provider will bounce it. Send from `noreply@betterrealestate.org` and set `MAIL_REPLY_TO` to your Gmail so replies still reach you.
 
 Test it: sign up with a real address on the deployed site and confirm the email arrives. Then do a password reset. Both paths must work before launch — a locked-out user with no working reset email is a user you lose permanently.
 

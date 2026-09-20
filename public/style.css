@@ -665,3 +665,6 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
   .buyerlistshare .btn-ghost{width:100%;}
 }
 @media(max-width:430px){.distributiongrid,.buyerdemandgrid{grid-template-columns:1fr;}}
+
+/* v22 communications */
+.emailpreview{border:1px solid var(--line);border-radius:14px;padding:22px;background:var(--surface);margin-top:4px;min-height:150px}.emailpreviewbrand{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--amber,#b66a00);margin-bottom:14px}.emailpreview h3{margin:0 0 10px}.emailpreview p{white-space:pre-wrap;line-height:1.55;margin:0 0 18px}

@@ -176,3 +176,38 @@ exports.sendMarketing = (to, name, { subject, headline, body, ctaLabel, ctaUrl, 
   const text = `${headline || 'See what is new'}\n\nHi ${name || 'there'},\n\n${body || ''}\n\n${ctaLabel || 'Open Better Real Estate'}: ${ctaUrl || APP_URL}\n\nEmail preferences: ${preferencesUrl}\nUnsubscribe: ${unsubscribeUrl}\n${APP_NAME} · ${postalAddress}`;
   return send(to, subject || `What is new on ${APP_NAME}`, html, text, { headers: { 'List-Unsubscribe': `<${unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } });
 };
+
+
+exports.sendUnreadMessageReminder = (to, name, { senderName, count = 1, listingLabel = null, conversationUrl }) => {
+  const n = Math.max(1, Number(count) || 1);
+  const context = listingLabel ? `<p style="font-size:13.5px;color:#40474F">Conversation about ${esc(listingLabel)}.</p>` : '';
+  return send(to, `${n > 1 ? n + ' unread messages' : 'Unread message'} from ${senderName || 'a Better Real Estate member'}`,
+    shell('You have an unread message',
+      `<p>Hi ${esc(name || 'there')}, <b>${esc(senderName || 'a Better Real Estate member')}</b> sent you ${n > 1 ? `${n} messages` : 'a message'} that ${n > 1 ? 'are' : 'is'} still unread.</p>${context}${button(conversationUrl || APP_URL, 'Open conversation')}<p style="font-size:12.5px;color:#40474F">You can change or turn off unread-message email reminders in Settings.</p>`),
+    `You have ${n > 1 ? n + ' unread messages' : 'an unread message'} from ${senderName || 'a Better Real Estate member'}. Open the conversation: ${conversationUrl || APP_URL}`);
+};
+
+exports.sendAdminBroadcast = (to, name, { subject, headline, body, ctaLabel, ctaUrl, unsubscribeUrl, preferencesUrl, postalAddress }) => {
+  const safeName = esc(name || 'there');
+  const safeBody = esc(body || '').replace(/\n/g, '<br>');
+  const safeCta = esc(ctaLabel || 'Open Better Real Estate');
+  const safeUrl = esc(ctaUrl || APP_URL);
+  const html = marketingShell(headline || 'An update from Better Real Estate',
+    `<p>Hi ${safeName},</p><p>${safeBody}</p><p style="margin:22px 0"><a href="${safeUrl}" style="background:#12222D;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;display:inline-block;font-weight:600">${safeCta}</a></p>`,
+    { unsubscribeUrl, preferencesUrl, postalAddress });
+  const text = `${headline || 'An update from Better Real Estate'}\n\nHi ${name || 'there'},\n\n${body || ''}\n\n${ctaLabel || 'Open Better Real Estate'}: ${ctaUrl || APP_URL}\n\nEmail preferences: ${preferencesUrl}\nUnsubscribe: ${unsubscribeUrl}\n${APP_NAME} · ${postalAddress}`;
+  return send(to, subject || `Update from ${APP_NAME}`, html, text, { headers: { 'List-Unsubscribe': `<${unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } });
+};
+
+exports.sendMailTest = (to) => send(to, `${APP_NAME} email test`,
+  shell('Email delivery test', `<p>If you received this, Better Real Estate can send transactional mail from the currently configured sender.</p>${button(APP_URL, 'Open Better Real Estate')}`),
+  `Better Real Estate email delivery test. ${APP_URL}`);
+
+exports.health = () => ({
+  configured: !!RESEND_KEY,
+  provider: 'Resend',
+  from: FROM,
+  replyTo: REPLY_TO,
+  appUrl: APP_URL,
+  usingSandboxSender: /@resend\.dev[>\s]*$/i.test(FROM)
+});

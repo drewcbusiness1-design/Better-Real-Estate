@@ -71,11 +71,11 @@ This isn't a Resend limitation — it's every provider, because the rule lives a
 Send from a domain **you** control, and set your Gmail as the reply-to:
 
 ```
-MAIL_FROM     = Better Real Estate <noreply@betterrealestate.com>
+MAIL_FROM     = Better Real Estate <noreply@betterrealestate.org>
 MAIL_REPLY_TO = drewcbusiness1@gmail.com
 ```
 
-Now the From: header says `betterrealestate.com`, you publish the DNS records proving Resend is authorised to send for that domain, DMARC passes, and it lands. When someone hits reply, it still goes to your Gmail inbox. You get the deliverability of a real domain and keep reading mail where you already read it.
+Now the From: header says `betterrealestate.org`, you publish the DNS records proving Resend is authorised to send for that domain, DMARC passes, and it lands. When someone hits reply, it still goes to your Gmail inbox. You get the deliverability of a real domain and keep reading mail where you already read it.
 
 ### Setup
 
@@ -102,7 +102,7 @@ Buy at Cloudflare or Namecheap (~$10/yr). Netlify → Domain management → Add 
 The integration is written. `payments.js` handles PaymentIntents, saved cards, Connect payouts, Billing subscriptions and webhook verification.
 
 1. Create a Stripe account. Get `sk_live_...` and `pk_live_...`.
-2. Add the webhook endpoint in the Stripe dashboard: `https://yourdomain.com/api/payments/webhook`. Subscribe to `payment_intent.succeeded`, `checkout.session.completed`, `invoice.payment_succeeded`, `customer.subscription.deleted`, `charge.dispute.created`. Copy the signing secret.
+2. Add the webhook endpoint in the Stripe dashboard: `https://betterrealestate.org/api/payments/webhook`. Subscribe to `payment_intent.succeeded`, `checkout.session.completed`, `invoice.payment_succeeded`, `customer.subscription.deleted`, `charge.dispute.created`. Copy the signing secret.
 3. Set `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
 4. Swap the card form in `renderWallet()` for Stripe Elements using the publishable key from `/api/payments/config`.
 
