@@ -1,0 +1,26 @@
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const root = path.join(__dirname, '..');
+const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const client = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'public', 'style.css'), 'utf8');
+const store = fs.readFileSync(path.join(root, 'store.js'), 'utf8');
+const mailer = fs.readFileSync(path.join(root, 'mailer.js'), 'utf8');
+
+assert.ok(store.includes("'membershipGrants'") && store.includes("'shareEvents'"), 'growth/reward collections missing');
+assert.ok(server.includes("app.post('/api/admin/memberships/grant'") && server.includes("app.post('/api/admin/memberships/revoke'") && server.includes("app.post('/api/admin/memberships/award-leaderboard'"), 'admin membership grant routes missing');
+assert.ok(server.includes('grantIncludes(user') && server.includes('grantPlan: grant?.plan') && server.includes('grantUntil: grant?.until'), 'membership grants are not wired into access');
+assert.ok(server.includes("app.get('/s/property/:id'") && server.includes("app.get('/s/profile/:id'") && server.includes("app.get('/s/company/:id'") && server.includes("app.get('/s/join'"), 'rich share landing routes missing');
+assert.ok(server.includes("app.post('/api/share-events'"), 'share attribution event endpoint missing');
+assert.ok(client.includes('navigator.share') && client.includes('function shareStrip') && client.includes("socialShareWindow('facebook'") && client.includes("localStorage.setItem('bre_referral_code'"), 'viral/native sharing UI or referral persistence missing');
+assert.ok(client.includes("kind: 'property'") && client.includes("kind: 'profile'") && client.includes("kind: 'company'") && client.includes("kind: 'buyer'"), 'share tools must cover core public content');
+assert.ok(client.includes('function renderMemberships') && client.includes('Admin — Membership grants') && client.includes('Award prize'), 'membership admin UI missing');
+assert.ok(client.includes("/api/leaderboard?period=") && client.includes("['all','All time'],['month','This month']"), 'monthly leaderboard UI missing');
+assert.ok(server.includes('save.verifiedAt = new Date().toISOString()'), 'verified closes need timestamps for monthly rankings');
+assert.ok(mailer.includes('sendNewSignupAlert') && server.includes('sendNewSignupAlerts') && server.includes("/api/admin/email-center/signup-alerts") && client.includes('Email me when someone signs up'), 'toggleable admin signup alerts missing');
+assert.ok(mailer.includes('sendMembershipGranted') && server.includes('[mail][membership-grant]'), 'complimentary membership notification mail missing');
+assert.ok(client.includes('planperiodbtn') && css.includes('.planperiodbtn'), 'consistent plan period buttons missing');
+assert.ok(css.includes(':root[data-theme="dark"] .balancecard') && css.includes('.aibox{margin:14px 0;padding:14px 15px;border:1px solid var(--line);border-radius:12px;background:var(--surface)'), 'dark-mode wallet/AI surface fixes missing');
+console.log('✓ Growth sharing, admin rewards, signup alerts & dark-mode tests passed');

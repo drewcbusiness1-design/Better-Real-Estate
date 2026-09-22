@@ -25,6 +25,19 @@ Runs on Netlify: static site + serverless function, Netlify DB for data, Netlify
 
 This build includes a server-side CJdropshipping API 2.0 integration: admin catalog search, variant import, live freight quotes at checkout, CJ order creation, payment-link handoff, and tracking/status sync. Set only `CJ_API_KEY` in Netlify; the credential is never exposed to the browser. Full setup: `CJ-DROPSHIPPING.md`.
 
+## v23 — Growth + Admin Rewards
+
+- **Share everywhere:** properties, profiles, companies and public buyer demand now have native phone sharing, copy-link, Facebook, LinkedIn and X actions. Shared links use branded Open Graph/Twitter previews and automatically carry the sharer's referral code.
+- **Branded share landings:** shared content has a public Better Real Estate preview page before sign-in, so recipients can see what was shared instead of landing on a broken authenticated route.
+- **Admin membership grants:** Admin can grant complimentary Pro, Platinum or Wholesale Teams access for 1–730 days without changing the user's paid Stripe plan. Grants expire automatically at the end of the period and can be revoked early.
+- **Leaderboard prizes:** the leaderboard now supports all-time and current-month views, and Admin can award the current monthly leader a time-limited membership prize.
+- **Grant notifications:** verified users receive a transactional email when complimentary access or a leaderboard prize is granted (when Resend is configured).
+- **New-signup admin alerts:** Admin can receive an email for every new signup and toggle those alerts on/off in Email Center.
+- **Plan-page polish:** Monthly/Annual actions now use the same clean black button treatment on every paid plan.
+- **Dark-mode cleanup:** Wallet, AI helper surfaces, toasts and related utility surfaces no longer turn white or lose contrast in dark mode.
+
+**No new environment variables or manual database migration are required for v23.** The new `membershipGrants` and `shareEvents` collections are created by the existing store layer. Signup alerts and membership-grant emails require the existing Resend configuration to be working.
+
 ## What's new in this build
 
 - **Email verification** on signup, with resend. Unverified accounts can't post listings.

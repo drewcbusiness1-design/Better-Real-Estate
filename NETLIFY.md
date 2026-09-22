@@ -1,5 +1,10 @@
 # Going live on Netlify
 
+## v23 deployment note
+
+v23 requires no new Netlify environment variables and no manual database migration. It reuses the existing database, Resend and `APP_URL` configuration. Make sure `APP_URL=https://betterrealestate.org` and the verified-domain `MAIL_FROM` are correct so signup alerts and complimentary-membership emails point to the production site and deliver normally.
+
+
 Follow these in order. Most of it is copy-paste.
 
 ---

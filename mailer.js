@@ -199,6 +199,33 @@ exports.sendAdminBroadcast = (to, name, { subject, headline, body, ctaLabel, cta
   return send(to, subject || `Update from ${APP_NAME}`, html, text, { headers: { 'List-Unsubscribe': `<${unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } });
 };
 
+exports.sendNewSignupAlert = (to, user) => {
+  const role = String(user?.role || 'member');
+  const joined = user?.createdAt ? new Date(user.createdAt).toLocaleString('en-US', { timeZone: 'America/New_York' }) : 'Just now';
+  const adminUrl = `${APP_URL.replace(/\/$/, '')}/?view=memberships`;
+  return send(to, `New Better Real Estate signup — ${user?.name || 'New member'}`,
+    shell('A new member just signed up',
+      `<p><b>${esc(user?.name || 'New member')}</b> joined Better Real Estate.</p>
+       <p style="margin:14px 0"><b>Email:</b> ${esc(user?.email || '')}<br>
+       <b>Username:</b> @${esc(user?.username || 'pending')}<br>
+       <b>Role:</b> ${esc(role)}<br>
+       <b>Joined:</b> ${esc(joined)}</p>
+       ${button(adminUrl, 'Open membership admin')}`),
+    `New Better Real Estate signup\n\nName: ${user?.name || ''}\nEmail: ${user?.email || ''}\nUsername: @${user?.username || ''}\nRole: ${role}\nJoined: ${joined}\n\nMembership admin: ${adminUrl}`);
+};
+
+exports.sendMembershipGranted = (to, name, { tier, expiresAt, reason }) => {
+  const label = tier === 'wholesale' ? 'Wholesale Teams' : tier === 'platinum' ? 'Platinum' : 'Pro';
+  const until = expiresAt ? new Date(expiresAt).toLocaleDateString('en-US', { timeZone: 'America/New_York' }) : 'the end of the promotional period';
+  return send(to, `You've been given complimentary ${label} on ${APP_NAME}`,
+    shell(`Complimentary ${label} is active`,
+      `<p>Hi ${esc(name || 'there')}, your Better Real Estate account has been upgraded to <b>${esc(label)}</b> at no charge through <b>${esc(until)}</b>.</p>
+       ${reason ? `<p style="font-size:13.5px;color:#40474F">Reason: ${esc(reason)}</p>` : ''}
+       <p>The complimentary access expires automatically. If you already have a paid plan, this does not cancel or change that subscription.</p>
+       ${button(APP_URL, 'Use your membership')}`),
+    `Complimentary ${label} is active on Better Real Estate through ${until}.${reason ? ` Reason: ${reason}.` : ''} ${APP_URL}`);
+};
+
 exports.sendMailTest = (to) => send(to, `${APP_NAME} email test`,
   shell('Email delivery test', `<p>If you received this, Better Real Estate can send transactional mail from the currently configured sender.</p>${button(APP_URL, 'Open Better Real Estate')}`),
   `Better Real Estate email delivery test. ${APP_URL}`);

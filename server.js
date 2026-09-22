@@ -116,7 +116,12 @@ function uniqueCompanySlug(db, name, exceptId = null) {
 function companyEntitlementUntilForOwner(owner) {
   if (!owner) return null;
   if (isAdminUser(owner)) return '9999-12-31T23:59:59.999Z';
-  return owner.plan === 'wholesale' && owner.planUntil && new Date(owner.planUntil) > new Date() ? owner.planUntil : null;
+  const paidUntil = owner.plan === 'wholesale' && owner.planUntil && new Date(owner.planUntil) > new Date() ? owner.planUntil : null;
+  const grant = activeMembershipGrant(owner);
+  const grantUntil = grant?.plan === 'wholesale' ? grant.until : null;
+  if (!paidUntil) return grantUntil;
+  if (!grantUntil) return paidUntil;
+  return new Date(paidUntil) >= new Date(grantUntil) ? paidUntil : grantUntil;
 }
 function syncCompanyMemberEntitlements(db, owner) {
   if (!owner) return false;
@@ -206,7 +211,16 @@ function normalizeGoogleAddress(place = {}) {
 }
 
 const defaultBuyBox = () => ({ minPrice: 0, maxPrice: 2000000, cities: [], propertyTypes: [], minSpread: 0, active: true, public: false, strategy: '', updatedAt: null });
-const defaultSettings = () => ({ theme: 'light', feedDensity: 'comfortable', notifyOnMessage: true, messageEmailDelayMinutes: 60, notifyOnMatch: true });
+const defaultSettings = () => ({
+  theme: 'light',
+  feedDensity: 'comfortable',
+  notifyOnMessage: true,
+  messageEmailDelayMinutes: 60,
+  notifyOnMatch: true,
+  // Admin-only preference. Undefined on older accounts intentionally behaves
+  // as ON so the site owner starts receiving signup notifications immediately.
+  notifyOnNewSignup: true
+});
 const badgeFor = p => p >= 500 ? 'Gold' : p >= 200 ? 'Silver' : p >= 100 ? 'Bronze' : null;
 const money = c => '$' + (c / 100).toFixed(2);
 
@@ -223,17 +237,42 @@ function isAdminUser(user) {
   return !!user && user.role === 'admin' && policy.isAdminEmail(user.email);
 }
 function isCompanyEntitled(user) { return !!(user?.companyPlanUntil && new Date(user.companyPlanUntil) > new Date()); }
+const GRANT_TIERS = new Set(['pro', 'platinum', 'wholesale']);
+function activeMembershipGrant(user) {
+  if (!user || !GRANT_TIERS.has(String(user.grantPlan || ''))) return null;
+  const until = user.grantUntil ? new Date(user.grantUntil) : null;
+  if (!until || !Number.isFinite(until.getTime()) || until <= new Date()) return null;
+  return { plan: user.grantPlan, until: until.toISOString(), reason: user.grantReason || null, grantedAt: user.grantedAt || null };
+}
+function grantIncludes(user, tier) {
+  const g = activeMembershipGrant(user);
+  if (!g) return false;
+  const rank = { pro: 1, platinum: 2, wholesale: 3 };
+  return (rank[g.plan] || 0) >= (rank[tier] || 99);
+}
 function isWholesale(user) {
   if (isAdminUser(user)) return true;
-  return !!user && ((user.plan === 'wholesale' && user.planUntil && new Date(user.planUntil) > new Date()) || isCompanyEntitled(user));
+  return !!user && (
+    (user.plan === 'wholesale' && user.planUntil && new Date(user.planUntil) > new Date()) ||
+    grantIncludes(user, 'wholesale') ||
+    isCompanyEntitled(user)
+  );
 }
 function isPro(user) {
   if (isAdminUser(user)) return true;
-  return !!user && (((user.plan === 'pro' || user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) || isCompanyEntitled(user));
+  return !!user && (
+    ((user.plan === 'pro' || user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) ||
+    grantIncludes(user, 'pro') ||
+    isCompanyEntitled(user)
+  );
 }
 function isPlatinum(user) {
   if (isAdminUser(user)) return true;
-  return !!user && (((user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) || isCompanyEntitled(user));
+  return !!user && (
+    ((user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) ||
+    grantIncludes(user, 'platinum') ||
+    isCompanyEntitled(user)
+  );
 }
 function inTrial(user) {
   return !isAdminUser(user) && user.trialUntil && new Date(user.trialUntil) > new Date();
@@ -247,9 +286,12 @@ function maxBuyBoxesFor(user) {
 }
 function accessFor(user) {
   if (!user) return null;
+  const grant = activeMembershipGrant(user);
   return {
     pro: isPro(user), platinum: isPlatinum(user), wholesale: isWholesale(user), trial: inTrial(user), full: hasFullAccess(user),
-    adminUnlimited: isAdminUser(user), companyId: user.companyId || null, companyRole: user.companyRole || null
+    adminUnlimited: isAdminUser(user), companyId: user.companyId || null, companyRole: user.companyRole || null,
+    grantPlan: grant?.plan || null, grantUntil: grant?.until || null, grantReason: grant?.reason || null,
+    paidPlan: user.plan || 'free', paidPlanUntil: user.planUntil || null
   };
 }
 // Buy boxes moved from a single object to an array (Platinum can have
@@ -259,6 +301,108 @@ function getBuyBoxes(user) {
   if (Array.isArray(user.buyBoxes) && user.buyBoxes.length) return user.buyBoxes;
   if (user.buyBox) return [user.buyBox];
   return [defaultBuyBox()];
+}
+
+function membershipGrantSummary(user) {
+  const active = activeMembershipGrant(user);
+  return {
+    grantPlan: user?.grantPlan || null,
+    grantUntil: user?.grantUntil || null,
+    grantReason: user?.grantReason || null,
+    grantedAt: user?.grantedAt || null,
+    active: !!active
+  };
+}
+
+function grantMembership(db, user, { tier, days, reason = '', grantedBy = null, source = 'manual' } = {}) {
+  tier = String(tier || '').toLowerCase();
+  if (!GRANT_TIERS.has(tier)) throw new Error('Choose Pro, Platinum or Wholesale Teams.');
+  const rawDays = Number(days);
+  if (!Number.isFinite(rawDays) || rawDays < 1 || rawDays > 730) throw new Error('Choose a grant length between 1 and 730 days.');
+  const n = Math.floor(rawDays);
+  const now = new Date();
+  const expires = new Date(now.getTime() + n * 86400000);
+  db.membershipGrants = db.membershipGrants || [];
+  const previous = [...db.membershipGrants].reverse().find(g => g.userId === user.id && !g.revokedAt && new Date(g.expiresAt || 0) > now);
+  if (previous) { previous.revokedAt = now.toISOString(); previous.revokedBy = grantedBy || null; previous.revokeReason = 'replaced'; }
+  user.grantPlan = tier;
+  user.grantUntil = expires.toISOString();
+  user.grantReason = String(reason || '').trim().slice(0, 180) || (source === 'leaderboard' ? 'Leaderboard prize' : 'Complimentary membership');
+  user.grantedAt = now.toISOString();
+  user.grantedBy = grantedBy || null;
+  db.membershipGrants.push({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    tier,
+    startsAt: now.toISOString(),
+    expiresAt: expires.toISOString(),
+    reason: user.grantReason,
+    source,
+    grantedBy: grantedBy || null,
+    revokedAt: null,
+    createdAt: now.toISOString()
+  });
+  // Sync every replacement, not only Wholesale grants. Replacing an active
+  // Wholesale grant with a lower tier must remove inherited company access too.
+  syncCompanyMemberEntitlements(db, user);
+  return activeMembershipGrant(user);
+}
+
+function revokeMembershipGrant(db, user, revokedBy = null) {
+  const hadGrant = !!user.grantPlan;
+  const now = new Date().toISOString();
+  const open = [...(db.membershipGrants || [])].reverse().find(g => g.userId === user.id && !g.revokedAt && new Date(g.expiresAt || 0) > new Date());
+  if (open) { open.revokedAt = now; open.revokedBy = revokedBy || null; }
+  user.grantPlan = null;
+  user.grantUntil = null;
+  user.grantReason = null;
+  user.grantedAt = null;
+  user.grantedBy = null;
+  syncCompanyMemberEntitlements(db, user);
+  return hadGrant;
+}
+
+function leaderboardRows(db, period = 'all') {
+  const users = db.users.filter(u => u.role !== 'admin');
+  const monthStart = new Date();
+  monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
+  const pointsByUser = new Map();
+  const closesByUser = new Map();
+  if (period === 'month') {
+    for (const save of db.saves || []) {
+      if (!save.verified) continue;
+      const when = new Date(save.verifiedAt || save.at || 0);
+      if (!Number.isFinite(when.getTime()) || when < monthStart) continue;
+      const listing = db.listings.find(l => l.id === save.listingId);
+      const ids = [save.userId, listing?.ownerId].filter(Boolean);
+      for (const id of ids) {
+        pointsByUser.set(id, (pointsByUser.get(id) || 0) + 100);
+        closesByUser.set(id, (closesByUser.get(id) || 0) + 1);
+      }
+    }
+  }
+  return users.map(u => {
+    const revs = db.reviews.filter(r => r.aboutUserId === u.id);
+    const closedAll = db.saves.filter(save => save.verified && (save.userId === u.id || db.listings.find(l => l.id === save.listingId)?.ownerId === u.id)).length;
+    const points = period === 'month' ? (pointsByUser.get(u.id) || 0) : Number(u.points || 0);
+    const closed = period === 'month' ? (closesByUser.get(u.id) || 0) : closedAll;
+    return {
+      id: u.id, name: u.name, username: u.username || null, role: u.role, points, badge: badgeFor(points),
+      avatarUrl: u.avatarUrl, verified: !!u.verified, closedDeals: closed,
+      rating: revs.length ? (revs.reduce((sum, r) => sum + r.rating, 0) / revs.length).toFixed(1) : null,
+      reviewCount: revs.length
+    };
+  }).sort((a, b) => b.points - a.points || b.closedDeals - a.closedDeals || a.name.localeCompare(b.name)).slice(0, 50);
+}
+
+async function sendNewSignupAlerts(db, newUser) {
+  if (!mailer.configured()) return;
+  const targets = [...new Set(policy.adminEmails().map(x => String(x).trim().toLowerCase()).filter(Boolean))];
+  await Promise.allSettled(targets.map(async email => {
+    const adminUser = db.users.find(u => u.email === email && isAdminUser(u));
+    if (adminUser?.settings?.notifyOnNewSignup === false) return;
+    await mailer.sendNewSignupAlert(email, newUser);
+  }));
 }
 
 
@@ -313,6 +457,8 @@ app.post('/api/signup', async (req, res) => {
     user.verificationEmailLastError = String(e.message || 'Email delivery failed').slice(0, 500);
   }
   await saveDB(db);
+  try { await sendNewSignupAlerts(db, user); }
+  catch (e) { console.error('[mail][signup-alert]', e.message); }
   req.session.userId = user.id;
   res.json({ user: publicUser(user), pricing: PRICING, verificationEmailSent, mailConfigured: mailer.configured() });
 });
@@ -541,6 +687,8 @@ app.delete('/api/me', requireAuth, async (req, res) => {
   req.db.dealNotes = req.db.dealNotes.filter(x => x.userId !== userId && !ownedListingIds.has(x.listingId));
   req.db.reviews = req.db.reviews.filter(x => x.aboutUserId !== userId && x.byUserId !== userId);
   req.db.buyerLeads = (req.db.buyerLeads || []).filter(x => x.userId !== userId && !(x.targetType === 'user' && x.targetId === userId));
+  req.db.shareEvents = (req.db.shareEvents || []).filter(x => x.userId !== userId);
+  req.db.membershipGrants = (req.db.membershipGrants || []).filter(x => x.userId !== userId && x.grantedBy !== userId);
 
   for (const o of req.db.offers) {
     if (o.buyerId === userId) { o.buyerId = deletedId; o.buyerName = 'Deleted account'; }
@@ -578,6 +726,7 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (body.feedDensity === 'comfortable' || body.feedDensity === 'compact') next.feedDensity = body.feedDensity;
   if (typeof body.notifyOnMessage === 'boolean') next.notifyOnMessage = body.notifyOnMessage;
   if (typeof body.notifyOnMatch === 'boolean') next.notifyOnMatch = body.notifyOnMatch;
+  if (isAdminUser(req.user) && typeof body.notifyOnNewSignup === 'boolean') next.notifyOnNewSignup = body.notifyOnNewSignup;
   if (body.messageEmailDelayMinutes !== undefined) {
     const n = Number(body.messageEmailDelayMinutes);
     if (![15,30,60,180,360,720,1440].includes(n)) return res.status(400).json({ error: 'Choose a valid unread-message reminder delay.' });
@@ -1168,12 +1317,18 @@ function publicBuyerDemand(db, viewerId) {
   const statusRank = { active: 0, selective: 1, paused: 2 };
   return out.sort((a,b) => (statusRank[a.buyingStatus] ?? 3) - (statusRank[b.buyingStatus] ?? 3) || (b.updatedAt || '').localeCompare(a.updatedAt || '')).slice(0, 250);
 }
-function listingPublicUrl(listing) {
-  const base = String(process.env.APP_URL || 'http://localhost:8888').replace(/\/$/, '');
-  return `${base}/?view=detail&listing=${encodeURIComponent(listing.id)}`;
+function appBaseUrl() {
+  return String(process.env.APP_URL || 'http://localhost:8888').replace(/\/$/, '');
 }
-function distributionPack(listing) {
-  const url = listingPublicUrl(listing);
+function refSuffix(referralCode) {
+  const clean = String(referralCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
+  return clean ? `?ref=${encodeURIComponent(clean)}` : '';
+}
+function listingPublicUrl(listing, referralCode = '') {
+  return `${appBaseUrl()}/s/property/${encodeURIComponent(listing.id)}${refSuffix(referralCode)}`;
+}
+function distributionPack(listing, referralCode = '') {
+  const url = listingPublicUrl(listing, referralCode);
   const price = `$${Number(listing.asking || 0).toLocaleString()}`;
   const arv = listing.arv ? ` | ARV est. $${Number(listing.arv).toLocaleString()}` : '';
   const rehab = listing.rehab !== null && listing.rehab !== undefined ? ` | Rehab est. $${Number(listing.rehab).toLocaleString()}` : '';
@@ -1270,7 +1425,153 @@ app.get('/api/listings/:id/distribution', requireAuth, async (req, res) => {
   const listing = req.db.listings.find(l => l.id === req.params.id);
   if (!listing) return res.status(404).json({ error: 'Listing not found.' });
   if (listing.ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Only the listing owner can generate distribution assets.' });
-  res.json({ pack: distributionPack(listing) });
+  res.json({ pack: distributionPack(listing, req.user.referralCode) });
+});
+
+/* ============================ SHARE / REFERRAL GROWTH ============================ */
+function shareHtmlEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+function absoluteShareAsset(value) {
+  if (!value) return `${appBaseUrl()}/brand-logo.png`;
+  try { return new URL(String(value), appBaseUrl()).href; }
+  catch { return `${appBaseUrl()}/brand-logo.png`; }
+}
+function sanitizedReferral(value) {
+  return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
+}
+function shareLandingHtml({ title, description, image, destination, autoRedirect = false }) {
+  const safeTitle = shareHtmlEscape(title || 'Better Real Estate');
+  const safeDescription = shareHtmlEscape(description || 'Real estate deals, buyers and investor connections in one place.');
+  const safeImage = shareHtmlEscape(absoluteShareAsset(image));
+  const safeDestination = shareHtmlEscape(destination || appBaseUrl());
+  const canonical = shareHtmlEscape(appBaseUrl() + destination);
+  const redirectMeta = autoRedirect ? `<meta http-equiv="refresh" content="0;url=${safeDestination}">` : '';
+  const redirectScript = autoRedirect ? `<script>location.replace(${JSON.stringify(destination || '/')});</script>` : '';
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${safeTitle}</title>
+<meta name="description" content="${safeDescription}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Better Real Estate">
+<meta property="og:title" content="${safeTitle}">
+<meta property="og:description" content="${safeDescription}">
+<meta property="og:image" content="${safeImage}">
+<meta property="og:url" content="${canonical}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${safeTitle}">
+<meta name="twitter:description" content="${safeDescription}">
+<meta name="twitter:image" content="${safeImage}">
+<link rel="canonical" href="${canonical}">${redirectMeta}
+<style>
+  *{box-sizing:border-box}body{font-family:Inter,system-ui,-apple-system,sans-serif;background:#0b0b0a;color:#f7f6f1;min-height:100vh;margin:0;display:grid;place-items:center;padding:24px}.card{width:min(560px,100%);background:#161614;border:1px solid #34342f;border-radius:20px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.4)}.image{width:100%;height:300px;object-fit:cover;background:#222}.body{padding:26px}.brand{font-size:12px;font-weight:800;letter-spacing:.1em;color:#ff7a29}.body h1{font-size:28px;line-height:1.1;margin:10px 0 10px}.body p{color:#cfcdc4;line-height:1.55;margin:0 0 22px}.cta{display:inline-block;background:#fff;color:#0b0b0a;text-decoration:none;font-weight:750;padding:12px 18px;border-radius:10px}.foot{font-size:12px;color:#8f8d85;margin-top:18px}
+</style>
+</head>
+<body><main class="card"><img class="image" src="${safeImage}" alt=""><div class="body"><div class="brand">BETTER REAL ESTATE</div><h1>${safeTitle}</h1><p>${safeDescription}</p><a class="cta" href="${safeDestination}">View on Better Real Estate</a><div class="foot">Make better your standard.</div></div></main>${redirectScript}</body></html>`;
+}
+
+function destinationWithRef(pathname, referral) {
+  const join = pathname.includes('?') ? '&' : '?';
+  return pathname + (referral ? `${join}ref=${encodeURIComponent(referral)}` : '');
+}
+
+app.get('/s/join', async (req, res) => {
+  const referral = sanitizedReferral(req.query.ref);
+  const destination = destinationWithRef('/?view=auth', referral);
+  res.type('html').send(shareLandingHtml({
+    title: 'Join Better Real Estate',
+    description: 'A real-estate-only network for investors, wholesalers, buyers, properties and deal distribution.',
+    image: '/brand-logo.png',
+    destination,
+    autoRedirect: true
+  }));
+});
+
+app.get('/s/property/:id', async (req, res) => {
+  const db = await loadDB();
+  const listing = db.listings.find(l => l.id === req.params.id);
+  if (!listing) return res.status(404).type('html').send('Property not found.');
+  const referral = sanitizedReferral(req.query.ref);
+  const city = listing.city || 'Investment property';
+  const facts = [
+    `Asking $${Number(listing.asking || 0).toLocaleString()}`,
+    listing.arv ? `ARV estimate $${Number(listing.arv).toLocaleString()}` : null,
+    listing.propertyType || null
+  ].filter(Boolean).join(' · ');
+  const destination = destinationWithRef(`/?view=detail&id=${encodeURIComponent(listing.id)}`, referral);
+  res.type('html').send(shareLandingHtml({
+    title: `${city} deal | Better Real Estate`,
+    description: `${facts}. View photos and deal details on Better Real Estate.`,
+    image: listing.photos?.[0] || '/brand-logo.png',
+    destination
+  }));
+});
+
+app.get('/s/profile/:id', async (req, res) => {
+  const db = await loadDB();
+  const user = db.users.find(u => u.id === req.params.id || normalizeUsername(u.username) === normalizeUsername(req.params.id));
+  if (!user) return res.status(404).type('html').send('Profile not found.');
+  const referral = sanitizedReferral(req.query.ref);
+  const listingCount = db.listings.filter(l => l.ownerId === user.id && listingFreshness(l).availabilityStatus !== 'archived').length;
+  const destination = destinationWithRef(`/?view=profile&user=${encodeURIComponent(user.id)}`, referral);
+  res.type('html').send(shareLandingHtml({
+    title: `${user.name} on Better Real Estate`,
+    description: `${user.role} · ${listingCount} active listing${listingCount === 1 ? '' : 's'}${user.location ? ` · ${user.location}` : ''}.`,
+    image: user.avatarUrl || '/brand-logo.png',
+    destination
+  }));
+});
+
+app.get('/s/company/:id', async (req, res) => {
+  const db = await loadDB();
+  const company = db.companies.find(c => c.id === req.params.id || c.slug === req.params.id);
+  if (!company) return res.status(404).type('html').send('Company not found.');
+  const referral = sanitizedReferral(req.query.ref);
+  const activeListings = db.listings.filter(l => (l.companyId === company.id || db.users.some(u => u.companyId === company.id && u.id === l.ownerId)) && listingFreshness(l).availabilityStatus !== 'archived').length;
+  const destination = destinationWithRef(`/?view=company&company=${encodeURIComponent(company.id)}`, referral);
+  res.type('html').send(shareLandingHtml({
+    title: `${company.name} | Better Real Estate`,
+    description: `${activeListings} active listing${activeListings === 1 ? '' : 's'}${company.markets?.length ? ` · ${company.markets.slice(0,3).join(', ')}` : ''}.`,
+    image: company.logoUrl || '/brand-logo.png',
+    destination
+  }));
+});
+
+app.get('/s/buyer/:id', async (req, res) => {
+  const db = await loadDB();
+  const user = db.users.find(u => u.id === req.params.id || normalizeUsername(u.username) === normalizeUsername(req.params.id));
+  if (!user) return res.status(404).type('html').send('Buyer page not found.');
+  const referral = sanitizedReferral(req.query.ref);
+  const publicBox = getBuyBoxes(user).find(bb => bb.public === true && bb.active !== false);
+  const markets = publicBox?.cities?.slice(0,4).join(', ') || user.location || 'multiple markets';
+  const destination = destinationWithRef(`/?view=profile&user=${encodeURIComponent(user.id)}`, referral);
+  res.type('html').send(shareLandingHtml({
+    title: `${user.name} is buying on Better Real Estate`,
+    description: `Investor demand in ${markets}${publicBox?.strategy ? ` · ${publicBox.strategy}` : ''}.`,
+    image: user.avatarUrl || '/brand-logo.png',
+    destination
+  }));
+});
+
+app.post('/api/share-events', requireAuth, async (req, res) => {
+  req.db.shareEvents = req.db.shareEvents || [];
+  const now = Date.now();
+  const recent = req.db.shareEvents.filter(e => e.userId === req.user.id && now - new Date(e.at || 0).getTime() < 60_000).length;
+  if (recent < 30) {
+    req.db.shareEvents.push({
+      id: crypto.randomUUID(),
+      userId: req.user.id,
+      kind: String(req.body?.kind || 'site').slice(0, 30),
+      targetId: String(req.body?.targetId || '').slice(0, 120),
+      channel: String(req.body?.channel || 'share').slice(0, 30),
+      at: new Date().toISOString()
+    });
+    await saveDB(req.db);
+  }
+  res.json({ ok: true });
 });
 
 function buyerPortalTarget(db, type, id) {
@@ -2451,17 +2752,8 @@ app.get('/api/messages', requireAuth, async (req, res) => {
 /* ============================ LEADERBOARD & ADMIN ============================ */
 app.get('/api/leaderboard', async (req, res) => {
   const db = await loadDB();
-  const rows = db.users.filter(u => u.role !== 'admin').map(u => {
-    const revs = db.reviews.filter(r => r.aboutUserId === u.id);
-    const closed = db.saves.filter(s => s.verified && db.listings.find(l => l.id === s.listingId)?.ownerId === u.id).length;
-    return {
-      id: u.id, name: u.name, role: u.role, points: u.points, badge: badgeFor(u.points),
-      avatarUrl: u.avatarUrl, verified: !!u.verified, closedDeals: closed,
-      rating: revs.length ? (revs.reduce((s, r) => s + r.rating, 0) / revs.length).toFixed(1) : null,
-      reviewCount: revs.length
-    };
-  }).sort((a, b) => b.points - a.points).slice(0, 50);
-  res.json({ leaderboard: rows });
+  const period = String(req.query.period || 'all') === 'month' ? 'month' : 'all';
+  res.json({ leaderboard: leaderboardRows(db, period), period });
 });
 app.get('/api/admin/pending', requireAuth, requireAdmin, async (req, res) => {
   res.json({ pending: req.db.saves.filter(s => !s.verified).map(s => ({ ...s, listing: req.db.listings.find(l => l.id === s.listingId) })) });
@@ -2471,6 +2763,7 @@ app.post('/api/admin/verify', requireAuth, requireAdmin, async (req, res) => {
   if (!save) return res.status(404).json({ error: 'Not found.' });
   if (save.verified) return res.status(409).json({ error: 'Already verified.' });
   save.verified = true;
+  save.verifiedAt = new Date().toISOString();
   const listing = req.db.listings.find(l => l.id === save.listingId);
   if (listing) listing.closedVerified = true;
   const buyer = req.db.users.find(u => u.id === save.userId);
@@ -2488,6 +2781,89 @@ app.get('/api/admin/revenue', requireAuth, requireAdmin, async (req, res) => {
     users: req.db.users.length, listings: req.db.listings.length, orders: req.db.orders.length });
 });
 
+/* ============================ ADMIN MEMBERSHIP GRANTS ============================ */
+app.get('/api/admin/memberships', requireAuth, requireAdmin, async (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase().slice(0, 120);
+  const users = req.db.users
+    .filter(u => u.role !== 'admin')
+    .filter(u => !q || [u.name, u.email, u.username, u.role, u.location].filter(Boolean).join(' ').toLowerCase().includes(q))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 120)
+    .map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      username: u.username || null,
+      role: u.role,
+      location: u.location || '',
+      paidPlan: u.plan || 'free',
+      paidPlanUntil: u.planUntil || null,
+      grant: membershipGrantSummary(u),
+      access: accessFor(u),
+      createdAt: u.createdAt || null
+    }));
+  const history = (req.db.membershipGrants || [])
+    .slice()
+    .sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 80)
+    .map(g => {
+      const u = req.db.users.find(x => x.id === g.userId);
+      return { ...g, userName: u?.name || 'Deleted account', userEmail: u?.email || null };
+    });
+  const monthly = leaderboardRows(req.db, 'month');
+  res.json({ users, history, monthlyLeader: monthly[0] || null });
+});
+
+app.post('/api/admin/memberships/grant', requireAuth, requireAdmin, async (req, res) => {
+  const user = req.db.users.find(u => u.id === req.body?.userId && u.role !== 'admin');
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+  let grant;
+  try {
+    grant = grantMembership(req.db, user, {
+      tier: req.body?.tier,
+      days: req.body?.days,
+      reason: req.body?.reason,
+      grantedBy: req.user.id,
+      source: 'manual'
+    });
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  await saveDB(req.db);
+  if (mailer.configured() && user.emailVerified) mailer.sendMembershipGranted?.(user.email, user.name, { tier: grant.plan, expiresAt: grant.until, reason: user.grantReason }).catch(e => console.error('[mail][membership-grant]', e.message));
+  res.json({ ok: true, user: { id: user.id, name: user.name, email: user.email }, grant, access: accessFor(user) });
+});
+
+app.post('/api/admin/memberships/revoke', requireAuth, requireAdmin, async (req, res) => {
+  const user = req.db.users.find(u => u.id === req.body?.userId && u.role !== 'admin');
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+  revokeMembershipGrant(req.db, user, req.user.id);
+  await saveDB(req.db);
+  res.json({ ok: true, access: accessFor(user) });
+});
+
+app.post('/api/admin/memberships/award-leaderboard', requireAuth, requireAdmin, async (req, res) => {
+  const leader = leaderboardRows(req.db, 'month').find(r => r.points > 0);
+  if (!leader) return res.status(409).json({ error: 'There is no monthly leaderboard leader with verified closing points yet.' });
+  const user = req.db.users.find(u => u.id === leader.id);
+  if (!user) return res.status(404).json({ error: 'Leaderboard user not found.' });
+  let grant;
+  try {
+    grant = grantMembership(req.db, user, {
+      tier: req.body?.tier || 'platinum',
+      days: req.body?.days || 30,
+      reason: req.body?.reason || `Monthly leaderboard prize — ${leader.points} pts`,
+      grantedBy: req.user.id,
+      source: 'leaderboard'
+    });
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  await saveDB(req.db);
+  if (mailer.configured() && user.emailVerified) mailer.sendMembershipGranted?.(user.email, user.name, { tier: grant.plan, expiresAt: grant.until, reason: user.grantReason }).catch(e => console.error('[mail][membership-prize]', e.message));
+  res.json({ ok: true, winner: leader, grant });
+});
+
 
 /* ============================ ADMIN EMAIL CENTER ============================ */
 app.get('/api/admin/email-center', requireAuth, requireAdmin, async (req, res) => {
@@ -2501,7 +2877,22 @@ app.get('/api/admin/email-center', requireAuth, requireAdmin, async (req, res) =
   const broadcasts = (req.db.emailBroadcasts || []).slice().sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 30)
     .map(b => ({ id:b.id, subject:b.subject, audience:b.audience, status:b.status, scheduledAt:b.scheduledAt, createdAt:b.createdAt, sentCount:Number(b.sentCount||0), failedCount:Number(b.failedCount||0), finishedAt:b.finishedAt || null }));
   const verificationFailures = req.db.users.filter(u => u.role !== 'admin' && u.verificationEmailLastStatus === 'failed').sort((a,b) => new Date(b.verificationEmailLastAttemptAt || 0) - new Date(a.verificationEmailLastAttemptAt || 0)).slice(0, 10).map(u => ({ email:u.email, at:u.verificationEmailLastAttemptAt || null, error:u.verificationEmailLastError || 'Delivery failed' }));
-  res.json({ health, marketingConfigured: marketing.configured(), counts, broadcasts, verificationFailures });
+  res.json({
+    health,
+    marketingConfigured: marketing.configured(),
+    counts,
+    broadcasts,
+    verificationFailures,
+    signupAlertsEnabled: req.user.settings?.notifyOnNewSignup !== false
+  });
+});
+
+app.patch('/api/admin/email-center/signup-alerts', requireAuth, requireAdmin, async (req, res) => {
+  const next = { ...defaultSettings(), ...req.user.settings };
+  next.notifyOnNewSignup = req.body?.enabled !== false;
+  req.user.settings = next;
+  await saveDB(req.db);
+  res.json({ enabled: next.notifyOnNewSignup });
 });
 
 app.post('/api/admin/email-center/preview-audience', requireAuth, requireAdmin, async (req, res) => {

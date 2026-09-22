@@ -1,5 +1,10 @@
 # Go live — the whole sequence
 
+## v23 growth + rewards note
+
+v23 adds no new environment variables. The viral share system, referral deep links, membership grants, monthly leaderboard prizes, signup-alert toggle and dark-mode fixes deploy with the existing configuration. Complimentary grants do not overwrite or cancel paid Stripe subscriptions; access simply stops when the grant expiration time passes. Admin signup alerts and grant-notification emails depend on the same working Resend/domain configuration described below.
+
+
 Work top to bottom. Nothing here is optional except step 8.
 
 ---

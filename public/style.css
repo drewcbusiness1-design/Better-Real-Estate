@@ -501,9 +501,9 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .editpv .pvright{right:3px!important;}
 
 /* v11 — AI assistant + marketing consent */
-.aibox{margin:14px 0;padding:14px 15px;border:1px solid var(--line,#DBD7CD);border-radius:12px;background:var(--card,#fff);display:flex;flex-direction:column;gap:8px}
+.aibox{margin:14px 0;padding:14px 15px;border:1px solid var(--line);border-radius:12px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
 .aibox .btn-ghost{align-self:flex-start}
-.marketingopt{display:flex!important;align-items:flex-start;gap:9px;margin:12px 0 4px!important;font-size:13px;line-height:1.4;color:var(--muted,#40474F);font-weight:400!important}
+.marketingopt{display:flex!important;align-items:flex-start;gap:9px;margin:12px 0 4px!important;font-size:13px;line-height:1.4;color:var(--ink-soft);font-weight:400!important}
 .marketingopt input{margin-top:2px!important;flex:0 0 auto}
 
 /* ================= network / friends / chat ================= */
@@ -667,4 +667,52 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 @media(max-width:430px){.distributiongrid,.buyerdemandgrid{grid-template-columns:1fr;}}
 
 /* v22 communications */
-.emailpreview{border:1px solid var(--line);border-radius:14px;padding:22px;background:var(--surface);margin-top:4px;min-height:150px}.emailpreviewbrand{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--amber,#b66a00);margin-bottom:14px}.emailpreview h3{margin:0 0 10px}.emailpreview p{white-space:pre-wrap;line-height:1.55;margin:0 0 18px}
+.emailpreview{border:1px solid var(--line);border-radius:14px;padding:22px;background:var(--surface);margin-top:4px;min-height:150px}.emailpreviewbrand{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--accent-text);margin-bottom:14px}.emailpreview h3{margin:0 0 10px}.emailpreview p{white-space:pre-wrap;line-height:1.55;margin:0 0 18px}
+
+/* ================= v23 — growth sharing + membership rewards ================= */
+.sharestrip{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0 18px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.sharestrip.compact{margin:8px 0;padding:7px}
+.sharestrip button{border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;transition:transform .14s,border-color .16s,background .16s}
+.sharestrip button:hover{transform:translateY(-1px);border-color:var(--ink-soft)}
+.sharestrip .shareprimary{background:var(--navy-deep);color:var(--onaccent);border-color:var(--navy-deep)}
+.planperiodactions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.planperiodbtn{width:100%;border:1px solid #111;background:#111;color:#fff;border-radius:10px;padding:12px 10px;font-size:13.5px;font-weight:700;transition:transform .14s,opacity .16s}
+.planperiodbtn:hover{transform:translateY(-1px);opacity:.9}
+.grantbanner{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid color-mix(in srgb,var(--moss) 45%,var(--line));background:var(--moss-soft);padding:15px 16px;border-radius:13px;margin:14px 0 18px}
+.adminalertcard{margin:12px 0 18px;overflow:hidden}
+.membershipadmin>input{margin:8px 0 6px}
+.membershipusers{display:grid;gap:10px}
+.membershiprow{padding:16px;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,390px);gap:18px;align-items:start}
+.membershipmeta{min-width:0}
+.membershipname{font-weight:750;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.membershipbadges{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 6px}
+.grantcontrols{display:grid;grid-template-columns:1fr 80px;gap:8px;align-items:center}
+.grantcontrols input[placeholder="Reason"]{grid-column:1/-1}
+.grantcontrols button{min-height:40px}
+.grantcontrols.compact{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.grantcontrols.compact select{width:180px}
+.grantcontrols.compact input{width:90px}
+.prizecard{padding:17px}
+.prizecard h3{margin:5px 0 6px}
+.grantHistory .listrow{align-items:flex-start}
+
+/* Dark-mode consistency: keep wallet and utility surfaces dark instead of
+   inheriting the intentionally inverted --navy values. */
+.aibox{background:var(--surface);border-color:var(--line)}
+.marketingopt{color:var(--ink-soft)}
+:root[data-theme="dark"] .balancecard{background:linear-gradient(140deg,#171714 0%,#050505 100%);color:#fff;border:1px solid var(--line-strong)}
+:root[data-theme="dark"] .balancecard .btns button.solid{background:#fff;color:#111;border-color:#fff}
+:root[data-theme="dark"] .toast{background:#050505;color:#fff;border:1px solid var(--line-strong)}
+:root[data-theme="dark"] .emailpreview{background:var(--surface);color:var(--ink)}
+:root[data-theme="dark"] .planperiodbtn{background:#050505;color:#fff;border-color:#3b3b36}
+
+@media(max-width:680px){
+  .membershiprow{grid-template-columns:1fr}
+  .grantcontrols{grid-template-columns:1fr 82px}
+  .sharestrip button{flex:1 1 auto}
+}
+@media(max-width:420px){
+  .planperiodactions{grid-template-columns:1fr}
+  .grantcontrols{grid-template-columns:1fr}
+  .grantcontrols input[placeholder="Reason"]{grid-column:auto}
+}

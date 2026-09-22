@@ -3,7 +3,8 @@ let state = {
   detailId: null, profileId: null, photoIdx: 0, composePhotos: [], shopPhotos: [],
   shopCat: 'All', shopQ: '', shopItemId: null, shopEditId: null, shopEditPhotos: [], shopManageQ: '',
   networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0,
-  companyId: null, companyInviteToken: null, buyerPortalType: null, buyerPortalId: null
+  companyId: null, companyInviteToken: null, buyerPortalType: null, buyerPortalId: null,
+  pendingReferral: null, leaderboardPeriod: 'all', postAuthTarget: null
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -63,7 +64,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','admin','emailcenter','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','admin','emailcenter','memberships','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -105,6 +106,13 @@ function writeRoute(mode = 'push') {
 
 async function boot() {
   const params = new URLSearchParams(location.search);
+  const incomingRef = String(params.get('ref') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
+  if (incomingRef) {
+    state.pendingReferral = incomingRef;
+    try { localStorage.setItem('bre_referral_code', incomingRef); } catch {}
+  } else {
+    try { state.pendingReferral = localStorage.getItem('bre_referral_code') || null; } catch {}
+  }
   state.verifyToken = params.get('verify');
   state.resetToken = params.get('reset');
   const checkoutResult = params.get('checkout');
@@ -136,7 +144,21 @@ async function boot() {
   else if (state.companyInviteToken && state.user) state.view = 'companyjoin';
   else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : 'feed';
   else if (state.companyInviteToken) { state.view = 'auth'; state.authMode = 'signup'; }
-  else state.view = requestedView && ROUTED_VIEWS.has(requestedView) ? requestedView : 'home';
+  else {
+    const publicWithoutAccount = new Set(['home','auth','about','terms','privacy','contact','faq','forgot','buyerportal']);
+    if (requestedView && ROUTED_VIEWS.has(requestedView) && !publicWithoutAccount.has(requestedView)) {
+      state.postAuthTarget = {
+        view: requestedView,
+        detailId: state.detailId,
+        profileId: state.profileId,
+        companyId: state.companyId,
+        shopItemId: state.shopItemId,
+        networkTab: state.networkTab
+      };
+      state.view = 'auth';
+      state.authMode = 'signup';
+    } else state.view = requestedView && ROUTED_VIEWS.has(requestedView) ? requestedView : 'home';
+  }
   if (state.user) await refreshUnread();
   if (!state.verifyToken && !state.resetToken) writeRoute('replace');
   render();
@@ -218,7 +240,7 @@ async function renderApp() {
     home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
     compose: renderCompose, saved: renderSaved, messages: renderMessages, chat: renderChat, network: renderNetwork,
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
-    promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter,
+    promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
     boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal,
@@ -300,7 +322,7 @@ function renderAuth() {
   const name = el('input', { placeholder: 'Jordan Alvarez' });
   const email = el('input', { type: 'text', autocomplete: 'username', placeholder: isSignup ? 'you@email.com' : 'Email or @username' });
   const pass = el('input', { type: 'password', placeholder: isSignup ? 'At least 6 characters' : 'Your password' });
-  const ref = el('input', { placeholder: 'Optional' });
+  const ref = el('input', { placeholder: 'Optional', value: state.pendingReferral || '' });
   const marketingOpt = el('input', { type: 'checkbox', style: 'width:auto;margin:0' });
   const err = el('div', { class: 'errmsg' });
 
@@ -334,10 +356,18 @@ function renderAuth() {
         : { email: email.value.trim(), password: pass.value };
       const d = await api('POST', isSignup ? '/api/signup' : '/api/login', payload);
       state.user = d.user; if (d.pricing) state.pricing = d.pricing;
+      if (isSignup) {
+        state.pendingReferral = null;
+        try { localStorage.removeItem('bre_referral_code'); } catch {}
+      }
       await refreshMe();
       applyTheme(state.user.settings?.theme || 'light');
       if (isSignup && d.verificationEmailSent === false) toast('Your account was created, but the confirmation email could not be delivered. Use Resend on the feed; the admin can see the delivery issue in Email Center.', 'err');
-      go(state.companyInviteToken ? 'companyjoin' : 'feed');
+      if (state.companyInviteToken) go('companyjoin');
+      else if (state.postAuthTarget) {
+        const target = state.postAuthTarget; state.postAuthTarget = null;
+        go(target.view || 'feed', { detailId: target.detailId, profileId: target.profileId, companyId: target.companyId, shopItemId: target.shopItemId, networkTab: target.networkTab || 'discover' });
+      } else go('feed');
     } catch (e) { err.textContent = e.message; }
   };
   wrap.appendChild(submit);
@@ -550,6 +580,7 @@ function propertyCard(l) {
       l.matchReasons?.length ? el('div', { class: 'matchrow' }, l.matchReasons.map(r => el('span', { class: 'matchtag' }, r))) : null,
       el('div', { class: 'actions' }, [
         saveBtn,
+        el('button', { onclick: e => { e.stopPropagation(); shareNative({ kind: 'property', targetId: l.id, title: `${l.city} property on Better Real Estate`, text: `${money(l.asking)} · ${l.propertyType || 'Investment property'}` }); } }, 'Share'),
         el('button', { class: 'primary', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, l.locked ? '🔒 Unlock' : 'View details')
       ])
     ])
@@ -560,6 +591,61 @@ function propertyCard(l) {
 async function copyTextValue(text, label = 'Copied') {
   try { await navigator.clipboard.writeText(String(text || '')); toast(label, 'ok'); }
   catch { prompt('Copy:', String(text || '')); }
+}
+
+function shareReferralSuffix() {
+  const code = String(state.user?.referralCode || '').trim().toUpperCase();
+  return code ? '?ref=' + encodeURIComponent(code) : '';
+}
+function shareUrl(kind = 'join', targetId = '') {
+  const base = location.origin;
+  const id = encodeURIComponent(String(targetId || ''));
+  if (kind === 'property') return `${base}/s/property/${id}${shareReferralSuffix()}`;
+  if (kind === 'profile') return `${base}/s/profile/${id}${shareReferralSuffix()}`;
+  if (kind === 'company') return `${base}/s/company/${id}${shareReferralSuffix()}`;
+  if (kind === 'buyer') return `${base}/s/buyer/${id}${shareReferralSuffix()}`;
+  return `${base}/s/join${shareReferralSuffix()}`;
+}
+function trackShare(kind, targetId, channel) {
+  if (!state.user) return;
+  api('POST', '/api/share-events', { kind, targetId, channel }).catch(() => {});
+}
+async function shareNative({ kind = 'join', targetId = '', title = 'Better Real Estate', text = '' } = {}) {
+  const url = shareUrl(kind, targetId);
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url });
+      trackShare(kind, targetId, 'native');
+      return true;
+    } catch (e) {
+      if (e?.name === 'AbortError') return false;
+    }
+  }
+  await copyTextValue(url, 'Share link copied');
+  trackShare(kind, targetId, 'copy');
+  return true;
+}
+function socialShareWindow(channel, kind, targetId, title, text = '') {
+  const url = shareUrl(kind, targetId);
+  const u = encodeURIComponent(url);
+  const t = encodeURIComponent([title, text].filter(Boolean).join(' — '));
+  const destinations = {
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${u}`,
+    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${u}`,
+    x: `https://twitter.com/intent/tweet?url=${u}&text=${t}`
+  };
+  if (!destinations[channel]) return;
+  trackShare(kind, targetId, channel);
+  window.open(destinations[channel], '_blank', 'noopener,noreferrer,width=720,height=640');
+}
+function shareStrip({ kind = 'join', targetId = '', title = 'Better Real Estate', text = '', compact = false } = {}) {
+  const bar = el('div', { class: 'sharestrip' + (compact ? ' compact' : '') });
+  bar.appendChild(el('button', { class: 'shareprimary', onclick: () => shareNative({ kind, targetId, title, text }) }, 'Share'));
+  bar.appendChild(el('button', { onclick: async () => { await copyTextValue(shareUrl(kind, targetId), 'Share link copied'); trackShare(kind, targetId, 'copy'); } }, 'Copy link'));
+  bar.appendChild(el('button', { onclick: () => socialShareWindow('facebook', kind, targetId, title, text) }, 'Facebook'));
+  bar.appendChild(el('button', { onclick: () => socialShareWindow('linkedin', kind, targetId, title, text) }, 'LinkedIn'));
+  bar.appendChild(el('button', { onclick: () => socialShareWindow('x', kind, targetId, title, text) }, 'X'));
+  return bar;
 }
 function escapeHtml(v) { return String(v ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch])); }
 function openDealFlyer(pack, listing) {
@@ -627,6 +713,7 @@ async function renderDetail() {
     el('div', {}, [el('h2', {}, listing.address), el('div', { class: 'c' }, listing.city), listing.freshness ? el('div', { class: 'freshnessline' }, [el('span', { class: 'freshnesspill' + (listing.freshness.needsConfirmation ? ' warn' : '') }, listing.freshness.needsConfirmation ? 'Needs seller confirmation' : `Confirmed ${listing.freshness.confirmedDaysAgo === 0 ? 'today' : listing.freshness.confirmedDaysAgo + 'd ago'}`), listing.contractDeadline ? el('span', {}, `Deadline ${listing.contractDeadline}`) : null]) : null]),
     el('div', { class: 'dprice' }, money(listing.asking))
   ]));
+  wrap.appendChild(shareStrip({ kind: 'property', targetId: listing.id, title: `${listing.city} property on Better Real Estate`, text: `${money(listing.asking)} · ${listing.propertyType || 'Investment property'}` }));
 
   const cells = [
     ['Situation', listing.situation], ['Timeline', listing.timeline], ['Type', listing.propertyType],
@@ -834,6 +921,13 @@ function renderUpgrade() {
       el('div', { class: 'sub' }, 'All Better Real Estate platform features are permanently unlocked for this admin account. No subscription, unlock packs, AI quota, buy-box cap, or promotion charge is required.')
     ]));
   }
+  if (!adminUnlimited && state.access?.grantPlan && state.access?.grantUntil && new Date(state.access.grantUntil) > new Date()) {
+    const grantName = state.access.grantPlan === 'wholesale' ? 'Wholesale Teams' : state.access.grantPlan === 'platinum' ? 'Platinum' : 'Pro';
+    wrap.appendChild(el('div', { class: 'grantbanner' }, [
+      el('div', {}, [el('b', {}, `Complimentary ${grantName}`), el('div', { class: 'hint' }, `Granted through ${new Date(state.access.grantUntil).toLocaleDateString()}${state.access.grantReason ? ' · ' + state.access.grantReason : ''}. It expires automatically and does not cancel any paid subscription.`)]),
+      el('span', { class: 'pill good' }, 'FREE ACCESS')
+    ]));
+  }
 
   wrap.appendChild(el('div', { class: 'tiergrid4' }, [
     tierCard({
@@ -892,20 +986,23 @@ function renderUpgrade() {
   if (currentTier === 'wholesale' && !companySeatAccess) wrap.appendChild(el('button', { class: 'btn-ghost', style: 'margin-top:12px', onclick: () => go('companyworkspace') }, state.user.companyId ? 'Open company workspace' : 'Set up company workspace'));
   wrap.appendChild(st);
 
-  if (!adminUnlimited && currentTier !== 'free' && !companySeatAccess) {
+  const paidTier = state.access?.paidPlan || state.user?.plan || 'free';
+  const paidUntil = state.access?.paidPlanUntil || state.user?.planUntil || null;
+  if (!adminUnlimited && paidTier !== 'free' && paidUntil && new Date(paidUntil) > new Date() && !companySeatAccess) {
+    const paidName = paidTier === 'wholesale' ? 'Wholesale Teams' : paidTier === 'platinum' ? 'Platinum' : 'Pro';
     const cst = el('div', { class: 'okmsg' });
     const cancelBtn = el('button', { class: 'btn-ghost' }, 'Cancel auto-renewal');
     cancelBtn.onclick = async () => {
-      if (!confirm(`Stop future automatic charges? You keep ${currentTier === 'wholesale' ? 'Wholesale Teams' : currentTier === 'platinum' ? 'Platinum' : 'Pro'} until ${new Date(state.user.planUntil).toLocaleDateString()}, then it won't renew.`)) return;
+      if (!confirm(`Stop future automatic charges? You keep ${paidName} until ${new Date(paidUntil).toLocaleDateString()}, then it won't renew.`)) return;
       try {
         const r = await api('POST', '/api/billing/cancel');
         await refreshMe();
-        cst.textContent = r.cancelsAtPeriodEnd ? `Won't renew — stays active until ${new Date(state.user.planUntil).toLocaleDateString()}.` : 'Cancelled.';
+        cst.textContent = r.cancelsAtPeriodEnd ? `Won't renew — paid access stays active until ${new Date(paidUntil).toLocaleDateString()}.` : 'Cancelled.';
         render();
       } catch (e) { cst.className = 'errmsg'; cst.textContent = e.message; }
     };
     wrap.appendChild(el('div', { class: 'card', style: 'padding:16px;margin:18px 0' }, [
-      el('div', { class: 'hint', style: 'margin-bottom:10px' }, `You're on ${currentTier === 'wholesale' ? 'Wholesale Teams' : currentTier === 'platinum' ? 'Platinum' : 'Pro'}, renewing automatically until ${new Date(state.user.planUntil).toLocaleDateString()}.`),
+      el('div', { class: 'hint', style: 'margin-bottom:10px' }, `Paid ${paidName} is active through ${new Date(paidUntil).toLocaleDateString()}.${state.access?.grantPlan ? ' Your complimentary grant is tracked separately.' : ''}`),
       cancelBtn, cst
     ]));
   }
@@ -949,9 +1046,9 @@ function tierCard({ key, name, tagline, priceLine, perks, current, featured, onM
   if (current) {
     card.appendChild(el('div', { class: 'pill good', style: 'display:inline-block;margin-top:10px' }, 'Your current plan'));
   } else if (onMonthly) {
-    card.appendChild(el('div', { class: 'row2', style: 'margin-top:14px' }, [
-      el('button', { class: featured ? 'submitbtn' : 'btn-ghost', style: 'width:100%', onclick: onMonthly }, 'Monthly'),
-      el('button', { class: featured ? 'submitbtn' : 'btn-ghost', style: 'width:100%', onclick: onAnnual }, 'Annual')
+    card.appendChild(el('div', { class: 'planperiodactions' }, [
+      el('button', { class: 'planperiodbtn', onclick: onMonthly }, 'Monthly'),
+      el('button', { class: 'planperiodbtn', onclick: onAnnual }, 'Annual')
     ]));
   }
   return card;
@@ -2026,6 +2123,7 @@ function buyerDemandCard(row) {
   ].filter(Boolean)));
   card.appendChild(el('div', { class: 'personactions' }, [
     el('button', { onclick: () => go('profile', { profileId: u.id }) }, 'View profile'),
+    el('button', { onclick: () => shareNative({ kind: 'buyer', targetId: u.id, title: `${u.name || 'Investor'} is buying on Better Real Estate`, text: [...(row.cities || []).slice(0,3), row.strategy].filter(Boolean).join(' · ') }) }, 'Share'),
     el('button', { class: 'primary', onclick: () => go('chat', { chatUserId: u.id }) }, 'Message buyer')
   ]));
   return card;
@@ -2292,6 +2390,7 @@ async function renderMe() {
    ...(state.user.role === 'admin' ? [
      ['Admin — verify deals', () => go('admin')],
      ['Admin — Email Center', () => go('emailcenter')],
+     ['Admin — Membership grants', () => go('memberships')],
      ['Admin — suppliers', () => go('suppliers')],
      ['Admin — fulfilment queue', () => go('fulfilment')],
      ['Admin — reports', () => go('reports')]
@@ -2304,10 +2403,13 @@ async function renderMe() {
 
   // referral
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Refer a friend'));
-  wrap.appendChild(el('div', { class: 'card', style: 'padding:16px' }, [
-    el('div', { class: 'dnotes' }, `Share your code — you both get ${cents(state.pricing.referralBonus)} in wallet credit when they make their first purchase.`),
-    el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:28px;font-weight:700;margin-top:10px;letter-spacing:.08em" }, state.user.referralCode)
-  ]));
+  const referralCard = el('div', { class: 'card', style: 'padding:16px' }, [
+    el('div', { class: 'dnotes' }, `Share Better Real Estate — your referral code is attached automatically to your invite links. You both get ${cents(state.pricing.referralBonus)} in wallet credit when they make their first purchase.`),
+    el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:28px;font-weight:700;margin-top:10px;letter-spacing:.08em" }, state.user.referralCode),
+    el('div', { class: 'hint', style: 'margin-top:5px;word-break:break-all' }, shareUrl('join'))
+  ]);
+  referralCard.appendChild(shareStrip({ kind: 'join', title: 'Join me on Better Real Estate', text: 'A real-estate-only network for investors, wholesalers, buyers and live deals.' }));
+  wrap.appendChild(referralCard);
 
   // verification
   if (!state.user.verified) {
@@ -2361,6 +2463,7 @@ async function renderProfile() {
   ]);
   const profileHero = el('div', { class: 'profilehero' }, [avatarNode(owner, 'profile'), profileBody]);
   wrap.appendChild(profileHero);
+  wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${owner.role}${owner.location ? ' · ' + owner.location : ''}` }));
 
   if (state.user && state.user.id !== owner.id) {
     const actions = el('div', { class: 'profileactions' });
@@ -2676,6 +2779,7 @@ async function renderCompany() {
       company.website ? el('a', { href: company.website.startsWith('http') ? company.website : 'https://' + company.website, target: '_blank', rel: 'noopener noreferrer' }, company.website) : null
     ])
   ]));
+  wrap.appendChild(shareStrip({ kind: 'company', targetId: company.id, title: `${company.name} on Better Real Estate`, text: company.markets?.length ? `Active in ${company.markets.slice(0,3).join(', ')}` : 'Real estate company profile' }));
   wrap.appendChild(el('div', { class: 'statgrid' }, [stat(members.length, 'Team'), stat(listings.length, 'Listings'), stat(company.seatLimit, 'Seats')]));
   wrap.appendChild(el('button', { class: 'submitbtn', style: 'margin:8px 0 14px', onclick: () => go('buyerportal', { buyerPortalType: 'company', buyerPortalId: company.id }) }, 'Join ' + company.name + "'s buyer list"));
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Team'));
@@ -2909,11 +3013,18 @@ function toggleRow(title, desc, initial, onChange) {
 async function renderLeaderboard() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Leaderboard'));
-  wrap.appendChild(el('div', { class: 'sub' }, 'Points come only from deals an admin verified as closed — not self-reported.'));
-  const { leaderboard } = await api('GET', '/api/leaderboard');
+  wrap.appendChild(el('div', { class: 'sub' }, 'Points come only from deals an admin verified as closed — not self-reported. Monthly rankings can be used for complimentary membership prizes.'));
+  const tabs = el('div', { class: 'networktabs' });
+  [['all','All time'],['month','This month']].forEach(([period,label]) => {
+    const b = el('button', { class: state.leaderboardPeriod === period ? 'active' : '' }, label);
+    b.onclick = () => { state.leaderboardPeriod = period; render(); };
+    tabs.appendChild(b);
+  });
+  wrap.appendChild(tabs);
+  const { leaderboard } = await api('GET', '/api/leaderboard?period=' + encodeURIComponent(state.leaderboardPeriod || 'all'));
   const card = el('div', { class: 'card' });
-  if (!leaderboard.length) card.appendChild(el('div', { class: 'lbrow' }, el('div', {}, 'No verified deals yet.')));
-  leaderboard.forEach((r, i) => card.appendChild(el('div', { class: 'lbrow' }, [
+  if (!leaderboard.length || (state.leaderboardPeriod === 'month' && !leaderboard.some(r => r.points > 0))) card.appendChild(el('div', { class: 'lbrow' }, el('div', {}, state.leaderboardPeriod === 'month' ? 'No verified closing points this month yet.' : 'No verified deals yet.')));
+  leaderboard.filter(r => state.leaderboardPeriod !== 'month' || r.points > 0).forEach((r, i) => card.appendChild(el('div', { class: 'lbrow' }, [
     el('div', { class: 'lbrank' }, String(i + 1)),
     el('div', { class: 'av', style: 'width:34px;height:34px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;overflow:hidden' },
       r.avatarUrl ? el('img', { src: r.avatarUrl, style: 'width:100%;height:100%;object-fit:cover' }) : initials(r.name)),
@@ -2953,6 +3064,14 @@ async function renderEmailCenter() {
     testSt
   ]));
   wrap.appendChild(health);
+  const signupAlertCard = el('div', { class: 'card adminalertcard' });
+  signupAlertCard.appendChild(toggleRow(
+    'Email me when someone signs up',
+    'Sends a transactional admin alert for each new account. You can turn this off without affecting verification or user emails.',
+    data.signupAlertsEnabled !== false,
+    async enabled => { await api('PATCH', '/api/admin/email-center/signup-alerts', { enabled }); toast(enabled ? 'New-signup alerts enabled' : 'New-signup alerts disabled', 'ok'); }
+  ));
+  wrap.appendChild(signupAlertCard);
   if ((data.verificationFailures || []).length) {
     wrap.appendChild(el('div', { class:'sectiontitle' }, 'Recent verification delivery failures'));
     const fails = el('div', { class:'card' });
@@ -3013,6 +3132,114 @@ async function renderEmailCenter() {
     el('span',{class:'pill ' + (b.status === 'sent' ? 'good' : '')},b.status)
   ])));
   wrap.appendChild(hist);
+  return wrap;
+}
+
+
+/* ================= ADMIN: MEMBERSHIP GRANTS ================= */
+async function renderMemberships() {
+  const wrap = el('div', { class: 'page membershipadmin' });
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('me') }, '← Back'));
+  wrap.appendChild(el('div', { class: 'pageheadrow' }, [
+    el('div', {}, [el('h2', {}, 'Membership grants'), el('div', { class: 'sub' }, 'Give a user complimentary Pro, Platinum or Wholesale Teams access for a fixed period. Grants expire automatically and never erase a paid subscription.')])
+  ]));
+
+  const search = el('input', { placeholder: 'Search name, email, @username, role or market…' });
+  const host = el('div', { class: 'membershipusers' });
+  const historyHost = el('div');
+  const prizeHost = el('div');
+  let seq = 0;
+
+  const grantLabel = plan => plan === 'wholesale' ? 'Wholesale Teams' : plan === 'platinum' ? 'Platinum' : plan === 'pro' ? 'Pro' : 'None';
+  const fmtDate = d => d ? new Date(d).toLocaleDateString() : '—';
+
+  async function load() {
+    const mine = ++seq;
+    host.innerHTML = '<div class="networkloading">Loading members…</div>';
+    try {
+      const data = await api('GET', '/api/admin/memberships?q=' + encodeURIComponent(search.value.trim()));
+      if (mine !== seq) return;
+      host.innerHTML = '';
+      prizeHost.innerHTML = '';
+      historyHost.innerHTML = '';
+
+      const leader = data.monthlyLeader;
+      const prize = el('div', { class: 'card prizecard' });
+      prize.appendChild(el('div', { class: 'grow' }, [
+        el('div', { class: 'dispoeyebrow' }, 'MONTHLY LEADERBOARD PRIZE'),
+        el('h3', {}, leader && leader.points > 0 ? `${leader.name} leads with ${leader.points} pts` : 'No verified leader yet'),
+        el('div', { class: 'hint' }, leader && leader.points > 0 ? 'Award a time-limited membership with one click. The grant will expire automatically.' : 'A prize becomes available when at least one closing earns verified points this month.')
+      ]));
+      const prizeControls = el('div', { class: 'grantcontrols compact' });
+      const ptier = el('select', {}, [['platinum','Platinum'],['pro','Pro'],['wholesale','Wholesale Teams']].map(([v,l]) => el('option',{value:v},l)));
+      const pdays = el('input', { type:'number', min:'1', max:'730', value:'30', title:'Days' });
+      const award = el('button', { class: 'btn-primary', disabled: !(leader && leader.points > 0) }, 'Award prize');
+      award.onclick = async () => {
+        if (!leader || leader.points <= 0) return;
+        if (!confirm(`Grant ${leader.name} ${grantLabel(ptier.value)} for ${pdays.value} days as this month's leaderboard prize?`)) return;
+        try { await api('POST','/api/admin/memberships/award-leaderboard',{ tier:ptier.value, days:Number(pdays.value), reason:'Monthly leaderboard prize' }); toast('Leaderboard prize granted', 'ok'); await load(); } catch(e) { toast(e.message,'err'); }
+      };
+      prizeControls.append(ptier,pdays,award); prize.appendChild(prizeControls); prizeHost.appendChild(prize);
+
+      if (!data.users.length) host.appendChild(el('div',{class:'empty compact'},el('p',{},'No users match that search.')));
+      data.users.forEach(u => {
+        const activeGrant = u.grant?.active;
+        const row = el('div', { class: 'card membershiprow' });
+        const paid = u.paidPlan && u.paidPlan !== 'free' && u.paidPlanUntil && new Date(u.paidPlanUntil) > new Date();
+        const meta = el('div', { class: 'membershipmeta' }, [
+          el('div', { class: 'membershipname' }, [u.name, u.username ? el('span',{class:'personhandle'},'@'+u.username) : null]),
+          el('div', { class: 's' }, `${u.email} · ${u.role}${u.location ? ' · ' + u.location : ''}`),
+          el('div', { class: 'membershipbadges' }, [
+            el('span', { class: 'pill' }, paid ? `Paid ${grantLabel(u.paidPlan)} through ${fmtDate(u.paidPlanUntil)}` : 'No active paid plan'),
+            activeGrant ? el('span', { class: 'pill good' }, `Free ${grantLabel(u.grant.grantPlan)} through ${fmtDate(u.grant.grantUntil)}`) : el('span', { class: 'pill' }, 'No complimentary grant')
+          ]),
+          activeGrant && u.grant.grantReason ? el('div', { class: 'hint' }, u.grant.grantReason) : null
+        ]);
+        const controls = el('div', { class: 'grantcontrols' });
+        const tier = el('select', {}, [['platinum','Platinum'],['pro','Pro'],['wholesale','Wholesale Teams']].map(([v,l]) => el('option',{value:v},l)));
+        const days = el('input', { type:'number', min:'1', max:'730', value:'30', title:'Days' });
+        const reason = el('input', { value:'Promotion / complimentary access', placeholder:'Reason' });
+        const grant = el('button', { class:'btn-primary' }, activeGrant ? 'Replace grant' : 'Grant');
+        grant.onclick = async () => {
+          const n = Number(days.value);
+          if (!n || n < 1 || n > 730) { toast('Choose 1–730 days','err'); return; }
+          if (!confirm(`Grant ${u.name} ${grantLabel(tier.value)} for ${n} days?`)) return;
+          try { await api('POST','/api/admin/memberships/grant',{ userId:u.id, tier:tier.value, days:n, reason:reason.value.trim() }); toast('Membership granted','ok'); await load(); } catch(e) { toast(e.message,'err'); }
+        };
+        controls.append(tier, days, reason, grant);
+        if (activeGrant) {
+          const revoke = el('button', { class:'dangerbtn' }, 'Revoke free access');
+          revoke.onclick = async () => { if (!confirm(`Revoke ${u.name}'s complimentary access? Any paid subscription stays untouched.`)) return; try { await api('POST','/api/admin/memberships/revoke',{ userId:u.id }); toast('Complimentary membership revoked','ok'); await load(); } catch(e) { toast(e.message,'err'); } };
+          controls.appendChild(revoke);
+        }
+        row.append(meta, controls); host.appendChild(row);
+      });
+
+      const history = el('div', { class:'card grantHistory' });
+      if (!(data.history || []).length) history.appendChild(el('div',{class:'listrow'},el('div',{class:'s'},'No complimentary memberships have been granted yet.')));
+      (data.history || []).forEach(g => history.appendChild(el('div',{class:'listrow'},[
+        el('div',{class:'grow'},[
+          el('div',{class:'t'},`${g.userName} · ${grantLabel(g.tier)}`),
+          el('div',{class:'s'},`${new Date(g.startsAt).toLocaleDateString()} → ${new Date(g.expiresAt).toLocaleDateString()}${g.revokedAt ? ' · revoked ' + new Date(g.revokedAt).toLocaleDateString() : ''}`),
+          el('div',{class:'hint'},`${g.reason || 'Complimentary membership'} · ${g.source === 'leaderboard' ? 'leaderboard prize' : 'manual grant'}`)
+        ])
+      ])));
+      historyHost.appendChild(history);
+    } catch(e) {
+      host.innerHTML=''; host.appendChild(el('div',{class:'errmsg'},e.message));
+    }
+  }
+
+  let timer;
+  search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+  wrap.appendChild(search);
+  wrap.appendChild(el('div', { class:'sectiontitle' }, 'Monthly prize'));
+  wrap.appendChild(prizeHost);
+  wrap.appendChild(el('div', { class:'sectiontitle' }, 'Users'));
+  wrap.appendChild(host);
+  wrap.appendChild(el('div', { class:'sectiontitle' }, 'Grant history'));
+  wrap.appendChild(historyHost);
+  load();
   return wrap;
 }
 
