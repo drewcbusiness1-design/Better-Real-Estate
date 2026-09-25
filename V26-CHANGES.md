@@ -2,7 +2,7 @@
 
 ## Major additions
 - Address-based AI Deal Builder entry point.
-- RentCast-backed property records, AVM/ARV range, sales comparables and long-term rent estimate when `RENTCAST_API_KEY` is configured.
+- Address-first Better Real Estate AI analysis using the already-configured OpenAI integration: preliminary property details, ARV range, repair scenarios and professional description, all clearly marked for review.
 - Smart Comps Workspace: include/exclude returned comps and recalculate a working ARV.
 - Repair planning scenarios (light/moderate/heavy) based on size and age, explicitly labeled as planning allowances rather than inspection findings.
 - Interactive Deal Analyzer with purchase price, repair scenario, assignment target, holding/closing allowance, working ARV, 70% MAO and projected flip spread.
@@ -15,7 +15,7 @@
 v26 is built on v25 Professional Operations and preserves the approved professional homepage, admin verification controls, membership-level display control, outline navigation icons, Better Dispo, Buyers Looking, AI deal-note import, AI listing copy, Deal Rooms, showings, Deal Rescue, Demand Insights, Team workspaces, social/network/chat, CJ marketplace, account controls, email/notification features and route persistence.
 
 ## Required production configuration
-`RENTCAST_API_KEY` enables the address intelligence portion of the Deal Builder. Without it, the UI remains available but clearly reports that the property-data provider must be configured; it does not fabricate property values or comps.
+The address Deal Builder uses the existing `OPENAI_API_KEY`. It does not require Better Real Estate AI or another property-data subscription, and it does not fabricate named comparable sales.
 
 ## Product/data guardrails
 - ARV is displayed as an AVM estimate/range, not an appraisal.

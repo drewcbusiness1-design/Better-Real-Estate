@@ -22,7 +22,7 @@ for(const route of ["app.get('/api/deal-builder/usage', requireAuth", "app.post(
 assert(server.includes('if (isAdminUser(user) || isPlatinum(user) || isWholesale(user)) return { unlimited:true'),'unlimited tiers mismatch');
 assert(server.includes('limit:5') && server.includes('5-used'),'Pro daily limit mismatch');
 assert(server.includes('dealBuilderTrialUses'),'free trial usage missing');
-const analyzePos=server.indexOf('const analysis=await propertyIntel.analyze(address)');
+const analyzePos=server.indexOf('const analysis=await ai.generateAddressDealAnalysis(address)');
 const chargePos=server.indexOf('req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1');
 assert(analyzePos>=0 && chargePos>analyzePos,'usage must only increment after successful property analysis');
 // Leaderboard copy must match server scoring and tolerate legacy users with no points field.
@@ -31,5 +31,5 @@ assert(server.includes('buyer.points = Number(buyer.points || 0) + 100') && serv
 assert(css.includes('.lbpts{margin-left:auto') && css.includes('font-family:inherit'),'leaderboard points alignment/font polish missing');
 // Packaging/config docs required by existing integration tests and deploy setup.
 assert(fs.existsSync('.env.example'),'.env.example missing from release');
-for(const k of ['DATABASE_URL=','SESSION_SECRET=','CJ_API_KEY=','GOOGLE_MAPS_API_KEY=','OPENAI_API_KEY=','RENTCAST_API_KEY=']) assert(fs.readFileSync('.env.example','utf8').includes(k),`.env.example missing ${k}`);
+for(const k of ['DATABASE_URL=','SESSION_SECRET=','CJ_API_KEY=','GOOGLE_MAPS_API_KEY=','OPENAI_API_KEY=']) assert(fs.readFileSync('.env.example','utf8').includes(k),`.env.example missing ${k}`);
 console.log('✓ exhaustive release wiring QA passed');

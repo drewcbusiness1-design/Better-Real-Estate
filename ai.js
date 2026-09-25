@@ -143,4 +143,49 @@ async function generateDealImport(rawText) {
   return parsed;
 }
 
-module.exports = { configured, model, generateListingCopy, generateDealImport, _extractOutputText: extractOutputText, _safeImageUrl: safeImageUrl };
+
+const addressDealSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['subject','arv','rehab','description','confidence','assumptions','warnings'],
+  properties: {
+    subject: { type:'object', additionalProperties:false, required:['formattedAddress','addressLine1','city','state','propertyType','bedrooms','bathrooms','squareFootage','yearBuilt'], properties:{
+      formattedAddress:{type:'string'}, addressLine1:{type:'string'}, city:{type:'string'}, state:{type:'string'}, propertyType:{type:'string'},
+      bedrooms:{anyOf:[{type:'number'},{type:'null'}]}, bathrooms:{anyOf:[{type:'number'},{type:'null'}]}, squareFootage:{anyOf:[{type:'number'},{type:'null'}]}, yearBuilt:{anyOf:[{type:'number'},{type:'null'}]}
+    }},
+    arv: { type:'object', additionalProperties:false, required:['estimate','low','high'], properties:{estimate:{type:'number'},low:{type:'number'},high:{type:'number'}}},
+    rehab: { type:'array', minItems:3, maxItems:3, items:{type:'object',additionalProperties:false,required:['key','label','estimate','perSqFt','scope'],properties:{key:{type:'string'},label:{type:'string'},estimate:{type:'number'},perSqFt:{type:'number'},scope:{type:'string'}}}},
+    description:{type:'string'}, confidence:{type:'string'}, assumptions:{type:'array',items:{type:'string'},maxItems:8}, warnings:{type:'array',items:{type:'string'},maxItems:8}
+  }
+};
+
+async function generateAddressDealAnalysis(address) {
+  if (!configured()) throw new Error('AI Deal Builder is not configured. Add OPENAI_API_KEY in Netlify.');
+  const clean = String(address || '').trim().slice(0, 300);
+  if (clean.length < 8) throw new Error('Enter a complete property address.');
+  const body = {
+    model: OPENAI_MODEL,
+    instructions: [
+      'You are the Better Real Estate investor Deal Builder. The user supplies only a property address.',
+      'Create a preliminary investor analysis: normalized address/property details when reasonably known, an estimated after-repair value range, three rehab planning scenarios, and a concise professional property/deal description.',
+      'This is decision-support, not an appraisal, inspection, MLS record, or verified property report. Never claim that you looked up a public record, MLS record, comparable sale, or live market source unless such data was actually supplied; none is supplied here.',
+      'When an exact property fact is not reliably known from the address/context, use null or an empty string rather than inventing it.',
+      'ARV and rehab ARE requested estimates. They may be reasoned estimates, but must be conservative, internally consistent, and accompanied by assumptions/warnings. Do not fabricate named comparable properties or exact sale records.',
+      'Rehab scenarios must be light, moderate, and heavy. If square footage is unknown, estimate total rehab conservatively without pretending a precise per-square-foot basis is verified.',
+      'The description must avoid protected-class/demographic language and must distinguish estimated condition/value statements from known facts.',
+      'confidence must be one of: Low, Moderate, High. With address-only input, use High only in exceptional cases.',
+      'Return only the requested structured fields.'
+    ].join('\n'),
+    input: [{ role:'user', content:[{type:'input_text', text:`Property address: ${clean}`}]}],
+    text:{format:{type:'json_schema',name:'better_real_estate_address_deal_analysis',schema:addressDealSchema,strict:true}},
+    max_output_tokens:1800
+  };
+  const res=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Authorization':`Bearer ${OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const payload=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error((payload?.error?.message||`OpenAI request failed (${res.status}).`).slice(0,300));
+  const text=extractOutputText(payload); if(!text) throw new Error('AI returned no property analysis.');
+  let parsed; try{parsed=JSON.parse(text)}catch{throw new Error('AI returned an unreadable property analysis.');}
+  parsed.provider='Better Real Estate AI'; parsed.generatedAt=new Date().toISOString(); parsed.comparables=[]; parsed.rent=null;
+  return parsed;
+}
+
+module.exports = { configured, model, generateListingCopy, generateDealImport, generateAddressDealAnalysis, _extractOutputText: extractOutputText, _safeImageUrl: safeImageUrl };

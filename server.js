@@ -7,7 +7,6 @@ const crypto = require('crypto');
 const mailer = require('./mailer');
 
 const { loadDB, saveDB } = require('./store');
-const propertyIntel = require('./property-intel');
 const { writeImage, readImage } = require('./storage');
 const dropship = require('./dropship');
 const cjAdapter = require('./cj-adapter');
@@ -1399,16 +1398,15 @@ function dealBuilderAllowance(user) {
 app.get('/api/deal-builder/usage', requireAuth, (req,res) => res.json({ usage:dealBuilderAllowance(req.user) }));
 app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
-  if(!propertyIntel.configured()) return res.status(503).json({error:'Address intelligence needs RENTCAST_API_KEY configured in Netlify.'});
+  if(!ai.configured()) return res.status(503).json({error:'AI Deal Builder is not configured. Add OPENAI_API_KEY in Netlify.'});
   const allowance=dealBuilderAllowance(req.user);
   if(!allowance.unlimited && allowance.remaining<=0) return res.status(403).json({error:isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Pro includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Pro includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.'),code:'DEAL_BUILDER_LIMIT',usage:allowance});
   try {
-    const analysis=await propertyIntel.analyze(address); let aiDraft=null;
-    if(ai.configured()){ try { const p=analysis.subject||{}; aiDraft=await ai.generateListingCopy({kind:'property',facts:{city:[p.city,p.state].filter(Boolean).join(', '),propertyType:p.propertyType,bedrooms:p.bedrooms,bathrooms:p.bathrooms,squareFootage:p.squareFootage,yearBuilt:p.yearBuilt,arvEstimate:analysis.arv?.estimate,arvRangeLow:analysis.arv?.low,arvRangeHigh:analysis.arv?.high,lastSaleDate:p.lastSaleDate,lastSalePrice:p.lastSalePrice},images:[],allowedCategories:[]}); } catch(e){ console.error('[deal builder ai copy]',e.message); } }
+    const analysis=await ai.generateAddressDealAnalysis(address); const aiDraft=analysis.description ? { description: analysis.description } : null;
     const day=new Date().toISOString().slice(0,10);
     if(!allowance.unlimited){ if(isPro(req.user)){ if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;} req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1; } else { req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1; } await saveDB(req.db); }
     res.json({analysis,aiDraft,usage:dealBuilderAllowance(req.user)});
-  } catch(e){ console.error('[property intel]',e.message); res.status(502).json({error:String(e.message).slice(0,300)}); }
+  } catch(e){ console.error('[deal builder ai]',e.message); res.status(502).json({error:String(e.message).slice(0,300)}); }
 });
 
 app.get('/api/buyer-crm', requireAuth, async (req,res)=>{

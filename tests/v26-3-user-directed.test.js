@@ -1,0 +1,10 @@
+const fs=require('fs'),assert=require('assert');
+const server=fs.readFileSync('server.js','utf8'), ai=fs.readFileSync('ai.js','utf8'), app=fs.readFileSync('public/app.js','utf8'), env=fs.readFileSync('.env.example','utf8');
+for(const blob of [server,ai,app,env]) assert(!/rentcast/i.test(blob),'unapproved RentCast dependency/reference remains');
+assert(server.includes('await ai.generateAddressDealAnalysis(address)'),'address builder must use approved AI integration');
+assert(ai.includes('async function generateAddressDealAnalysis(address)'),'address AI analyzer missing');
+assert(ai.includes('ARV and rehab ARE requested estimates'),'AI estimate policy missing');
+assert(ai.includes('Do not fabricate named comparable properties'),'fake-comps guardrail missing');
+assert(app.includes('ARV, repairs and any unverified property details are preliminary estimates'),'UI estimate disclosure missing');
+assert(server.indexOf('await ai.generateAddressDealAnalysis(address)') < server.indexOf('dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1'),'quota must charge after successful AI analysis');
+console.log('✓ v26.3 user-directed Deal Builder tests passed');
