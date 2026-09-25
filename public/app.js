@@ -64,7 +64,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealhub','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','admin','emailcenter','memberships','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -222,17 +222,10 @@ function renderTabs() {
   const tabs = document.getElementById('tabbar');
   tabs.innerHTML = '';
   if (!state.user) return;
-  const navIcon = kind => ({
-    feed:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3l8.5 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-5v-6h-4v6H5a1.5 1.5 0 0 1-1.5-1.5z"/></svg>',
-    shop:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h16l-1-5H5L4 9Z"/><path d="M5 9v10.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V9M9 21v-6h6v6M3 9c0 1.7 1.1 3 2.5 3S8 10.7 8 9c0 1.7 1.1 3 2.5 3S13 10.7 13 9c0 1.7 1.1 3 2.5 3S18 10.7 18 9c0 1.7 1.1 3 2.5 3S23 10.7 23 9"/></svg>',
-    compose:'＋', network:'◎',
-    me:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.7-4 3.1-6 7-6s6.3 2 7 6"/></svg>'
-  })[kind];
-  const items = [['feed',navIcon('feed'),'Feed'], ['shop',navIcon('shop'),'Shop'], ['compose',navIcon('compose'),'Post'], ['network',navIcon('network'),'Network'], ['me',navIcon('me'),'Profile']];
+  const items = [['feed','⌂','Feed'], ['shop','▦','Shop'], ['compose','＋','Post'], ['network','◎','Network'], ['me','◍','Profile']];
   items.forEach(([v, ic, label]) => {
     const active = state.view === v || (v === 'shop' && ['shopitem','sellitem','shopmanage','shopedit'].includes(state.view));
-    const icon = el('span', { class: 'ic' });
-    if (String(ic).startsWith('<svg')) icon.innerHTML = ic; else icon.textContent = ic;
+    const icon = el('span', { class: 'ic' }, ic);
     if (v === 'network' && state.friendRequestCount > 0) icon.appendChild(el('span', { class: 'tabalert' }));
     tabs.appendChild(el('button', {
       class: active ? 'active' : '', onclick: () => go(v)
@@ -249,7 +242,7 @@ async function renderApp() {
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
-    upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports, dealhub: renderDealHub,
+    upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
     boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
@@ -266,34 +259,90 @@ async function renderApp() {
 /* ================= HOME ================= */
 function renderHome() {
   const p = state.pricing;
-  const wrap = el('div');
-  wrap.appendChild(el('div', { class: 'container' }, el('div', { class: 'hero herogrid2' }, [
-    el('div', {}, [
-      el('div', { class: 'herokicker' }, 'A social feed for off-market property'),
-      el('h1', {}, ['Off-market property, ', el('em', {}, 'first.')]),
-      el('p', {}, `Scroll properties like a social feed. Follow the people posting them, make offers, and buy the fixtures and materials to rehab what you close. Free for ${p?.signupTrialDays || 7} days, no card required.`),
+  const signup = () => { state.authMode = 'signup'; go('auth'); };
+  const login = () => { state.authMode = 'login'; go('auth'); };
+  const wrap = el('div', { class: 'publichome' });
+
+  wrap.appendChild(el('section', { class: 'container homehero' }, [
+    el('div', { class: 'homeherocopy' }, [
+      el('div', { class: 'herokicker' }, 'THE REAL ESTATE NETWORK BUILT FOR DEALS'),
+      el('h1', {}, ['Off-market real estate. ', el('em', {}, 'One network.')]),
+      el('p', {}, 'Find deals, connect with active buyers, build your network, and move properties without bouncing between Facebook groups, spreadsheets, and five different tools.'),
       el('div', { class: 'herobtns' }, [
-        el('button', { class: 'btn-primary', onclick: () => { state.authMode = 'signup'; go('auth'); } }, 'Start free trial'),
-        el('button', { class: 'btn-ghost', onclick: () => { state.authMode = 'login'; go('auth'); } }, 'Sign in')
+        el('button', { class: 'btn-primary btn-lg', onclick: signup }, 'Join free'),
+        el('button', { class: 'btn-ghost btn-lg', onclick: () => document.getElementById('platform')?.scrollIntoView({ behavior:'smooth' }) }, 'Explore the platform')
       ]),
-      el('div', { class: 'trustline' }, [
-        trustItem('◎', 'Real listings, real sellers'),
-        trustItem('✓', 'Admin-verified closings'),
-        trustItem('⊘', 'No electronics or appliances sold by users')
+      el('div', { class: 'homeproof' }, [
+        el('span', {}, 'No card required'),
+        el('span', {}, 'Buyer + seller profiles'),
+        el('span', {}, 'Built for off-market deals')
       ])
     ]),
-    heroPreviewCard()
+    el('div', { class: 'homeproductstage' }, [
+      el('div', { class: 'stageglow' }),
+      el('div', { class: 'browsermock' }, [
+        el('div', { class: 'browserbar' }, [el('span'),el('span'),el('span'),el('div',{},'betterrealestate.org')]),
+        el('div', { class: 'browserbody' }, [
+          el('div', { class: 'mockside' }, [el('b',{},'BetterRealEstate'), el('span',{},'Feed'), el('span',{},'Network'), el('span',{},'Messages')]),
+          el('div', { class: 'mockfeed' }, [
+            el('div', { class:'mockeyebrow' }, 'MATCHED TO YOUR BUY BOX'),
+            el('div', { class:'mockproperty' }, [
+              el('div', { class:'mockphoto' }, [el('span',{class:'mockprice'},'$268,000'),el('span',{class:'mockspread'},'+$117k spread')]),
+              el('div', { class:'mockdetails' }, [el('b',{},'4412 Cedar Bend Dr'),el('span',{},'Austin, TX · 3 bd · 2 ba'),el('div',{class:'mocktags'},[el('i',{},'New today'),el('i',{},'Matches criteria')])])
+            ]),
+            el('div', { class:'mocknetworkrow' }, [el('span',{},'Active buyers nearby'),el('b',{},'View matches →')])
+          ])
+        ])
+      ]),
+      el('div', { class:'stagechip chipbuyers' }, [el('b',{},'Buyers Looking'),el('span',{},'Public buy boxes from active investors')]),
+      el('div', { class:'stagechip chipdispo' }, [el('b',{},'Better Dispo'),el('span',{},'One deal → matched buyers + marketing')])
+    ])
+  ]));
+
+  wrap.appendChild(el('section', { class:'homeband' }, el('div',{class:'container homebandinner'},[
+    el('div',{},[el('strong',{},'Built around the deal.'),el('span',{},'Not another generic social feed.')]),
+    el('div',{class:'banditems'},[el('span',{},'Discover'),el('span',{},'Match'),el('span',{},'Connect'),el('span',{},'Dispo')])
   ])));
-  wrap.appendChild(el('div', { class: 'container' }, el('div', { class: 'featgrid' }, [
-    feat('Better Dispo', 'Paste a deal once, turn it into a listing, match active buyers, and generate Facebook, Instagram, SMS, email and flyer assets from one place.'),
-    feat('Buyers Looking', 'See public buy boxes from investors who are actively acquiring — market, price range, property type and strategy.'),
-    feat('A real feed', 'Photo-first cards ranked against the buy box you set — price, market, property type, minimum spread.'),
-    feat('Promote your listing', 'Boost for 24 hours to a week, or Super Boost for the top slot. Sellers pay for reach, buyers see fresh inventory.'),
-    feat('Marketplace', 'Furniture, flooring, cabinet and door hardware — the stuff every rehab needs, from people who just finished one.'),
-    feat('Wallet & payouts', 'Sales and referral credit land in your balance. Withdraw to your bank when it clears the minimum.')
+
+  wrap.appendChild(el('section', { class:'container homesection', id:'platform' }, [
+    el('div',{class:'sectionintro'},[el('div',{class:'sectioneyebrow'},'ONE PLATFORM'),el('h2',{},'The tools around a real estate deal, finally connected.'),el('p',{},'Better Real Estate combines deal discovery, buyer demand, networking, messaging and distribution so the next step is always in the same place.')]),
+    el('div',{class:'featurebento'},[
+      homeFeature('01','Discover deals','A photo-first property feed built around price, market, property type and the buy box you actually want to acquire.','wide','Feed'),
+      homeFeature('02','Better Dispo','Paste a deal once. Build the listing, match active buyers and create distribution assets without rebuilding the same deal everywhere.','accent','Distribute'),
+      homeFeature('03','Buyers Looking','See public buy boxes from investors who are actively acquiring — including market, price range, property type and strategy.','','Demand'),
+      homeFeature('04','Build your network','Follow real estate people, connect as friends, search members and take the conversation directly into messages.','','Network'),
+      homeFeature('05','Wholesale Teams','Give your company a shared workspace with separate member logins and controlled team access.','wide teamfeature','Teams')
+    ])
+  ]));
+
+  wrap.appendChild(el('section',{class:'homehow'},el('div',{class:'container homesection'},[
+    el('div',{class:'sectionintro compactintro'},[el('div',{class:'sectioneyebrow'},'HOW IT WORKS'),el('h2',{},'From finding the deal to moving it forward.')]),
+    el('div',{class:'stepsgrid'},[
+      homeStep('1','Post or discover','Bring a deal to the network or scroll inventory matched to what you buy.'),
+      homeStep('2','Match & connect','See buyer demand, profiles and relevant people without hunting across disconnected groups.'),
+      homeStep('3','Message & move','Talk directly, distribute the deal and keep the work moving from one account.')
+    ])
   ])));
+
+  wrap.appendChild(el('section',{class:'container homesection'},[
+    el('div',{class:'audiencegrid'},[
+      el('div',{class:'audiencecopy'},[el('div',{class:'sectioneyebrow'},'BUILT FOR THE PEOPLE DOING THE WORK'),el('h2',{},'Wholesalers, investors, buyers, sellers and teams.'),el('p',{},'Your profile, listings, buy box, connections and conversations live together — whether you are moving one contract or operating a wholesale company.'),el('button',{class:'btn-primary',onclick:signup},'Create your profile')]),
+      el('div',{class:'audiencecards'},[
+        audienceCard('Wholesalers','Dispo deals and reach buyer demand.'), audienceCard('Investors','Set a buy box and find matching inventory.'), audienceCard('Teams','Work from a shared company workspace.'), audienceCard('Sellers','Put opportunities in front of real estate buyers.')
+      ])
+    ])
+  ]));
+
+  wrap.appendChild(el('section',{class:'container homecta'},[
+    el('div',{},[el('div',{class:'sectioneyebrow'},'BETTER REAL ESTATE'),el('h2',{},'Stop rebuilding your real estate workflow in five different places.'),el('p',{},`Start with ${p?.signupTrialDays || 7} days of full access. No card required.`)]),
+    el('div',{class:'ctabuttons'},[el('button',{class:'btn-primary btn-lg',onclick:signup},'Join Better Real Estate'),el('button',{class:'btn-ghost btn-lg',onclick:login},'Sign in')])
+  ]));
   return wrap;
 }
+function homeFeature(num, title, copy, cls='', label='') { return el('article',{class:'homefeature '+cls},[el('div',{class:'featuretop'},[el('span',{class:'featurenum'},num),el('span',{class:'featurelabel'},label)]),el('h3',{},title),el('p',{},copy),el('div',{class:'featureline'})]); }
+function homeStep(num,title,copy){ return el('article',{class:'homestep'},[el('span',{class:'stepnum'},num),el('h3',{},title),el('p',{},copy)]); }
+function audienceCard(title,copy){ return el('div',{class:'audiencecard'},[el('div',{class:'audiencedot'}),el('div',{},[el('h3',{},title),el('p',{},copy)])]); }
+
 function heroPreviewCard() {
   return el('div', { class: 'heropreview' }, el('div', { class: 'pcard nointeract' }, [
     el('div', { class: 'owner' }, [
@@ -822,16 +871,6 @@ async function renderDetail() {
     };
     wrap.appendChild(el('div', { class: 'dsection' }, [el('h3', {}, 'Message the seller'), msg, mb, mst]));
   }
-
-  // Listing Q&A keeps repeated property questions visible to everyone viewing the deal.
-  try {
-    const qd=await api('GET','/api/listings/'+encodeURIComponent(listing.id)+'/questions');
-    const qs=el('div',{class:'dsection listingqa'}); qs.appendChild(el('h3',{},'Property Q&A'));
-    (qd.items||[]).forEach(q=>{ const row=el('div',{class:'qaitem'},[el('b',{},q.question),el('div',{class:'hint'},'Asked by '+q.byName)]); if(q.answer)row.appendChild(el('div',{class:'qaanswer'},q.answer)); else if(qd.owner){const a=el('textarea',{placeholder:'Answer this question…'});row.append(a,el('button',{class:'btn-ghost',onclick:async()=>{await api('PATCH',`/api/listings/${encodeURIComponent(listing.id)}/questions/${encodeURIComponent(q.id)}`,{answer:a.value});render()}},'Post answer'));} qs.appendChild(row)});
-    if(state.user&&state.user.id!==owner.id){const qi=el('input',{placeholder:'Ask a question about this property…'});qs.append(qi,el('button',{class:'btn-ghost',onclick:async()=>{if(!qi.value.trim())return;await api('POST','/api/listings/'+encodeURIComponent(listing.id)+'/questions',{question:qi.value});toast('Question posted','ok');render()}},'Ask publicly'));}
-    if(!(qd.items||[]).length)qs.appendChild(el('div',{class:'hint'},'No public questions yet.'));
-    wrap.appendChild(qs);
-  } catch {}
 
   if (otherListings.length) {
     wrap.appendChild(el('div', { class: 'dsection' }, [
@@ -2403,7 +2442,6 @@ async function renderMe() {
    [state.user.role === 'admin' ? 'Admin — shop listings' : 'My shop listings', () => go('shopmanage')],
    ['Saved properties', () => go('saved')], ['Network & friends', () => go('network')], ['Messages', () => go('messages')], ...(state.access?.wholesale || state.user.companyId ? [['Company workspace', () => go('companyworkspace')]] : []), ['Buy box', () => go('buybox')],
    ['Investor workspace' + (state.access?.platinum ? '' : ' 🔒'), () => go('workspace')],
-   ['Deal Hub', () => go('dealhub')],
    ['Plans & billing', () => go('upgrade')],
    ...(state.user.role === 'admin' ? [
      ['Admin — verify deals', () => go('admin')],
@@ -2467,7 +2505,7 @@ async function renderMe() {
 }
 
 async function renderProfile() {
-  const { owner, company, listings, followerCount, friendCount, friendship, reviews, membershipLabel } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
+  const { owner, company, listings, followerCount, friendCount, friendship, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
@@ -2475,7 +2513,7 @@ async function renderProfile() {
     el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
     owner.username ? el('div', { class: 'profileusername' }, '@' + owner.username) : null,
     company ? el('button', { class: 'companychip', onclick: () => go('company', { companyId: company.id }) }, company.name) : null,
-    el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (membershipLabel ? ` · ${membershipLabel}` : '') + (avg ? ` · ★ ${avg} (${reviews.length})` : '')) ,
+    el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')),
     owner.location ? el('div', { class: 'profilelocation' }, owner.location) : null,
     owner.bio ? el('p', { class: 'profilebio' }, owner.bio) : null
   ]);
@@ -2690,7 +2728,6 @@ async function renderSettings() {
   sbox.appendChild(toggleRow('Alert me on buy box matches', 'When a new listing fits your criteria.', s.notifyOnMatch !== false, async on => {
     const { settings } = await api('PATCH', '/api/me/settings', { notifyOnMatch: on }); state.user.settings = settings;
   }));
-  sbox.appendChild(toggleRow('Show membership on my profile', 'Display your current Free, Pro, Platinum or Team level publicly.', s.showMembership === true, async on => { const { settings } = await api('PATCH','/api/me/settings',{showMembership:on}); state.user.settings=settings; }));
   wrap.appendChild(sbox);
 
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Account & security'));
@@ -3210,8 +3247,7 @@ async function renderMemberships() {
           el('div', { class: 's' }, `${u.email} · ${u.role}${u.location ? ' · ' + u.location : ''}`),
           el('div', { class: 'membershipbadges' }, [
             el('span', { class: 'pill' }, paid ? `Paid ${grantLabel(u.paidPlan)} through ${fmtDate(u.paidPlanUntil)}` : 'No active paid plan'),
-            activeGrant ? el('span', { class: 'pill good' }, `Free ${grantLabel(u.grant.grantPlan)} through ${fmtDate(u.grant.grantUntil)}`) : el('span', { class: 'pill' }, 'No complimentary grant'),
-            el('span',{class:'pill '+(u.verified?'good':'')},u.verified?'✓ Verified':(u.verificationPending?'Verification pending':'Not verified'))
+            activeGrant ? el('span', { class: 'pill good' }, `Free ${grantLabel(u.grant.grantPlan)} through ${fmtDate(u.grant.grantUntil)}`) : el('span', { class: 'pill' }, 'No complimentary grant')
           ]),
           activeGrant && u.grant.grantReason ? el('div', { class: 'hint' }, u.grant.grantReason) : null
         ]);
@@ -3226,13 +3262,15 @@ async function renderMemberships() {
           if (!confirm(`Grant ${u.name} ${grantLabel(tier.value)} for ${n} days?`)) return;
           try { await api('POST','/api/admin/memberships/grant',{ userId:u.id, tier:tier.value, days:n, reason:reason.value.trim() }); toast('Membership granted','ok'); await load(); } catch(e) { toast(e.message,'err'); }
         };
-        controls.append(tier, days, reason, grant);
-        const verifyBtn=el('button',{class:u.verified?'btn-ghost':'btn-primary'},u.verified?'Revoke verification':'Grant verification'); verifyBtn.onclick=async()=>{ if(!confirm(`${u.verified?'Revoke':'Grant'} verification for ${u.name}?`))return; try{await api('POST','/api/admin/memberships/verification',{userId:u.id,verified:!u.verified}); toast(u.verified?'Verification revoked':'Verification granted','ok'); await load();}catch(e){toast(e.message,'err')}}; controls.appendChild(verifyBtn);
+        controls.append(tier, days, reason);
+        const actionRow = el('div', { class:'grantactions' });
+        actionRow.appendChild(grant);
         if (activeGrant) {
           const revoke = el('button', { class:'dangerbtn' }, 'Revoke free access');
           revoke.onclick = async () => { if (!confirm(`Revoke ${u.name}'s complimentary access? Any paid subscription stays untouched.`)) return; try { await api('POST','/api/admin/memberships/revoke',{ userId:u.id }); toast('Complimentary membership revoked','ok'); await load(); } catch(e) { toast(e.message,'err'); } };
-          controls.appendChild(revoke);
+          actionRow.appendChild(revoke);
         }
+        controls.appendChild(actionRow);
         row.append(meta, controls); host.appendChild(row);
       });
 
@@ -4116,29 +4154,6 @@ async function renderBoostPicker() {
 }
 
 /* ================= INVESTOR WORKSPACE (Platinum) ================= */
-
-async function renderDealHub(){
-  const wrap=el('div',{class:'page dealhub'}); wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Deal Hub'),el('div',{class:'sub'},'Analyze properties, organize buyers, track deals and keep your investment workflow in one place.')]) ]));
-  const tabs=['Analyze','Pipeline','CRM','Deal rooms','Watchlists','Private properties','Tasks','Templates','Lost deals','Calculators']; let active=state.dealHubTab||'Analyze';
-  const tabbar=el('div',{class:'dealhubtabs'}); const host=el('div'); tabs.forEach(t=>{const b=el('button',{class:t===active?'on':''},t); b.onclick=()=>{state.dealHubTab=t; render()};tabbar.appendChild(b)}); wrap.append(tabbar,host);
-  const all=await api('GET','/api/deal-tools'); const items=all.items||[];
-  const createForm=(type,title,fields=[])=>{ const card=el('div',{class:'card dealtoolform'}); card.appendChild(el('h3',{},title)); const titleI=el('input',{placeholder:fields[0]||'Name / title'}); card.appendChild(titleI); const status=el('input',{placeholder:fields[1]||'Status / stage'}); card.appendChild(status); const notes=el('textarea',{placeholder:fields[2]||'Notes'}); card.appendChild(notes); card.appendChild(el('button',{class:'btn-primary',onclick:async()=>{if(!titleI.value.trim())return toast('Add a title first','err'); await api('POST','/api/deal-tools',{type,title:titleI.value.trim(),status:status.value.trim(),data:{notes:notes.value.trim()}}); toast('Saved','ok'); render()}},'Save')); return card; };
-  const list=(type)=>{const box=el('div',{class:'dealtoollist'}); items.filter(x=>x.type===type).forEach(x=>{const r=el('div',{class:'card dealtoolrow'},[el('div',{class:'grow'},[el('b',{},x.title),x.status?el('span',{class:'pill'},x.status):null,el('div',{class:'hint'},x.data?.notes||'')]),el('button',{class:'dangerbtn',onclick:async()=>{if(confirm('Remove this item?')){await api('DELETE','/api/deal-tools/'+x.id);render()}}},'Remove')]);box.appendChild(r)}); return box;};
-  if(active==='Analyze'){
-    const usage=await api('GET','/api/property-analysis/usage'); const card=el('div',{class:'card analysiscard'}); card.appendChild(el('h3',{},'AI Property Analysis')); card.appendChild(el('div',{class:'hint'},usage.enabled?(usage.limit?`${usage.remaining} of ${usage.limit} analyses remaining today. Platinum and Teams are unlimited.`:'Unlimited analyses included with your plan.'):'Upgrade to Pro for 5 analyses/day, or Platinum/Teams for unlimited.'));
-    const addr=el('input',{placeholder:'Property address'}), city=el('input',{placeholder:'City, State ZIP'}), ask=el('input',{type:'number',placeholder:'Asking price (optional)'}), condition=el('textarea',{placeholder:'Known condition / repairs / property facts (optional)'}), out=el('div',{class:'analysisout'}); card.append(addr,city,ask,condition); const run=el('button',{class:'btn-primary',disabled:!usage.enabled},'Analyze property'); run.onclick=async()=>{run.disabled=true;run.textContent='Researching comps & property data…';out.innerHTML='<div class="networkloading">Building analysis…</div>';try{const r=await api('POST','/api/property-analysis',{facts:{address:addr.value,city:city.value,asking:ask.value?Number(ask.value):null,condition:condition.value}});const a=r.analysis;out.innerHTML='';out.appendChild(el('div',{class:'analysismetrics'},[stat(a.estimatedArv?money(a.estimatedArv):'—','Estimated ARV'),stat(a.estimatedRehabLow?`${money(a.estimatedRehabLow)}–${money(a.estimatedRehabHigh)}`:'—','Preliminary rehab'),stat(a.estimatedRentLow?`${money(a.estimatedRentLow)}–${money(a.estimatedRentHigh)}`:'—','Rent range'),stat(a.confidence,'Confidence')]));out.appendChild(el('p',{},a.summary)); if(a.comps?.length){out.appendChild(el('h4',{},'Comparable sales'));a.comps.forEach(c=>out.appendChild(el('div',{class:'listrow'},[el('div',{class:'grow'},[el('b',{},c.address),el('div',{class:'s'},`${c.salePrice?money(c.salePrice):'Price unavailable'}${c.saleDate?' · '+c.saleDate:''}`),el('div',{class:'hint'},c.reason)])])))} if(a.risks?.length)out.appendChild(el('div',{class:'warningbox'},a.risks.join(' • ')));out.appendChild(el('div',{class:'hint'},a.disclaimer||'Estimate only; verify independently.'));}catch(e){out.innerHTML='';out.appendChild(el('div',{class:'errmsg'},e.message))}finally{run.disabled=false;run.textContent='Analyze property'}};card.append(run,out);host.appendChild(card);
-  } else if(active==='Pipeline'){host.append(createForm('deal','Add deal',['Property / deal','Lead · Negotiating · Under Contract · Dispo · Closing · Closed','Next step, numbers, source…']),list('deal'));}
-  else if(active==='CRM'){host.append(createForm('contact','Add investor contact',['Name / company','Buyer · Seller · Agent · Lender · Contractor','Markets, buy box, phone/email, last contact…']),list('contact'));}
-  else if(active==='Deal rooms'){host.append(createForm('room','Create deal room',['Property / room name','Open · Due diligence · Dispo · Closing · Closed','Participants, documents, offer notes, milestones…']),list('room'));}
-  else if(active==='Watchlists'){host.append(createForm('watchlist','Create market watchlist',['City / ZIP / market','Active','Property type, price range, strategy…']),list('watchlist'));}
-  else if(active==='Private properties'){host.append(createForm('privateProperty','Save private property',['Address','Researching · Pursuing · Pass','Property facts, seller notes, analysis…']),list('privateProperty'));}
-  else if(active==='Tasks'){host.append(createForm('task','Add follow-up / task',['Task','Open · Waiting · Done','Due date, person, deal, reminder notes…']),list('task'));}
-  else if(active==='Templates'){host.append(createForm('template','Save document template',['Template name','Draft · Ready','Reusable clauses / checklist / document notes. Use your attorney-approved forms for legal agreements.']),list('template'));}
-  else if(active==='Lost deals'){host.append(createForm('lostDeal','Log lost deal',['Property / deal','Price · Title · Buyer · Financing · Seller · Rehab · Other','What happened and what to learn…']),list('lostDeal'));}
-  else { const c=el('div',{class:'card dealcalc'}); c.appendChild(el('h3',{},'Offer & dispo calculator')); const arv=el('input',{type:'number',placeholder:'ARV'}),reh=el('input',{type:'number',placeholder:'Repairs'}),pct=el('input',{type:'number',value:'70',placeholder:'Investor % of ARV'}),fee=el('input',{type:'number',value:'10000',placeholder:'Target assignment fee'}),result=el('div',{class:'analysisout'}); const calc=()=>{const a=Number(arv.value||0),r=Number(reh.value||0),p=Number(pct.value||70)/100,f=Number(fee.value||0);const buyer=Math.max(0,a*p-r),seller=Math.max(0,buyer-f);result.innerHTML='';result.appendChild(el('div',{class:'analysismetrics'},[stat(money(buyer),'Buyer max scenario'),stat(money(seller),'Seller offer scenario'),stat(money(f),'Target assignment')]));}; [arv,reh,pct,fee].forEach(i=>i.oninput=calc);c.append(arv,reh,pct,fee,result);calc();host.appendChild(c); }
-  return wrap;
-}
-
 async function renderWorkspace() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Investor workspace'));
