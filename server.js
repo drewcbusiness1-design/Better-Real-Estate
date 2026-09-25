@@ -1385,10 +1385,34 @@ app.post('/api/dispo/parse', requireAuth, async (req, res) => {
   res.json({ deal: cleanImportedDeal(parsed), enhanced, mode: enhanced ? 'ai' : 'smart-parser' });
 });
 
+function dealBuilderAllowance(user) {
+  if (isAdminUser(user) || isPlatinum(user) || isWholesale(user)) return { unlimited: true, limit: null, used: 0, remaining: null, label: 'Unlimited' };
+  const day = new Date().toISOString().slice(0, 10);
+  if (isPro(user)) {
+    const used = user.dealBuilderUsageDay === day ? Number(user.dealBuilderUsageCount || 0) : 0;
+    return { unlimited: false, limit: 5, used, remaining: Math.max(0, 5 - used), label: `${Math.max(0, 5-used)} of 5 analyses remaining today`, day };
+  }
+  const used = Number(user.dealBuilderTrialUses || 0);
+  const trialActive = inTrial(user);
+  return { unlimited: false, limit: 1, used, remaining: trialActive ? Math.max(0, 1-used) : 0, label: trialActive ? (used ? 'Free trial analysis used' : '1 free trial analysis available') : 'Pro or Platinum required', trial: true, trialActive };
+}
+app.get('/api/deal-builder/usage', requireAuth, async (req,res) => res.json({ usage: dealBuilderAllowance(req.user) }));
 app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
   if(!propertyIntel.configured()) return res.status(503).json({error:'Address intelligence needs RENTCAST_API_KEY configured in Netlify.'});
-  try { const analysis=await propertyIntel.analyze(address); let aiDraft=null; if(ai.configured()){ try { const p=analysis.subject||{}; aiDraft=await ai.generateListingCopy({kind:'property',facts:{city:[p.city,p.state].filter(Boolean).join(', '),propertyType:p.propertyType,bedrooms:p.bedrooms,bathrooms:p.bathrooms,squareFootage:p.squareFootage,yearBuilt:p.yearBuilt,arvEstimate:analysis.arv?.estimate,arvRangeLow:analysis.arv?.low,arvRangeHigh:analysis.arv?.high,lastSaleDate:p.lastSaleDate,lastSalePrice:p.lastSalePrice},images:[],allowedCategories:[]}); } catch(e){ console.error('[deal builder ai copy]',e.message); } } res.json({analysis,aiDraft}); }
+  const allowance = dealBuilderAllowance(req.user);
+  if (!allowance.unlimited && allowance.remaining <= 0) return res.status(403).json({ error: isPro(req.user) ? 'You have used today’s 5 Deal Builder analyses. Upgrade to Platinum for unlimited analyses, or try again tomorrow.' : (allowance.trialActive ? 'Your one free trial Deal Builder analysis has been used. Upgrade to Pro for 5 analyses per day or Platinum for unlimited analyses.' : 'Your free trial has ended. Upgrade to Pro for 5 Deal Builder analyses per day or Platinum for unlimited analyses.'), code:'DEAL_BUILDER_LIMIT', usage:allowance });
+  try {
+    const analysis=await propertyIntel.analyze(address); let aiDraft=null;
+    if(ai.configured()){ try { const p=analysis.subject||{}; aiDraft=await ai.generateListingCopy({kind:'property',facts:{city:[p.city,p.state].filter(Boolean).join(', '),propertyType:p.propertyType,bedrooms:p.bedrooms,bathrooms:p.bathrooms,squareFootage:p.squareFootage,yearBuilt:p.yearBuilt,arvEstimate:analysis.arv?.estimate,arvRangeLow:analysis.arv?.low,arvRangeHigh:analysis.arv?.high,lastSaleDate:p.lastSaleDate,lastSalePrice:p.lastSalePrice},images:[],allowedCategories:[]}); } catch(e){ console.error('[deal builder ai copy]',e.message); } }
+    const day = new Date().toISOString().slice(0, 10);
+    if (!allowance.unlimited) {
+      if (isPro(req.user)) { if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;} req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1; }
+      else req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1;
+      await saveDB(req.db);
+    }
+    res.json({analysis,aiDraft,usage:dealBuilderAllowance(req.user)});
+  }
   catch(e){ console.error('[property intel]',e.message); res.status(502).json({error:String(e.message).slice(0,300)}); }
 });
 

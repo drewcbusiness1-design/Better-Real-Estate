@@ -262,7 +262,7 @@ async function renderApp() {
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
-    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal, insights: renderDemandInsights,
+    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal, insights: renderDemandInsights, dealbuilder: renderDealBuilder, buyercrm: renderBuyerCrm,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
@@ -2013,10 +2013,12 @@ async function startTutorial(force=false){
 
 async function renderDealBuilder(){
   const wrap=el('div',{class:'page dealbuilderpage'}); wrap.appendChild(el('div',{class:'pagehead'},[el('div',{},[el('div',{class:'dispoeyebrow'},'PROPERTY INTELLIGENCE'),el('h2',{},'AI Deal Builder'),el('div',{class:'sub'},'Start with an address. Build the analysis, pressure-test the numbers, then move it into Better Dispo.')]) ]));
-  const address=el('input',{placeholder:'123 Main St, City, ST 12345'}), run=el('button',{class:'btn-primary'},'Analyze property'), status=el('div',{class:'hint'}), results=el('div');
-  const search=el('div',{class:'card dealbuildersearch'},[el('label',{},'Property address'),el('div',{class:'dealbuildersearchrow'},[address,run]),status]); wrap.appendChild(search); wrap.appendChild(results);
+  const address=el('input',{placeholder:'123 Main St, City, ST 12345'}), run=el('button',{class:'btn-primary'},'Analyze property'), status=el('div',{class:'hint'}), results=el('div'), usage=el('div',{class:'dealbuilderusage'});
+  const paintUsage=(u)=>{usage.innerHTML=''; if(!u)return; usage.appendChild(el('div',{class:'usagepill '+(u.unlimited?'unlimited':'')},u.unlimited?'Unlimited analyses':u.label)); usage.appendChild(el('div',{class:'hint'},u.unlimited?'Included with Platinum, Wholesale Teams and Admin access.':(u.limit===5?'Pro includes 5 new property analyses per day. Saved analyses and calculator changes do not use another analysis.':'Free trial includes one complete property analysis. Upgrade to Pro for 5 per day or Platinum for unlimited.')));};
+  try{paintUsage((await api('GET','/api/deal-builder/usage')).usage)}catch{}
+  const search=el('div',{class:'card dealbuildersearch'},[el('div',{class:'dealbuildersearchtop'},[el('label',{},'Property address'),usage]),el('div',{class:'dealbuildersearchrow'},[address,run]),status]); wrap.appendChild(search); wrap.appendChild(results);
   run.onclick=async()=>{ if(!address.value.trim()){status.textContent='Enter a complete address.';return} run.disabled=true;run.textContent='Analyzing…';status.textContent='Pulling property records, valuation data and comparable properties…';results.innerHTML='';
-    try{const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()}); const a=r.analysis, p=a.subject||{}, aiDraft=r.aiDraft||null; status.textContent=`Analysis generated ${new Date(a.generatedAt).toLocaleString()} · Property data: ${a.provider}. Estimates are decision-support, not an appraisal or inspection.`;
+    try{const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()}); paintUsage(r.usage); const a=r.analysis, p=a.subject||{}, aiDraft=r.aiDraft||null; status.textContent=`Analysis generated ${new Date(a.generatedAt).toLocaleString()} · Property data: ${a.provider}. Estimates are decision-support, not an appraisal or inspection.`;
       const selected=new Set((a.comparables||[]).map((_,i)=>i)); const calcArv=()=>{const vals=[...(a.comparables||[])].filter((_,i)=>selected.has(i)).map(c=>Number(c.price)).filter(Boolean);return vals.length?Math.round(vals.reduce((x,y)=>x+y,0)/vals.length):Number(a.arv?.estimate||0)};
       if(aiDraft?.description){ results.appendChild(el('div',{class:'card aidraftcard'},[el('div',{class:'sectiontitle'},'AI Property Summary'),el('div',{class:'hint'},'Drafted only from returned property/valuation facts. Review before using it in marketing.'),el('p',{},aiDraft.description)])); }
       const summary=el('div',{class:'dealgrid'},[
@@ -3182,8 +3184,24 @@ function toggleRow(title, desc, initial, onChange) {
 /* ================= LEADERBOARD ================= */
 async function renderLeaderboard() {
   const wrap = el('div', { class: 'page' });
-  wrap.appendChild(el('h2', {}, 'Leaderboard'));
-  wrap.appendChild(el('div', { class: 'sub' }, 'Points come only from deals an admin verified as closed — not self-reported. Monthly rankings can be used for complimentary membership prizes.'));
+  wrap.appendChild(el('div', { class: 'leaderboardhead' }, [
+    el('div', { class: 'dispoeyebrow' }, 'VERIFIED PERFORMANCE'),
+    el('h2', {}, 'Leaderboard'),
+    el('div', { class: 'sub' }, 'Recognition based on verified closings — not self-reported wins.')
+  ]));
+  wrap.appendChild(el('div', { class: 'card leaderboardinfo' }, [
+    el('div', { class: 'leaderboardinfo-main' }, [
+      el('strong', {}, 'How points work'),
+      el('p', {}, 'Each deal an admin verifies as closed awards 100 points to the verified seller and 100 points to the verified buyer. Points are added only after admin verification.'),
+      el('p', { class: 'hint' }, 'Monthly rankings count points earned during the current month. All-time rankings show your full verified-closing total. Monthly leaders may receive complimentary membership prizes when an admin awards one.')
+    ]),
+    el('div', { class: 'leaderboardrules' }, [
+      el('div', {}, [el('b', {}, '100'), el('span', {}, 'points per verified closing')]),
+      el('div', {}, [el('b', {}, 'Bronze'), el('span', {}, '100+ points')]),
+      el('div', {}, [el('b', {}, 'Silver'), el('span', {}, '200+ points')]),
+      el('div', {}, [el('b', {}, 'Gold'), el('span', {}, '500+ points')])
+    ])
+  ]));
   const tabs = el('div', { class: 'networktabs' });
   [['all','All time'],['month','This month']].forEach(([period,label]) => {
     const b = el('button', { class: state.leaderboardPeriod === period ? 'active' : '' }, label);
