@@ -10,6 +10,10 @@ const viewsBlock=(app.match(/const views = \{(.*?)\n  \};/s)||[])[1];
 assert(viewsBlock,'view renderer map missing');
 const viewSet=new Set([...viewsBlock.matchAll(/\b([A-Za-z][\w]*)\s*:/g)].map(m=>m[1]));
 for(const v of routedSet) assert(viewSet.has(v),`routed view ${v} has no renderer`);
+// Renderer map values must resolve to real functions (case-sensitive). A typo here blanks the entire app before renderApp's try/catch.
+const rendererRefs=[...viewsBlock.matchAll(/\b[A-Za-z][\w]*\s*:\s*([A-Za-z_$][\w$]*)/g)].map(m=>m[1]);
+const functionDefs=new Set([...app.matchAll(/(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/g)].map(m=>m[1]));
+for(const fn of rendererRefs) assert(functionDefs.has(fn),`renderer reference ${fn} is not a defined function`);
 for(const m of app.matchAll(/\bgo\(['"]([^'"]+)/g)) assert(viewSet.has(m[1]),`go(${m[1]}) has no renderer`);
 // New authenticated destinations and endpoints.
 for(const v of ['dealbuilder','buyercrm']) assert(routedSet.has(v)&&viewSet.has(v),`${v} must be routable and renderable`);
