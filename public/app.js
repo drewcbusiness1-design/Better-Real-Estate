@@ -178,12 +178,12 @@ async function boot() {
       state.authMode = 'signup';
     } else state.view = requestedView && ROUTED_VIEWS.has(requestedView) ? requestedView : 'home';
   }
-  if (state.user) await refreshUnread();
+  if (state.user) { await refreshUnread(); const prior=Number(state.user.settings?.tutorialHighestRank??-1), now=TUTORIAL_RANK[tutorialTier()]??0; if(prior>=0 && now>prior) state.launchNewFeatureTutorial=true; }
   if (!state.verifyToken && !state.resetToken) writeRoute('replace');
   render();
 }
 async function refreshMe() {
-  try { const d = await api('GET', '/api/me'); state.user = d.user; state.access = d.access; } catch {}
+  try { const before=state.user ? (TUTORIAL_RANK[tutorialTier()]??0) : -1; const d = await api('GET', '/api/me'); state.user = d.user; state.access = d.access; const after=TUTORIAL_RANK[tutorialTier()]??0; if(before>=0 && after>before) state.launchNewFeatureTutorial=true; } catch {}
 }
 async function refreshUnread() {
   if (!state.user) { state.unreadCount = 0; state.friendRequestCount = 0; return 0; }
@@ -201,7 +201,7 @@ function startViewPolling(fn, ms = 5000) {
   }, ms);
 }
 function go(view, extra = {}, options = {}) { Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
-function render() { stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter(); if(state.launchTutorialAfterNav){state.launchTutorialAfterNav=false;setTimeout(()=>startTutorial(false),450);} }
+function render() { stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter(); if(state.launchTutorialAfterNav){state.launchTutorialAfterNav=false;setTimeout(()=>startTutorial(false),450);} else if(state.launchNewFeatureTutorial){state.launchNewFeatureTutorial=false;setTimeout(()=>startTutorial(false,true),450);} }
 window.addEventListener('popstate', () => {
   const params = new URLSearchParams(location.search);
   const requested = applyRouteParams(params);
@@ -1991,24 +1991,51 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 26;
-const tutorialSteps = [
-  ['Welcome to Better Real Estate','This quick tour shows where deals, buyers and your professional tools live. You can skip any step or the entire tour.'],
-  ['Feed','Discover off-market opportunities and professional activity from the network.'],
-  ['AI Deal Builder','Enter an address and let Better Real Estate AI build a preliminary description, ARV range, repair scenarios and deal analysis, then review every estimate before using it.'],
-  ['Better Dispo','Post once, match against active buyer criteria and create distribution-ready deal material.'],
-  ['Buyer CRM','Keep buyer relationships, buy boxes, follow-up status and notes organized in one private pipeline.'],
-  ['Deal operations','Use Deal Rooms, showing scheduling, Deal Rescue and demand insights to keep active deals moving.'],
-  ['Network & teams','Follow professionals, make friends, message directly and collaborate in Wholesale Team workspaces.'],
-  ['You are ready','You can restart this tour anytime from Settings. New major features will be added to future walkthroughs.']
-];
-async function startTutorial(force=false){
-  if(!state.user) return; if(!force && Number(state.user.settings?.tutorialCompletedVersion||0)>=TUTORIAL_VERSION) return;
-  let i=0; const shade=el('div',{class:'tutorialshade'}); const card=el('div',{class:'tutorialcard'}); shade.appendChild(card); document.body.appendChild(shade);
-  const finish=async(dismiss=false)=>{ shade.remove(); try{const body=dismiss?{tutorialDismissedVersion:TUTORIAL_VERSION}:{tutorialCompletedVersion:TUTORIAL_VERSION}; const r=await api('PATCH','/api/me/settings',body); state.user.settings=r.settings;}catch{} };
-  const draw=()=>{ const [title,copy]=tutorialSteps[i]; card.innerHTML=''; card.appendChild(el('div',{class:'tutorialprogress'},`STEP ${i+1} OF ${tutorialSteps.length}`)); card.appendChild(el('h2',{},title)); card.appendChild(el('p',{},copy));
-    const actions=el('div',{class:'tutorialactions'}); if(i>0) actions.appendChild(el('button',{class:'btn-ghost',onclick:()=>{i--;draw()}},'Back')); actions.appendChild(el('button',{class:'btn-ghost',onclick:()=>{ if(i<tutorialSteps.length-1){i++;draw()} else finish(false)}},i===tutorialSteps.length-1?'Finish':'Skip this step')); actions.appendChild(el('button',{class:'btn-primary',onclick:()=>{ if(i===tutorialSteps.length-1) finish(false); else {i++;draw()} }},i===tutorialSteps.length-1?'Finish':'Next')); card.appendChild(actions); card.appendChild(el('button',{class:'tutorialskip',onclick:()=>finish(true)},'Skip tutorial'));
-  }; draw();
+const TUTORIAL_VERSION = 27;
+function tutorialTier(){
+  if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
+  if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
+  if(state.access?.pro)return'pro'; if(state.access?.trial)return'trial'; return'free';
+}
+const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:2,admin:4};
+function tutorialStepsFor(tier=tutorialTier()){
+ const rank=TUTORIAL_RANK[tier]??0;
+ return [
+ {view:'feed',selector:'#app',min:0,title:'Welcome to Better Real Estate',copy:'This guided tour moves through the actual site, highlights the area being explained, and only shows tools your current access can use.'},
+ {view:'feed',selector:'#tabbar button:nth-child(1)',min:0,title:'Feed',copy:'Discover real-estate opportunities and activity. Open listings here to review the full deal.'},
+ {view:'shop',selector:'#tabbar button:nth-child(2)',min:0,title:'Shop',copy:'Browse the marketplace side of Better Real Estate without leaving your professional workspace.'},
+ {view:'compose',selector:'.composepage',min:0,title:'Post a property',copy:'Create a listing manually, import existing deal notes, or move a reviewed AI Deal Builder analysis into the form.'},
+ {view:'network',selector:'#tabbar button:nth-child(4)',min:0,title:'Network',copy:'Find professionals, follow people, manage friends, and discover Buyers Looking through public buy boxes.'},
+ {view:'messages',selector:'#app .page',min:0,title:'Messages',copy:'Keep deal conversations inside Better Real Estate. Message reminder timing is controlled in Settings.'},
+ {view:'me',selector:'#tabbar button:nth-child(5)',min:0,title:'Profile & tools',copy:'Your Profile is the launch point for saved properties, buy boxes, leaderboard, professional tools and membership controls.'},
+ {view:'saved',selector:'#app .page',min:0,title:'Saved properties',copy:'Keep properties you want to revisit here. Higher-tier workspace tools can build on these saved deals.'},
+ {view:'buybox',selector:'#app .page',min:0,title:'Your buy box',copy:'Tell Better Real Estate what you buy so deal discovery and matching can work around your real criteria.'},
+ {view:'leaderboard',selector:'#app .page',min:0,title:'Leaderboard',copy:'Verified closings earn points for both sides of the transaction. Use the leaderboard to track monthly and all-time activity and membership rewards.'},
+ {view:'wallet',selector:'#app .page',min:0,title:'Wallet & payouts',copy:'Your wallet is where eligible marketplace sales, referral credits and payout activity are organized.'},
+ {view:'boostpicker',selector:'#app .page',min:0,title:'Promote a listing',copy:'Choose one of your listings to boost when you want additional visibility. Promotion options stay separate from the normal feed experience.'},
+ {view:'dealbuilder',selector:'.dealbuildersearch',min:1,title:'AI Deal Builder',copy:'Start with an address. Better Real Estate AI creates a preliminary ARV, repair scenarios, description and deal numbers for you to review.'},
+ {view:'buyercrm',selector:'.buyercrmpage',min:1,title:'Buyer CRM',copy:'Keep buyer markets, buy boxes, private notes and follow-up stages in one pipeline.'},
+ {view:'insights',selector:'.insightspage',min:2,title:'Demand Insights',copy:'See where published buyer demand is concentrated by market, property type and strategy.'},
+ {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties side by side and keep private deal notes in one place.'},
+ {view:'companyworkspace',selector:'#app .page',min:3,title:'Wholesale Team workspace',copy:'Team access adds a shared company workspace with separate member logins and company collaboration.'},
+ {view:'admin',selector:'#app .page',min:4,title:'Admin controls',copy:'Admin access contains platform management tools such as verification, memberships, reports and operational controls. These are never shown in ordinary-member tours.'},
+ {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart this tour here anytime.'},
+ {view:'feed',selector:'#app',min:0,title:'You are ready',copy:'That covers your current access. When you unlock additional features, Better Real Estate will offer a short tour of only the newly available tools.'}
+ ].filter(x=>rank>=x.min);
+}
+function tutorialKey(tier=tutorialTier()){return `v${TUTORIAL_VERSION}:${tier}`;}
+async function startTutorial(force=false,onlyNew=false){
+ if(!state.user)return; const tier=tutorialTier(),key=tutorialKey(tier);
+ const seen=Array.isArray(state.user.settings?.tutorialCompletedKeys)?state.user.settings.tutorialCompletedKeys:[];
+ if(!force&&seen.includes(key))return; let steps=tutorialStepsFor(tier);
+ if(onlyNew){const prev=Number(state.user.settings?.tutorialHighestRank??-1),now=TUTORIAL_RANK[tier]??0;steps=steps.filter(x=>x.min>prev&&x.min<=now);if(!steps.length)return;}
+ let i=0,target=null; const shade=el('div',{class:'tutorialshade guidedtour'}),card=el('div',{class:'tutorialcard guidedtourcard'});shade.appendChild(card);document.body.appendChild(shade);
+ const clear=()=>{if(target){target.classList.remove('tutorialfocus');target=null;}};
+ const save=async(dismiss=false)=>{const body={tutorialCompletedVersion:TUTORIAL_VERSION,tutorialCompletedKeys:[...new Set([...seen,key])],tutorialHighestRank:Math.max(Number(state.user.settings?.tutorialHighestRank??-1),TUTORIAL_RANK[tier]??0)};if(dismiss)body.tutorialDismissedVersion=TUTORIAL_VERSION;try{const r=await api('PATCH','/api/me/settings',body);state.user.settings=r.settings;}catch{}};
+ const finish=async(d=false)=>{clear();shade.remove();await save(d);};
+ const place=node=>{if(!node)return;const r=node.getBoundingClientRect(),vw=innerWidth,vh=innerHeight,cw=Math.min(430,vw-32),ch=Math.min(card.offsetHeight||280,vh-32);let left=Math.max(16,Math.min(vw-cw-16,r.right+22)),top=Math.max(16,Math.min(vh-ch-16,r.top));if(r.right+22+cw>vw)left=Math.max(16,r.left-cw-22);if(vw<760){left=16;top=Math.max(16,Math.min(vh-ch-16,r.bottom+16));}card.style.setProperty('--tour-left',`${left}px`);card.style.setProperty('--tour-top',`${top}px`);};
+ const focus=async step=>{clear();if(state.view!==step.view){go(step.view);await new Promise(r=>setTimeout(r,180));}await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));target=document.querySelector(step.selector)||document.querySelector('#app');if(target){target.classList.add('tutorialfocus');target.scrollIntoView({behavior:'smooth',block:'center'});}setTimeout(()=>place(target),220);};
+ const draw=async()=>{const step=steps[i];card.innerHTML='';card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));card.appendChild(el('div',{class:'tutorialmembership'},`Showing ${tier==='wholesale'?'Team':tier[0].toUpperCase()+tier.slice(1)} access`));const a=el('div',{class:'tutorialactions'});if(i>0)a.appendChild(el('button',{class:'btn-ghost',onclick:()=>{i--;draw()}},'Back'));a.appendChild(el('button',{class:'btn-ghost',onclick:()=>{if(i<steps.length-1){i++;draw()}else finish()}},i===steps.length-1?'Finish':'Skip this step'));a.appendChild(el('button',{class:'btn-primary',onclick:()=>{if(i===steps.length-1)finish();else{i++;draw()}}},i===steps.length-1?'Finish':'Next'));card.appendChild(a);card.appendChild(el('button',{class:'tutorialskip',onclick:()=>finish(true)},'Skip entire tour'));await focus(step);}; await draw();
 }
 
 async function renderDealBuilder(){
@@ -2020,7 +2047,7 @@ async function renderDealBuilder(){
   run.onclick=async()=>{ if(!address.value.trim()){status.textContent='Enter a complete address.';return} run.disabled=true;run.textContent='Analyzing…';status.textContent='Building preliminary property, ARV and repair estimates with Better Real Estate AI…';results.innerHTML='';
     try{const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()}); paintUsage(r.usage); const a=r.analysis, p=a.subject||{}, aiDraft=r.aiDraft||null; status.textContent=`Analysis generated ${new Date(a.generatedAt).toLocaleString()} · ${a.provider}. Confidence: ${a.confidence||'Low'}. ARV, repairs and any unverified property details are preliminary estimates — review before use.`;
       const selected=new Set((a.comparables||[]).map((_,i)=>i)); const calcArv=()=>{const vals=[...(a.comparables||[])].filter((_,i)=>selected.has(i)).map(c=>Number(c.price)).filter(Boolean);return vals.length?Math.round(vals.reduce((x,y)=>x+y,0)/vals.length):Number(a.arv?.estimate||0)};
-      if(aiDraft?.description){ results.appendChild(el('div',{class:'card aidraftcard'},[el('div',{class:'sectiontitle'},'AI Property Summary'),el('div',{class:'hint'},'Drafted only from returned property/valuation facts. Review before using it in marketing.'),el('p',{},aiDraft.description)])); }
+      if(aiDraft?.description){ const sentences=String(aiDraft.description).split(/(?<=[.!?])\s+/).filter(Boolean); const body=el('div',{class:'aisummarybody'}); if(sentences.length) body.appendChild(el('p',{class:'aisummarylead'},sentences[0])); if(sentences.length>1) body.appendChild(el('ul',{class:'aisummarypoints'},sentences.slice(1).map(x=>el('li',{},x)))); results.appendChild(el('section',{class:'card aidraftcard'},[el('div',{class:'aisummaryhead'},[el('div',{},[el('div',{class:'sectiontitle'},'Property Analysis Summary'),el('div',{class:'hint'},'AI-organized preliminary analysis · Review before marketing')]),el('span',{class:'summaryconfidence'},`Confidence: ${a.confidence||'Low'}`)]),body])); }
       const summary=el('div',{class:'dealgrid'},[
         metricCard('AI working ARV',money(a.arv?.estimate||0),a.arv?.low&&a.arv?.high?`${money(a.arv.low)}–${money(a.arv.high)} estimated range`:'Preliminary estimate'), metricCard('Beds / baths',`${p.bedrooms??'—'} / ${p.bathrooms??'—'}`,`${Number(p.squareFootage||0).toLocaleString()||'—'} sq ft`), metricCard('Year built',p.yearBuilt||'—',p.propertyType||'Property'), metricCard('Confidence',a.confidence||'Low','Address-only preliminary analysis')]); results.appendChild(summary);
       const rehabSel=el('select',{},(a.rehab||[]).map(x=>el('option',{value:x.key},`${x.label} — ${money(x.estimate)}`))); const ask=el('input',{type:'number',placeholder:'Your purchase / contract price'}); const assignment=el('input',{type:'number',value:'10000'}); const hold=el('input',{type:'number',value:'12000'}); const numbers=el('div',{class:'dealnumbers'}); const update=()=>{const arv=calcArv(), rh=(a.rehab||[]).find(x=>x.key===rehabSel.value)?.estimate||0, purchase=Number(ask.value)||0, fees=Number(assignment.value)||0, hc=Number(hold.value)||0, flip=arv-purchase-rh-hc, mao70=Math.max(0,Math.round(arv*.70-rh-fees)); numbers.innerHTML=''; numbers.append(metricCard('Working ARV',money(arv),'Average of selected comps')); numbers.append(metricCard('70% MAO',money(mao70),'ARV × 70% − rehab − assignment')); numbers.append(metricCard('Projected flip spread',money(flip),'Before financing/tax; edit assumptions')); };
@@ -2034,14 +2061,14 @@ async function renderDealBuilder(){
 function metricCard(k,v,s){return el('div',{class:'metriccard'},[el('span',{},k),el('strong',{},v),el('small',{},s||'')])}
 
 async function renderBuyerCRM(){
-  const wrap=el('div',{class:'page'});wrap.appendChild(el('div',{class:'pagehead'},[el('div',{},[el('h2',{},'Buyer CRM'),el('div',{class:'sub'},'A private follow-up pipeline for the buyers behind your deals.')]),el('button',{class:'btn-primary',onclick:()=>openEditor()},'Add buyer')])); const host=el('div');wrap.appendChild(host);
+  const wrap=el('div',{class:'page buyercrmpage'});wrap.appendChild(el('div',{class:'pagehead'},[el('div',{},[el('h2',{},'Buyer CRM'),el('div',{class:'sub'},'A private follow-up pipeline for the buyers behind your deals.')]),el('button',{class:'btn-primary',onclick:()=>openEditor()},'Add buyer')])); const host=el('div');wrap.appendChild(host);
   async function load(){const r=await api('GET','/api/buyer-crm');host.innerHTML=''; if(!r.contacts.length){host.appendChild(el('div',{class:'empty'},[el('h3',{},'Build your buyer pipeline'),el('p',{},'Save buyer criteria, follow-up status and private notes so relationships do not disappear into spreadsheets and DMs.'),el('button',{class:'btn-primary',onclick:()=>openEditor()},'Add first buyer')]));return} const board=el('div',{class:'crmgrid'}); ['new','contacted','interested','pof','offer','closed','inactive'].forEach(st=>{const col=el('div',{class:'crmcol'},[el('h3',{},st==='pof'?'POF received':st[0].toUpperCase()+st.slice(1))]);r.contacts.filter(x=>x.status===st).forEach(x=>col.appendChild(el('button',{class:'crmcard',onclick:()=>openEditor(x)},[el('b',{},x.name),el('span',{},x.markets||'No market saved'),el('small',{},x.buyBox||x.email||'Open to add criteria')] )));board.appendChild(col)});host.appendChild(board)}
   function openEditor(x={}){const modal=el('div',{class:'tutorialshade'}),card=el('div',{class:'tutorialcard crmeditor'}); const f={name:el('input',{value:x.name||'',placeholder:'Buyer / company name'}),email:el('input',{value:x.email||'',placeholder:'Email'}),phone:el('input',{value:x.phone||'',placeholder:'Phone'}),markets:el('input',{value:x.markets||'',placeholder:'Markets / ZIPs'}),buyBox:el('textarea',{placeholder:'Property types, price range, rehab tolerance, strategy…'},x.buyBox||''),notes:el('textarea',{placeholder:'Private relationship and follow-up notes'},x.notes||''),status:el('select',{},['new','contacted','interested','pof','offer','closed','inactive'].map(v=>el('option',{value:v,selected:(x.status||'new')===v?'selected':null},v==='pof'?'POF received':v[0].toUpperCase()+v.slice(1))))}; card.appendChild(el('h2',{},x.id?'Edit buyer':'Add buyer')); ['name','email','phone','markets','buyBox','notes','status'].forEach(k=>{card.appendChild(el('label',{},({name:'Name',email:'Email',phone:'Phone',markets:'Markets',buyBox:'Buy box',notes:'Private notes',status:'Pipeline status'})[k]));card.appendChild(f[k])}); const actions=el('div',{class:'tutorialactions'}); if(x.id)actions.appendChild(el('button',{class:'btn-danger',onclick:async()=>{if(confirm('Remove this buyer from your private CRM?')){await api('DELETE','/api/buyer-crm/'+x.id);modal.remove();load()}}},'Delete'));actions.appendChild(el('button',{class:'btn-ghost',onclick:()=>modal.remove()},'Cancel'));actions.appendChild(el('button',{class:'btn-primary',onclick:async()=>{try{await api('POST','/api/buyer-crm',{id:x.id,...Object.fromEntries(Object.entries(f).map(([k,e])=>[k,e.value]))});modal.remove();load()}catch(e){toast(e.message,'err')}}},'Save buyer'));card.appendChild(actions);modal.appendChild(card);document.body.appendChild(modal)}
   await load();return wrap;
 }
 
 async function renderCompose() {
-  const wrap = el('div', { class: 'panel' });
+  const wrap = el('div', { class: 'panel composepage' });
   wrap.appendChild(el('h2', {}, 'Post a property'));
   wrap.appendChild(el('div', { class: 'sub' }, 'Appears in the feed immediately, ranked for the buyers it fits.'));
   const f = {
@@ -4298,7 +4325,7 @@ async function renderBoostPicker() {
 
 /* ================= INVESTOR WORKSPACE (Platinum) ================= */
 async function renderWorkspace() {
-  const wrap = el('div', { class: 'page' });
+  const wrap = el('div', { class: 'page workspacepage' });
   wrap.appendChild(el('h2', {}, 'Investor workspace'));
   wrap.appendChild(el('div', { class: 'sub' }, 'Compare your saved properties side by side and keep notes on each.'));
 

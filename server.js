@@ -220,6 +220,8 @@ const defaultSettings = () => ({
   showMembershipLevel: true,
   tutorialCompletedVersion: 0,
   tutorialDismissedVersion: 0,
+  tutorialCompletedKeys: [],
+  tutorialHighestRank: -1,
   // Admin-only preference. Undefined on older accounts intentionally behaves
   // as ON so the site owner starts receiving signup notifications immediately.
   notifyOnNewSignup: true
@@ -743,6 +745,8 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (typeof body.showMembershipLevel === 'boolean') next.showMembershipLevel = body.showMembershipLevel;
   if (body.tutorialCompletedVersion !== undefined) next.tutorialCompletedVersion = Math.max(0, Number(body.tutorialCompletedVersion)||0);
   if (body.tutorialDismissedVersion !== undefined) next.tutorialDismissedVersion = Math.max(0, Number(body.tutorialDismissedVersion)||0);
+  if (Array.isArray(body.tutorialCompletedKeys)) next.tutorialCompletedKeys = [...new Set(body.tutorialCompletedKeys.map(x => String(x).slice(0,80)))].slice(-30);
+  if (body.tutorialHighestRank !== undefined) next.tutorialHighestRank = Math.max(-1, Math.min(4, Number(body.tutorialHighestRank)||0));
   if (isAdminUser(req.user) && typeof body.notifyOnNewSignup === 'boolean') next.notifyOnNewSignup = body.notifyOnNewSignup;
   if (body.messageEmailDelayMinutes !== undefined) {
     const n = Number(body.messageEmailDelayMinutes);

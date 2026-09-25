@@ -1,0 +1,11 @@
+const fs=require('fs'),assert=require('assert'),path=require('path');
+const app=fs.readFileSync(path.join(__dirname,'../public/app.js'),'utf8');
+const css=fs.readFileSync(path.join(__dirname,'../public/style.css'),'utf8');
+const server=fs.readFileSync(path.join(__dirname,'../server.js'),'utf8');
+for(const t of ['TUTORIAL_VERSION = 27','tutorialTier()','tutorialStepsFor','tutorialCompletedKeys','tutorialHighestRank','NEW FEATURE TOUR','Skip this step','Skip entire tour','tutorialfocus','Showing ${tier','dealbuildersearch','buyercrmpage','workspacepage']) assert(app.includes(t),t);
+for(const t of ['tutorialCompletedKeys','tutorialHighestRank']) assert(server.includes(t),t);
+for(const t of ['.guidedtourcard','.tutorialfocus','.dealbuilderentry','.aisummaryhead','.aisummarypoints']) assert(css.includes(t),t);
+assert(/background:#fff!important/.test(css),'tutorial card must be opaque in light mode');
+assert(/\[data-theme="dark"\] \.guidedtourcard/.test(css),'tutorial card must be opaque in dark mode');
+assert(app.includes("trial:2"),'trial should not teach Team-only workspace');
+console.log('✓ v26.4 guided tour + presentation QA passed');

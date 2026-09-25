@@ -21,3 +21,12 @@ The platform should increasingly carry a professional from: find an address -> a
 - Before ANY ZIP, proactively exhaust every QA check available: changed-feature integration traces; all route/render/auth/session wiring; membership values and quota boundaries; database/schema compatibility; undefined functions/DOM/event wiring; full diff review; responsive/UI/empty/error states; package/dependency consistency; regression/syntax/integrity checks; and runtime/browser/deployment testing whenever the environment permits.
 - Run release checks against the extracted final ZIP, not only the working folder. If an important final verification cannot be performed, say so explicitly and do not describe it as production-verified.
 - Signup tutorial remains optional and skippable step-by-step or entirely. Significant future features must be added to onboarding/What's New guidance.
+
+## Permanent onboarding/tutorial rule (v26.4+)
+- Onboarding is a guided tour of the real interface, not a generic transparent modal. It must navigate to and visually focus the feature being explained while dimming unrelated UI.
+- Tutorial UI must remain highly readable and professionally presented in both light and dark modes.
+- Tutorial content is access-aware: never teach ordinary users features they cannot use under their current membership/access.
+- New signups may skip one step or the entire tour and may restart it later.
+- When a user gains access to meaningful new features through an upgrade/grant/team access, offer a short tutorial for the newly unlocked features rather than forcing the entire beginner tour again.
+- Significant future product features must be incorporated into the appropriate onboarding/What's New flow.
+- Preserve the user's authority rule and exhaustive pre-ZIP QA rule: do not improvise substitutions or make the user discover integration/UI failures after deployment.
