@@ -13,6 +13,3 @@ Better Real Estate has an optional guided tutorial because the feature set is la
 
 ## v26 direction
 The platform should increasingly carry a professional from: find an address -> analyze the opportunity -> pressure-test ARV/repairs/offer -> build the deal -> market/dispo -> match/manage buyers -> communicate -> move the transaction forward.
-
-## v26.1 follow-up (critical)
-The first v26 package omitted `dealbuilder` and `buyercrm` from the client renderer map even though their routes/functions existed. This made those navigation items fall back to the public homepage and appear to sign the user out. v26.1 explicitly registers both authenticated views. Do not remove authenticated feature views from the renderer map in future releases. v26.1 also adds server-enforced Deal Builder usage by membership (free trial: 1 successful analysis total; Pro: 5 successful analyses/day; Platinum/Wholesale/Admin: unlimited) and a redesigned leaderboard with consistent typography, right-aligned points, and an in-product explanation of the 100-point verified-closing system and badge thresholds.
