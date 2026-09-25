@@ -1,0 +1,11 @@
+const fs=require('fs'), assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8');
+const server=fs.readFileSync('server.js','utf8');
+const css=fs.readFileSync('public/style.css','utf8');
+assert(app.includes('dealbuilder: renderDealBuilder') && app.includes('buyercrm: renderBuyerCrm'),'authenticated renderer must expose Deal Builder and Buyer CRM');
+assert(server.includes("app.get('/api/deal-builder/usage', requireAuth"),'usage endpoint must require authentication');
+assert(server.includes('limit:5') && server.includes('dealBuilderTrialUses'),'membership allowances must be wired');
+assert(server.includes('await saveDB(req.db)'),'successful limited analyses must persist usage');
+assert(app.includes('How points work') && app.includes("class: 'lbpts'"),'leaderboard explanation and right-side points must be present');
+assert(css.includes('.leaderboardinfo') && css.includes('.dealbuildersearchtop'),'responsive UI rules must be present');
+console.log('✓ v26.2 safe patch wiring tests passed');
