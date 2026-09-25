@@ -143,38 +143,4 @@ async function generateDealImport(rawText) {
   return parsed;
 }
 
-
-
-const propertyAnalysisSchema = {
-  type:'object', additionalProperties:false,
-  required:['estimatedArv','arvRangeLow','arvRangeHigh','estimatedRehabLow','estimatedRehabHigh','estimatedRentLow','estimatedRentHigh','confidence','summary','risks','comps','sources','disclaimer'],
-  properties:{
-    estimatedArv:{anyOf:[{type:'number'},{type:'null'}]}, arvRangeLow:{anyOf:[{type:'number'},{type:'null'}]}, arvRangeHigh:{anyOf:[{type:'number'},{type:'null'}]},
-    estimatedRehabLow:{anyOf:[{type:'number'},{type:'null'}]}, estimatedRehabHigh:{anyOf:[{type:'number'},{type:'null'}]}, estimatedRentLow:{anyOf:[{type:'number'},{type:'null'}]}, estimatedRentHigh:{anyOf:[{type:'number'},{type:'null'}]},
-    confidence:{type:'string',enum:['low','medium','high']}, summary:{type:'string'},
-    risks:{type:'array',items:{type:'string'},maxItems:8},
-    comps:{type:'array',maxItems:6,items:{type:'object',additionalProperties:false,required:['address','salePrice','saleDate','reason'],properties:{address:{type:'string'},salePrice:{anyOf:[{type:'number'},{type:'null'}]},saleDate:{type:'string'},reason:{type:'string'}}}},
-    sources:{type:'array',items:{type:'string'},maxItems:8}, disclaimer:{type:'string'}
-  }
-};
-async function analyzeProperty(facts={}) {
-  if (!configured()) throw new Error('AI property analysis is not configured. Add OPENAI_API_KEY in Netlify.');
-  const body={model:OPENAI_MODEL,
-    instructions:[
-      'You are Better Real Estate property analysis. Research the exact US property using current public web information when available.',
-      'Estimate ARV from recent comparable SOLD properties, not active asking prices. Prefer same neighborhood, similar property type, size, bed/bath and recent sales.',
-      'Never fabricate a comparable sale, sale price, date, property fact or source. If evidence is insufficient, return null estimates and low confidence.',
-      'Rehab and rent are preliminary ranges only. Use supplied condition facts when present and clearly state uncertainty.',
-      'Do not provide legal, appraisal, inspection or investment guarantees. Keep the summary concise and useful to an investor.'
-    ].join('\n'),
-    tools:[{type:'web_search'}],
-    input:[{role:'user',content:[{type:'input_text',text:'Property facts supplied by user/listing:\n'+JSON.stringify(facts,null,2).slice(0,12000)}]}],
-    text:{format:{type:'json_schema',name:'better_real_estate_property_analysis',schema:propertyAnalysisSchema,strict:true}}, max_output_tokens:2200
-  };
-  const res=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const payload=await res.json().catch(()=>({})); if(!res.ok) throw new Error((payload?.error?.message||`OpenAI request failed (${res.status}).`).slice(0,300));
-  const text=extractOutputText(payload); if(!text) throw new Error('AI returned no property analysis.');
-  try{return JSON.parse(text)}catch{throw new Error('AI returned an unreadable property analysis.');}
-}
-
-module.exports = { configured, model, generateListingCopy, generateDealImport, analyzeProperty, _extractOutputText: extractOutputText, _safeImageUrl: safeImageUrl };
+module.exports = { configured, model, generateListingCopy, generateDealImport, _extractOutputText: extractOutputText, _safeImageUrl: safeImageUrl };
