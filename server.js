@@ -217,6 +217,7 @@ const defaultSettings = () => ({
   notifyOnMessage: true,
   messageEmailDelayMinutes: 60,
   notifyOnMatch: true,
+  showMembershipLevel: true,
   // Admin-only preference. Undefined on older accounts intentionally behaves
   // as ON so the site owner starts receiving signup notifications immediately.
   notifyOnNewSignup: true
@@ -284,6 +285,17 @@ function maxBuyBoxesFor(user) {
   if (isPlatinum(user)) return PRICING.maxBuyBoxes.platinum;
   return PRICING.maxBuyBoxes[user.role] || 1;
 }
+function publicMembershipLabel(user) {
+  if (!user || user.settings?.showMembershipLevel === false) return null;
+  const a = accessFor(user);
+  if (a?.adminUnlimited) return 'Admin';
+  if (a?.wholesale) return 'Wholesale Teams';
+  if (a?.platinum) return 'Platinum';
+  if (a?.pro) return 'Pro';
+  if (a?.trial) return 'Trial';
+  return 'Free';
+}
+
 function accessFor(user) {
   if (!user) return null;
   const grant = activeMembershipGrant(user);
@@ -726,6 +738,7 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (body.feedDensity === 'comfortable' || body.feedDensity === 'compact') next.feedDensity = body.feedDensity;
   if (typeof body.notifyOnMessage === 'boolean') next.notifyOnMessage = body.notifyOnMessage;
   if (typeof body.notifyOnMatch === 'boolean') next.notifyOnMatch = body.notifyOnMatch;
+  if (typeof body.showMembershipLevel === 'boolean') next.showMembershipLevel = body.showMembershipLevel;
   if (isAdminUser(req.user) && typeof body.notifyOnNewSignup === 'boolean') next.notifyOnNewSignup = body.notifyOnNewSignup;
   if (body.messageEmailDelayMinutes !== undefined) {
     const n = Number(body.messageEmailDelayMinutes);
@@ -1428,6 +1441,66 @@ app.get('/api/listings/:id/distribution', requireAuth, async (req, res) => {
   res.json({ pack: distributionPack(listing, req.user.referralCode) });
 });
 
+/* ============================ DEAL OPERATIONS ============================ */
+function canManageListing(db, user, listing) {
+  if (!user || !listing) return false;
+  if (isAdminUser(user) || listing.ownerId === user.id) return true;
+  return !!(listing.companyId && user.companyId && listing.companyId === user.companyId && ['owner','admin','member'].includes(user.companyRole || 'member'));
+}
+function dealRoomFor(listing) {
+  listing.dealRoom = listing.dealRoom || { stage:'marketing', nextAction:'', privateNotes:'', tasks:[], updatedAt:null };
+  listing.dealRoom.tasks = Array.isArray(listing.dealRoom.tasks) ? listing.dealRoom.tasks : [];
+  return listing.dealRoom;
+}
+app.get('/api/listings/:id/deal-room', requireAuth, async (req,res) => {
+  const listing=req.db.listings.find(l=>l.id===req.params.id); if(!listing) return res.status(404).json({error:'Listing not found.'});
+  if(!canManageListing(req.db,req.user,listing)) return res.status(403).json({error:'This deal room is private to the listing owner and their company team.'});
+  res.json({ room:dealRoomFor(listing), listing:{id:listing.id,address:listing.address,city:listing.city,contractDeadline:listing.contractDeadline||null} });
+});
+app.patch('/api/listings/:id/deal-room', requireAuth, async (req,res) => {
+  const listing=req.db.listings.find(l=>l.id===req.params.id); if(!listing) return res.status(404).json({error:'Listing not found.'});
+  if(!canManageListing(req.db,req.user,listing)) return res.status(403).json({error:'Not allowed.'});
+  const room=dealRoomFor(listing), b=req.body||{};
+  const stages=new Set(['intake','marketing','buyer-interest','negotiation','title','closing','closed','on-hold']);
+  if(b.stage!==undefined){ if(!stages.has(String(b.stage))) return res.status(400).json({error:'Choose a valid deal stage.'}); room.stage=String(b.stage); }
+  if(b.nextAction!==undefined) room.nextAction=String(b.nextAction).trim().slice(0,240);
+  if(b.privateNotes!==undefined) room.privateNotes=String(b.privateNotes).slice(0,4000);
+  if(Array.isArray(b.tasks)) room.tasks=b.tasks.slice(0,30).map(t=>({id:String(t.id||crypto.randomUUID()),text:String(t.text||'').trim().slice(0,180),done:t.done===true})).filter(t=>t.text);
+  room.updatedAt=new Date().toISOString(); room.updatedBy=req.user.id; await saveDB(req.db); res.json({room});
+});
+app.get('/api/listings/:id/showings', async (req,res) => {
+  const db=await loadDB(), listing=db.listings.find(l=>l.id===req.params.id); if(!listing) return res.status(404).json({error:'Listing not found.'});
+  const viewer=db.users.find(u=>u.id===req.session.userId); const manage=canManageListing(db,viewer,listing);
+  const slots=(listing.showingSlots||[]).filter(x=>manage || (!x.bookedBy && new Date(x.at)>new Date())).map(x=>({id:x.id,at:x.at,note:x.note||'',booked:!!x.bookedBy,bookedBy:manage?x.bookedBy:null,bookedName:manage?x.bookedName:null}));
+  res.json({slots,canManage:manage});
+});
+app.post('/api/listings/:id/showings', requireAuth, async (req,res) => {
+  const listing=req.db.listings.find(l=>l.id===req.params.id); if(!listing) return res.status(404).json({error:'Listing not found.'});
+  if(!canManageListing(req.db,req.user,listing)) return res.status(403).json({error:'Not allowed.'});
+  const at=new Date(req.body?.at); if(!Number.isFinite(at.getTime())||at<=new Date()) return res.status(400).json({error:'Choose a future showing time.'});
+  listing.showingSlots=listing.showingSlots||[]; if(listing.showingSlots.length>=40) return res.status(400).json({error:'Remove an old showing slot before adding another.'});
+  const slot={id:crypto.randomUUID(),at:at.toISOString(),note:String(req.body?.note||'').trim().slice(0,120),bookedBy:null,bookedName:null,createdAt:new Date().toISOString()}; listing.showingSlots.push(slot); await saveDB(req.db); res.json({slot});
+});
+app.post('/api/listings/:id/showings/:slotId/book', requireAuth, async (req,res) => {
+  const listing=req.db.listings.find(l=>l.id===req.params.id); if(!listing) return res.status(404).json({error:'Listing not found.'});
+  if(listing.ownerId===req.user.id) return res.status(400).json({error:'You own this listing.'});
+  const slot=(listing.showingSlots||[]).find(x=>x.id===req.params.slotId); if(!slot) return res.status(404).json({error:'Showing time not found.'});
+  if(slot.bookedBy) return res.status(409).json({error:'That showing time was already reserved.'});
+  if(new Date(slot.at)<=new Date()) return res.status(409).json({error:'That showing time has passed.'});
+  slot.bookedBy=req.user.id; slot.bookedName=req.user.name; slot.bookedAt=new Date().toISOString(); await saveDB(req.db); res.json({ok:true});
+});
+app.delete('/api/listings/:id/showings/:slotId', requireAuth, async (req,res) => {
+  const listing=req.db.listings.find(l=>l.id===req.params.id); if(!listing) return res.status(404).json({error:'Listing not found.'});
+  if(!canManageListing(req.db,req.user,listing)) return res.status(403).json({error:'Not allowed.'});
+  listing.showingSlots=(listing.showingSlots||[]).filter(x=>x.id!==req.params.slotId); await saveDB(req.db); res.json({ok:true});
+});
+app.get('/api/demand-insights', requireAuth, async (req,res) => {
+  const rows=publicBuyerDemand(req.db,req.user.id); const markets=new Map(), types=new Map(), strategies=new Map();
+  for(const r of rows){ for(const c of (r.cities||[])){const k=String(c).trim();if(k) markets.set(k,(markets.get(k)||0)+1)} for(const t of (r.propertyTypes||[])){const k=String(t).trim();if(k) types.set(k,(types.get(k)||0)+1)} if(r.strategy){const k=String(r.strategy).trim();strategies.set(k,(strategies.get(k)||0)+1)} }
+  const top=m=>[...m.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,12).map(([label,count])=>({label,count}));
+  res.json({activeBuyBoxes:rows.length,markets:top(markets),propertyTypes:top(types),strategies:top(strategies),generatedAt:new Date().toISOString()});
+});
+
 /* ============================ SHARE / REFERRAL GROWTH ============================ */
 function shareHtmlEscape(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
@@ -1639,6 +1712,7 @@ app.post('/api/listings', requireAuth, async (req, res) => {
     timeline: b.timeline || 'Flexible', notes: String(b.notes || '').slice(0, 1500),
     videoUrl: String(b.videoUrl || '').slice(0, 300) || null,
     contractDeadline: /^20\d{2}-\d{2}-\d{2}$/.test(String(b.contractDeadline || '')) ? String(b.contractDeadline) : null,
+    openToJV: b.openToJV === true || b.openToJV === 'true',
     photos, boostUntil: null, boostWeight: 0, spotlightUntil: null,
     freshAt: new Date().toISOString(), lastConfirmedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + LISTING_CONFIRM_DAYS * 86400000).toISOString(), availabilityStatus: 'active', archivedAt: null,
@@ -1697,6 +1771,7 @@ app.get('/api/listings/:id', async (req, res) => {
     .map(l => ({ id: l.id, address: gated.locked ? 'Address hidden' : l.address, asking: l.asking, photos: l.photos }));
   const ownerCompany = owner?.companyId ? db.companies.find(c => c.id === owner.companyId) : null;
   const gatedOwner = owner ? { ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone } : null;
+  if (gatedOwner) gatedOwner.publicMembership = publicMembershipLabel(owner);
   if (gatedOwner && ownerCompany) gatedOwner.company = publicCompany(ownerCompany);
   res.json({
     listing: gated,
@@ -1743,6 +1818,7 @@ app.get('/api/users/:id/listings', async (req, res) => {
   const ownerCompany = owner.companyId ? db.companies.find(c => c.id === owner.companyId) : null;
   res.json({
     owner: publicProfileUser(owner),
+    publicMembership: publicMembershipLabel(owner),
     company: ownerCompany ? publicCompany(ownerCompany) : null,
     listings: db.listings.filter(l => l.ownerId === owner.id && (viewer?.id === owner.id || listingFreshness(l).availabilityStatus !== 'archived')).map(l => gateListing(l, viewer, db)),
     followerCount: db.follows.filter(f => f.followingId === owner.id).length,
@@ -1957,6 +2033,15 @@ app.post('/api/admin/verify-user', requireAuth, requireAdmin, async (req, res) =
   const u = req.db.users.find(x => x.id === req.body?.userId);
   if (!u) return res.status(404).json({ error: 'Not found.' });
   u.verified = true; u.verificationPending = false; await saveDB(req.db); res.json({ ok: true });
+});
+app.post('/api/admin/set-user-verification', requireAuth, requireAdmin, async (req, res) => {
+  const u = req.db.users.find(x => x.id === req.body?.userId && x.role !== 'admin');
+  if (!u) return res.status(404).json({ error: 'User not found.' });
+  u.verified = req.body?.verified === true;
+  u.verificationPending = false;
+  u.verifiedAt = u.verified ? new Date().toISOString() : null;
+  await saveDB(req.db);
+  res.json({ ok: true, verified: u.verified });
 });
 
 
@@ -2800,7 +2885,9 @@ app.get('/api/admin/memberships', requireAuth, requireAdmin, async (req, res) =>
       paidPlanUntil: u.planUntil || null,
       grant: membershipGrantSummary(u),
       access: accessFor(u),
-      createdAt: u.createdAt || null
+      createdAt: u.createdAt || null,
+      verified: !!u.verified,
+      verificationPending: !!u.verificationPending
     }));
   const history = (req.db.membershipGrants || [])
     .slice()

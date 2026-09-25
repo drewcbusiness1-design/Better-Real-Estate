@@ -19,7 +19,26 @@ const el = (tag, attrs = {}, children = []) => {
     else if (c) e.appendChild(c);
   });
   return e;
-};
+ };
+
+function iconSvg(name, size = 20) {
+  const paths = {
+    home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-7h6v7"/>',
+    shop:'<path d="M4 7h16l-1 14H5L4 7Z"/><path d="M8 7a4 4 0 0 1 8 0"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>',
+    network:'<circle cx="9" cy="8" r="3"/><path d="M3 20c.5-4 2.5-6 6-6s5.5 2 6 6"/><circle cx="18" cy="9" r="2"/><path d="M16 15c3 0 4.5 1.5 5 4"/>',
+    user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c.7-5 3.3-7 8-7s7.3 2 8 7"/>',
+    mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>',
+    bolt:'<path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/>',
+    wallet:'<path d="M3 6h15a3 3 0 0 1 3 3v10H5a2 2 0 0 1-2-2V6Z"/><path d="M3 6a3 3 0 0 1 3-3h11v3"/><path d="M16 12h5v4h-5a2 2 0 1 1 0-4Z"/>',
+    moon:'<path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/>',
+    sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>'
+  };
+  const span = el('span', { class:'svgicon', 'aria-hidden':'true' });
+  span.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.home}</svg>`;
+  return span;
+}
+function membershipBadge(label) { return label ? el('span', { class:'membershiplevel ' + String(label).toLowerCase().replace(/[^a-z]+/g,'-') }, label) : null; }
 
 async function api(method, path, body) {
   const res = await fetch(path, {
@@ -64,7 +83,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','admin','emailcenter','memberships','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -208,13 +227,13 @@ function renderTop() {
       if (state.user) { try { const { settings } = await api('PATCH', '/api/me/settings', { theme: next }); state.user.settings = settings; } catch {} }
       renderTop();
     }
-  }, document.documentElement.getAttribute('data-theme') === 'dark' ? '☀' : '☾'));
+  }, iconSvg(document.documentElement.getAttribute('data-theme') === 'dark' ? 'sun' : 'moon', 19)));
   if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
-  const inboxBtn = el('button', { class: 'iconbtn', title: 'Messages', onclick: () => go('messages') }, '✉');
+  const inboxBtn = el('button', { class: 'iconbtn', title: 'Messages', onclick: () => go('messages') }, iconSvg('mail',19));
   if (state.unreadCount > 0) inboxBtn.appendChild(el('span', { class: 'msgbadge' }, state.unreadCount > 99 ? '99+' : String(state.unreadCount)));
   nav.appendChild(inboxBtn);
-  nav.appendChild(el('button', { class: 'iconbtn', title: 'Boost a listing', onclick: () => go('boostpicker') }, '⚡'));
-  nav.appendChild(el('button', { class: 'iconbtn', title: 'Wallet', onclick: () => go('wallet') }, '▤'));
+  nav.appendChild(el('button', { class: 'iconbtn', title: 'Boost a listing', onclick: () => go('boostpicker') }, iconSvg('bolt',19)));
+  nav.appendChild(el('button', { class: 'iconbtn', title: 'Wallet', onclick: () => go('wallet') }, iconSvg('wallet',19)));
   nav.appendChild(el('button', { onclick: () => go('settings'), class: state.view === 'settings' ? 'active' : '' }, 'Settings'));
 }
 
@@ -222,10 +241,10 @@ function renderTabs() {
   const tabs = document.getElementById('tabbar');
   tabs.innerHTML = '';
   if (!state.user) return;
-  const items = [['feed','⌂','Feed'], ['shop','▦','Shop'], ['compose','＋','Post'], ['network','◎','Network'], ['me','◍','Profile']];
+  const items = [['feed','home','Feed'], ['shop','shop','Shop'], ['compose','plus','Post'], ['network','network','Network'], ['me','user','Profile']];
   items.forEach(([v, ic, label]) => {
     const active = state.view === v || (v === 'shop' && ['shopitem','sellitem','shopmanage','shopedit'].includes(state.view));
-    const icon = el('span', { class: 'ic' }, ic);
+    const icon = el('span', { class: 'ic' }, iconSvg(ic, 21));
     if (v === 'network' && state.friendRequestCount > 0) icon.appendChild(el('span', { class: 'tabalert' }));
     tabs.appendChild(el('button', {
       class: active ? 'active' : '', onclick: () => go(v)
@@ -243,7 +262,7 @@ async function renderApp() {
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
-    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal,
+    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal, insights: renderDemandInsights,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
@@ -708,6 +727,7 @@ async function renderDetail() {
   const { listing, owner, otherListings, reviews } = d;
   state.access = d.access || state.access;
   const wrap = el('div', { class: 'detail' });
+  if (listing.openToJV) wrap.appendChild(el('div', { class:'jvbanner' }, [el('b', {}, 'Open to JV'), el('span', {}, 'The deal owner is open to joint-venture conversations.') ]));
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back to feed'));
 
   const gal = el('div', { class: 'gallery' });
@@ -796,7 +816,7 @@ async function renderDetail() {
     el('div', { class: 'ownerbox' }, [
       el('div', { class: 'av', onclick: () => go('profile', { profileId: owner.id }) }, owner.avatarUrl ? el('img', { src: owner.avatarUrl }) : initials(owner.name)),
       el('div', { class: 'meta', onclick: () => go('profile', { profileId: owner.id }) }, [
-        el('div', { class: 'n' }, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓') : null]),
+        el('div', { class: 'n' }, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓') : null, membershipBadge(owner.publicMembership)]),
         owner.company ? el('button', { class: 'companylink', onclick: e => { e.stopPropagation(); go('company', { companyId: owner.company.id }); } }, owner.company.name) : null,
         el('div', { class: 's' }, [owner.username ? '@' + owner.username : null, owner.phone, owner.email, avg ? `★ ${avg} (${reviews.length})` : null].filter(Boolean).join(' · '))
       ]),
@@ -834,6 +854,37 @@ async function renderDetail() {
     wrap.appendChild(el('div', { class: 'dsection' }, [el('h3', {}, 'Message the seller'), msg, mb, mst]));
   }
 
+  if (state.user) {
+    try {
+      const sh = await api('GET', '/api/listings/' + encodeURIComponent(listing.id) + '/showings');
+      const future = (sh.slots || []).filter(x => new Date(x.at) > new Date());
+      if (future.length || sh.canManage) {
+        const sec = el('div', { class:'dsection showingpanel' });
+        sec.appendChild(el('div', { class:'sectioneyebrow' }, 'SHOWING SCHEDULER'));
+        sec.appendChild(el('h3', {}, sh.canManage ? 'Coordinate property access' : 'Reserve a showing time'));
+        const list = el('div', { class:'showinglist' });
+        const drawSlots = slots => {
+          list.innerHTML='';
+          if (!slots.length) list.appendChild(el('div',{class:'hint'},sh.canManage ? 'No showing windows yet. Add one below.' : 'No showing windows are currently available. Message the seller to coordinate access.'));
+          slots.forEach(slot => {
+            const when = new Date(slot.at).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+            const actions=[];
+            if (sh.canManage) actions.push(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{if(!confirm('Remove this showing time?'))return;await api('DELETE',`/api/listings/${listing.id}/showings/${slot.id}`);render();}},'Remove'));
+            else if (!slot.booked) actions.push(el('button',{class:'btn-primary compactbtn',onclick:async()=>{try{await api('POST',`/api/listings/${listing.id}/showings/${slot.id}/book`);toast('Showing reserved','ok');render();}catch(e){toast(e.message,'err')}}},'Reserve'));
+            list.appendChild(el('div',{class:'showingrow'},[el('div',{class:'grow'},[el('b',{},when),slot.note?el('div',{class:'hint'},slot.note):null,slot.booked?el('div',{class:'hint'},sh.canManage ? `Reserved${slot.bookedName ? ' by '+slot.bookedName : ''}` : 'Reserved'):null]),...actions]));
+          });
+        };
+        drawSlots(future); sec.appendChild(list);
+        if (sh.canManage) {
+          const dt=el('input',{type:'datetime-local'}), note=el('input',{placeholder:'Access note (optional)'}), add=el('button',{class:'btn-primary'},'Add showing window');
+          add.onclick=async()=>{try{if(!dt.value)throw new Error('Choose a date and time.');await api('POST','/api/listings/'+listing.id+'/showings',{at:new Date(dt.value).toISOString(),note:note.value});toast('Showing window added','ok');render();}catch(e){toast(e.message,'err')}};
+          sec.appendChild(el('div',{class:'showingadd'},[dt,note,add]));
+        }
+        wrap.appendChild(sec);
+      }
+    } catch {}
+  }
+
   if (otherListings.length) {
     wrap.appendChild(el('div', { class: 'dsection' }, [
       el('h3', {}, 'More from ' + owner.name),
@@ -845,6 +896,25 @@ async function renderDetail() {
   }
 
   if (state.user && state.user.id === owner.id) {
+    const command = el('div', { class:'dsection dealcommand' });
+    command.appendChild(el('div',{class:'sectioneyebrow'},'DEAL COMMAND CENTER'));
+    command.appendChild(el('h3',{},'Keep the deal moving'));
+    command.appendChild(el('div',{class:'hint'},'Private operating notes, stage and tasks stay with this deal. They are not shown to buyers.'));
+    try {
+      const {room}=await api('GET','/api/listings/'+encodeURIComponent(listing.id)+'/deal-room');
+      const stage=el('select',{},[['intake','Intake'],['marketing','Marketing'],['buyer-interest','Buyer interest'],['negotiation','Negotiation'],['title','Title / due diligence'],['closing','Closing'],['closed','Closed'],['on-hold','On hold']].map(([v,l])=>el('option',{value:v,selected:room.stage===v?'selected':null},l)));
+      const next=el('input',{value:room.nextAction||'',placeholder:'Next action — e.g. Follow up with buyer Friday'});
+      const notes=el('textarea',{placeholder:'Private deal notes…',rows:'4'},room.privateNotes||'');
+      const taskList=el('div',{class:'dealtasks'}); let tasks=(room.tasks||[]).map(x=>({...x}));
+      const paintTasks=()=>{taskList.innerHTML='';tasks.forEach((t,i)=>{const cb=el('input',{type:'checkbox'});cb.checked=!!t.done;cb.onchange=()=>t.done=cb.checked;const tx=el('input',{value:t.text,placeholder:'Task'});tx.oninput=()=>t.text=tx.value;const rm=el('button',{class:'iconremove',title:'Remove task',onclick:()=>{tasks.splice(i,1);paintTasks();}},'×');taskList.appendChild(el('div',{class:'dealtask'},[cb,tx,rm]));});}; paintTasks();
+      const addTask=el('button',{class:'btn-ghost compactbtn',onclick:()=>{tasks.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),text:'',done:false});paintTasks();}},'+ Add task');
+      const save=el('button',{class:'btn-primary'},'Save deal room');
+      save.onclick=async()=>{try{await api('PATCH','/api/listings/'+listing.id+'/deal-room',{stage:stage.value,nextAction:next.value,privateNotes:notes.value,tasks});toast('Deal room saved','ok');}catch(e){toast(e.message,'err')}};
+      command.appendChild(el('div',{class:'dealcommandgrid'},[el('div',{},[el('label',{},'Stage'),stage]),el('div',{},[el('label',{},'Next action'),next])]));
+      command.appendChild(el('label',{},'Tasks')); command.appendChild(taskList); command.appendChild(addTask); command.appendChild(el('label',{},'Private notes')); command.appendChild(notes); command.appendChild(save);
+    } catch(e) { command.appendChild(el('div',{class:'errmsg'},e.message)); }
+    wrap.appendChild(command);
+
     const dispo = el('div', { class: 'dsection betterdispopanel' });
     dispo.appendChild(el('div', { class: 'dispoeyebrow' }, 'BETTER DISPO'));
     dispo.appendChild(el('h3', {}, 'Move this deal'));
@@ -1851,6 +1921,12 @@ async function renderPromote() {
 
 async function renderAnalytics() {
   const a = await api('GET', `/api/listings/${state.detailId}/analytics`);
+  const rescue = [];
+  if (a.views >= 10 && a.saveRate < 8) rescue.push('Interest is low relative to views. Recheck price, lead photo and headline before buying more promotion.');
+  if (a.views < 10) rescue.push('This deal has limited exposure. Share the Better Dispo deal link and distribution copy before changing the economics.');
+  if (a.saves > 0 && a.offers === 0) rescue.push('People are saving the deal but not offering. Add clearer access, condition, title and deadline information, then follow up with interested buyers.');
+  if (a.unlocks > 0 && a.offers === 0) rescue.push('Buyers unlocked the details but have not offered. Direct follow-up may be more useful than additional reach.');
+  if (!rescue.length) rescue.push('No obvious bottleneck yet. Keep the listing current and respond quickly to buyer activity.');
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('detail', { detailId: state.detailId }) }, '← Back'));
   wrap.appendChild(el('h2', {}, 'Listing analytics'));
@@ -1864,6 +1940,9 @@ async function renderAnalytics() {
     el('div', { class: 'grow' }, el('div', { class: 'd' }, 'Total spent promoting this listing')),
     el('div', { class: 'amt neg' }, cents(a.promoSpend))
   ])));
+  wrap.appendChild(el('div', { class:'sectiontitle' }, 'Deal Rescue'));
+  wrap.appendChild(el('div', { class:'card rescuecard' }, [el('div',{class:'dispoeyebrow'},'NEXT BEST ACTIONS'), ...rescue.map(x=>el('div',{class:'rescueitem'},[el('span',{},'→'),el('p',{},x)]))]));
+
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Interested buyers'));
   const box = el('div', { class: 'card' });
   if (!a.interested.length) box.appendChild(el('div', { class: 'ledrow' }, el('div', { class: 'dt' }, 'No saves yet.')));
@@ -1953,9 +2032,9 @@ async function renderCompose() {
     finally { importBtn.disabled = false; importBtn.textContent = 'Import existing deal'; }
   };
   wrap.appendChild(el('div', { class: 'dispoimport' }, [
-    el('div', { class: 'dispoeyebrow' }, 'BETTER DISPO'),
-    el('h3', {}, 'Already wrote this deal somewhere else?'),
-    el('div', { class: 'hint' }, 'Paste the post once. Better Real Estate will pull out the deal facts so you do not have to retype everything.'),
+    el('div', { class: 'dispoeyebrow' }, 'AUTO AI DEAL BUILDER'),
+    el('h3', {}, 'Turn messy deal notes into a ready-to-market deal.'),
+    el('div', { class: 'hint' }, 'Paste a Facebook post, email blast, text thread or rough notes. Better Real Estate extracts the deal facts, then Better Dispo handles buyer matching and distribution after you post.'),
     (state.access?.platinum || state.access?.wholesale || state.access?.adminUnlimited) ? el('div', { class: 'hint', style: 'margin-top:6px' }, 'On eligible plans, this may use the configured AI provider to improve extraction. Review pasted text before submitting if it contains information you do not want sent to the AI provider.') : null,
     importText, importBtn, importStatus
   ]));
@@ -1988,6 +2067,8 @@ async function renderCompose() {
   wrap.appendChild(el('label', {}, 'Contract / assignment deadline (optional)')); wrap.appendChild(f.contractDeadline);
   wrap.appendChild(el('label', {}, 'Video walkthrough')); wrap.appendChild(f.videoUrl);
   wrap.appendChild(el('label', {}, 'Notes')); wrap.appendChild(f.notes);
+  const openToJV = el('input', { type:'checkbox' });
+  wrap.appendChild(el('label', { class:'checkrow dealoption' }, [openToJV, el('span', {}, [el('b', {}, 'Open to JV opportunities'), el('small', {}, 'Let other professionals know you are open to discussing a joint venture on this deal.')]) ]));
   if (state.access?.platinum || state.user?.role === 'admin') {
     const aiMsg = el('div', { class: 'hint' });
     const aiBtn = el('button', { class: 'btn-ghost', type: 'button' }, '✨ Draft property notes with AI');
@@ -2015,6 +2096,7 @@ async function renderCompose() {
     try {
       const payload = { photos: state.composePhotos };
       for (const k in f) payload[k] = f[k].value;
+      payload.openToJV = openToJV.checked;
       const r = await api('POST', '/api/listings', payload);
       state.composePhotos = [];
       toast(r.matchCount ? `Posted — ${r.matchCount} buyer${r.matchCount === 1 ? '' : 's'} currently match this deal.` : 'Posted — Better Dispo is checking buyer demand.', 'ok');
@@ -2252,6 +2334,19 @@ async function renderNetwork() {
   return wrap;
 }
 
+async function renderDemandInsights() {
+  const wrap=el('div',{class:'page insightspage'});
+  wrap.appendChild(el('button',{class:'backbtn',onclick:()=>go('me')},'← Back'));
+  wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'homeeyebrow'},'BUYER DEMAND'),el('h2',{},'Demand Insights'),el('div',{class:'sub'},'A live view of public buy-box demand already on Better Real Estate. Counts reflect published criteria, not guaranteed transactions.')]),el('button',{class:'btn-primary',onclick:()=>go('network',{networkTab:'buyers'})},'Open Buyers Looking')]));
+  try{
+    const d=await api('GET','/api/demand-insights');
+    wrap.appendChild(el('div',{class:'insightsummary'},[stat(d.activeBuyBoxes,'Active public buy boxes'),stat(d.markets.length,'Markets represented'),stat(d.propertyTypes.length,'Property types')]));
+    const section=(title,rows)=>el('div',{class:'insightblock'},[el('h3',{},title), rows.length?el('div',{class:'insightranks'},rows.map((r,i)=>el('div',{class:'insightrank'},[el('span',{class:'ranknum'},String(i+1).padStart(2,'0')),el('b',{class:'grow'},r.label),el('span',{class:'pill'},`${r.count} buy box${r.count===1?'':'es'}`)]))):el('div',{class:'empty compact'},el('p',{},'No public demand data yet.'))]);
+    wrap.appendChild(el('div',{class:'insightsgrid'},[section('Top markets',d.markets),section('Property types',d.propertyTypes),section('Strategies',d.strategies)]));
+  }catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));}
+  return wrap;
+}
+
 async function renderMessages() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('div', { class: 'pageheadrow' }, [
@@ -2385,7 +2480,7 @@ async function renderMe() {
   const mineHeader = el('div', { class: 'profilehero' }, [
     avatarNode(state.user, 'profile'),
     el('div', { class: 'profileherobody' }, [
-      el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
+      el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, state.user.settings?.showMembershipLevel !== false ? membershipBadge(state.access?.adminUnlimited ? 'Admin' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free') : null]),
       state.user.username ? el('div', { class: 'profileusername' }, '@' + state.user.username) : null,
       el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`),
       state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
@@ -2402,7 +2497,7 @@ async function renderMe() {
   const nav = el('div', { class: 'card' });
   [['Wallet & payouts', () => go('wallet')], ['Offers', () => go('offers')], ['Orders', () => go('orders')],
    [state.user.role === 'admin' ? 'Admin — shop listings' : 'My shop listings', () => go('shopmanage')],
-   ['Saved properties', () => go('saved')], ['Network & friends', () => go('network')], ['Messages', () => go('messages')], ...(state.access?.wholesale || state.user.companyId ? [['Company workspace', () => go('companyworkspace')]] : []), ['Buy box', () => go('buybox')],
+   ['Saved properties', () => go('saved')], ['Network & friends', () => go('network')], ['Messages', () => go('messages')], ...(state.access?.wholesale || state.user.companyId ? [['Company workspace', () => go('companyworkspace')]] : []), ['Buy box', () => go('buybox')], ['Buyer demand insights', () => go('insights')],
    ['Investor workspace' + (state.access?.platinum ? '' : ' 🔒'), () => go('workspace')],
    ['Plans & billing', () => go('upgrade')],
    ...(state.user.role === 'admin' ? [
@@ -2467,12 +2562,13 @@ async function renderMe() {
 }
 
 async function renderProfile() {
-  const { owner, company, listings, followerCount, friendCount, friendship, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
+  const { owner, publicMembership, company, listings, followerCount, friendCount, friendship, reviews } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
+  owner.publicMembership = publicMembership || null;
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
   const profileBody = el('div', { class: 'profileherobody' }, [
-    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
+    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, membershipBadge(owner.publicMembership)]),
     owner.username ? el('div', { class: 'profileusername' }, '@' + owner.username) : null,
     company ? el('button', { class: 'companychip', onclick: () => go('company', { companyId: company.id }) }, company.name) : null,
     el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')),
@@ -2689,6 +2785,9 @@ async function renderSettings() {
   sbox.appendChild(reminderDelay);
   sbox.appendChild(toggleRow('Alert me on buy box matches', 'When a new listing fits your criteria.', s.notifyOnMatch !== false, async on => {
     const { settings } = await api('PATCH', '/api/me/settings', { notifyOnMatch: on }); state.user.settings = settings;
+  }));
+  sbox.appendChild(toggleRow('Display membership level on my profile', 'Shows your current Free, Pro, Platinum or Wholesale Teams level beside your name. You can hide it anytime.', s.showMembershipLevel !== false, async on => {
+    const { settings } = await api('PATCH', '/api/me/settings', { showMembershipLevel: on }); state.user.settings = settings; toast(on ? 'Membership level is visible' : 'Membership level hidden', 'ok');
   }));
   wrap.appendChild(sbox);
 
@@ -3209,7 +3308,8 @@ async function renderMemberships() {
           el('div', { class: 's' }, `${u.email} · ${u.role}${u.location ? ' · ' + u.location : ''}`),
           el('div', { class: 'membershipbadges' }, [
             el('span', { class: 'pill' }, paid ? `Paid ${grantLabel(u.paidPlan)} through ${fmtDate(u.paidPlanUntil)}` : 'No active paid plan'),
-            activeGrant ? el('span', { class: 'pill good' }, `Free ${grantLabel(u.grant.grantPlan)} through ${fmtDate(u.grant.grantUntil)}`) : el('span', { class: 'pill' }, 'No complimentary grant')
+            activeGrant ? el('span', { class: 'pill good' }, `Free ${grantLabel(u.grant.grantPlan)} through ${fmtDate(u.grant.grantUntil)}`) : el('span', { class: 'pill' }, 'No complimentary grant'),
+            el('span', { class: u.verified ? 'pill good' : 'pill' }, u.verified ? 'Verified account' : (u.verificationPending ? 'Verification pending' : 'Not verified'))
           ]),
           activeGrant && u.grant.grantReason ? el('div', { class: 'hint' }, u.grant.grantReason) : null
         ]);
@@ -3224,7 +3324,13 @@ async function renderMemberships() {
           if (!confirm(`Grant ${u.name} ${grantLabel(tier.value)} for ${n} days?`)) return;
           try { await api('POST','/api/admin/memberships/grant',{ userId:u.id, tier:tier.value, days:n, reason:reason.value.trim() }); toast('Membership granted','ok'); await load(); } catch(e) { toast(e.message,'err'); }
         };
-        controls.append(tier, days, reason, grant);
+        const verifyBtn = el('button', { class: u.verified ? 'btn-ghost adminverifybtn verified' : 'btn-ghost adminverifybtn' }, u.verified ? '✓ Verified' : 'Grant verification');
+        verifyBtn.onclick = async () => {
+          const next = !u.verified;
+          if (!confirm(`${next ? 'Grant' : 'Remove'} account verification for ${u.name}?`)) return;
+          try { await api('POST','/api/admin/set-user-verification',{ userId:u.id, verified:next }); toast(next ? 'Account verified' : 'Verification removed','ok'); await load(); } catch(e) { toast(e.message,'err'); }
+        };
+        controls.append(tier, days, reason, grant, verifyBtn);
         if (activeGrant) {
           const revoke = el('button', { class:'dangerbtn' }, 'Revoke free access');
           revoke.onclick = async () => { if (!confirm(`Revoke ${u.name}'s complimentary access? Any paid subscription stays untouched.`)) return; try { await api('POST','/api/admin/memberships/revoke',{ userId:u.id }); toast('Complimentary membership revoked','ok'); await load(); } catch(e) { toast(e.message,'err'); } };
@@ -3298,6 +3404,26 @@ async function renderAdmin() {
     el('button', { onclick: async () => { await api('POST', '/api/admin/verify-user', { userId: u.id }); render(); } }, 'Approve')
   ])));
   wrap.appendChild(v);
+
+  wrap.appendChild(el('div', { class:'sectiontitle' }, 'Account verification'));
+  const verifyAdmin = el('div', { class:'card adminverifysearch' });
+  const verifySearch = el('input', { placeholder:'Search a member to grant or remove verification…' });
+  const verifyResults = el('div');
+  const loadVerifyUsers = async () => {
+    try {
+      const data = await api('GET','/api/admin/memberships?q='+encodeURIComponent(verifySearch.value||''));
+      verifyResults.innerHTML='';
+      const rows=(data.users||[]).slice(0, verifySearch.value.trim() ? 20 : 8);
+      if(!rows.length) verifyResults.appendChild(el('div',{class:'listrow'},el('div',{class:'s'},'No matching members.')));
+      rows.forEach(u=>{
+        const btn=el('button',{class:u.verified?'btn-ghost compactbtn verifiedaction':'btn-primary compactbtn'},u.verified?'Remove verification':'Grant verification');
+        btn.onclick=async()=>{const next=!u.verified;if(!confirm(`${next?'Grant':'Remove'} account verification for ${u.name}?`))return;try{await api('POST','/api/admin/set-user-verification',{userId:u.id,verified:next});toast(next?'Account verified':'Verification removed','ok');await loadVerifyUsers();}catch(e){toast(e.message,'err')}};
+        verifyResults.appendChild(el('div',{class:'listrow adminverifyrow'},[el('div',{class:'grow'},[el('div',{class:'t'},[u.name,u.verified?el('span',{class:'vbadge'},'✓ Verified'):null]),el('div',{class:'s'},[u.username?'@'+u.username:null,u.email,u.role].filter(Boolean).join(' · '))]),btn]));
+      });
+    } catch(e){verifyResults.innerHTML='';verifyResults.appendChild(el('div',{class:'errmsg'},e.message));}
+  };
+  let verifyTimer; verifySearch.oninput=()=>{clearTimeout(verifyTimer);verifyTimer=setTimeout(loadVerifyUsers,220)};
+  verifyAdmin.append(verifySearch,verifyResults); wrap.appendChild(verifyAdmin); await loadVerifyUsers();
   return wrap;
 }
 

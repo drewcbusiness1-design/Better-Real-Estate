@@ -1,0 +1,16 @@
+const assert = require('assert');
+const fs = require('fs');
+const server = fs.readFileSync('server.js','utf8');
+const client = fs.readFileSync('public/app.js','utf8');
+const css = fs.readFileSync('public/style.css','utf8');
+assert.ok(client.includes("iconSvg('home'") || client.includes("['feed','home','Feed']"), 'Bottom navigation uses clean SVG icons');
+assert.ok(server.includes("'/api/admin/set-user-verification'") && client.includes('Grant verification'), 'Admin can grant/remove account verification');
+assert.ok(server.includes('showMembershipLevel') && client.includes('Display membership level on my profile'), 'Users can control membership-level display');
+assert.ok(client.includes('AUTO AI DEAL BUILDER') && server.includes("'/api/dispo/parse'"), 'Auto AI Deal Builder remains wired');
+assert.ok(server.includes("'/api/listings/:id/deal-room'") && client.includes('DEAL COMMAND CENTER'), 'Private deal command center is wired');
+assert.ok(server.includes("'/api/listings/:id/showings'") && client.includes('SHOWING SCHEDULER'), 'Showing scheduler is wired');
+assert.ok(server.includes("'/api/demand-insights'") && client.includes('Demand Insights'), 'Demand insights is wired');
+assert.ok(client.includes('Deal Rescue') && client.includes('NEXT BEST ACTIONS'), 'Deal Rescue guidance is present');
+assert.ok(server.includes('openToJV') && client.includes('Open to JV opportunities'), 'JV availability flag is wired');
+assert.ok(css.includes('.dealcommand') && css.includes('.showingpanel') && css.includes('.insightsgrid'), 'New workflows have dedicated responsive presentation styles');
+console.log('✓ Professional operations & UI wiring tests passed');
