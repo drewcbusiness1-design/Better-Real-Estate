@@ -83,7 +83,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -201,7 +201,7 @@ function startViewPolling(fn, ms = 5000) {
   }, ms);
 }
 function go(view, extra = {}, options = {}) { Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
-function render() { stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter(); }
+function render() { stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter(); if(state.launchTutorialAfterNav){state.launchTutorialAfterNav=false;setTimeout(()=>startTutorial(false),450);} }
 window.addEventListener('popstate', () => {
   const params = new URLSearchParams(location.search);
   const requested = applyRouteParams(params);
@@ -395,6 +395,7 @@ function renderAuth() {
       state.user = d.user; if (d.pricing) state.pricing = d.pricing;
       if (isSignup) {
         state.pendingReferral = null;
+        state.launchTutorialAfterNav = true;
         try { localStorage.removeItem('bre_referral_code'); } catch {}
       }
       await refreshMe();
@@ -1989,6 +1990,54 @@ async function renderOffers() {
 }
 
 /* ================= COMPOSE ================= */
+
+const TUTORIAL_VERSION = 26;
+const tutorialSteps = [
+  ['Welcome to Better Real Estate','This quick tour shows where deals, buyers and your professional tools live. You can skip any step or the entire tour.'],
+  ['Feed','Discover off-market opportunities and professional activity from the network.'],
+  ['AI Deal Builder','Enter an address to pull property intelligence, comps, ARV range and repair scenarios, then move the analysis into a listing.'],
+  ['Better Dispo','Post once, match against active buyer criteria and create distribution-ready deal material.'],
+  ['Buyer CRM','Keep buyer relationships, buy boxes, follow-up status and notes organized in one private pipeline.'],
+  ['Deal operations','Use Deal Rooms, showing scheduling, Deal Rescue and demand insights to keep active deals moving.'],
+  ['Network & teams','Follow professionals, make friends, message directly and collaborate in Wholesale Team workspaces.'],
+  ['You are ready','You can restart this tour anytime from Settings. New major features will be added to future walkthroughs.']
+];
+async function startTutorial(force=false){
+  if(!state.user) return; if(!force && Number(state.user.settings?.tutorialCompletedVersion||0)>=TUTORIAL_VERSION) return;
+  let i=0; const shade=el('div',{class:'tutorialshade'}); const card=el('div',{class:'tutorialcard'}); shade.appendChild(card); document.body.appendChild(shade);
+  const finish=async(dismiss=false)=>{ shade.remove(); try{const body=dismiss?{tutorialDismissedVersion:TUTORIAL_VERSION}:{tutorialCompletedVersion:TUTORIAL_VERSION}; const r=await api('PATCH','/api/me/settings',body); state.user.settings=r.settings;}catch{} };
+  const draw=()=>{ const [title,copy]=tutorialSteps[i]; card.innerHTML=''; card.appendChild(el('div',{class:'tutorialprogress'},`STEP ${i+1} OF ${tutorialSteps.length}`)); card.appendChild(el('h2',{},title)); card.appendChild(el('p',{},copy));
+    const actions=el('div',{class:'tutorialactions'}); if(i>0) actions.appendChild(el('button',{class:'btn-ghost',onclick:()=>{i--;draw()}},'Back')); actions.appendChild(el('button',{class:'btn-ghost',onclick:()=>{ if(i<tutorialSteps.length-1){i++;draw()} else finish(false)}},i===tutorialSteps.length-1?'Finish':'Skip this step')); actions.appendChild(el('button',{class:'btn-primary',onclick:()=>{ if(i===tutorialSteps.length-1) finish(false); else {i++;draw()} }},i===tutorialSteps.length-1?'Finish':'Next')); card.appendChild(actions); card.appendChild(el('button',{class:'tutorialskip',onclick:()=>finish(true)},'Skip tutorial'));
+  }; draw();
+}
+
+async function renderDealBuilder(){
+  const wrap=el('div',{class:'page dealbuilderpage'}); wrap.appendChild(el('div',{class:'pagehead'},[el('div',{},[el('div',{class:'dispoeyebrow'},'PROPERTY INTELLIGENCE'),el('h2',{},'AI Deal Builder'),el('div',{class:'sub'},'Start with an address. Build the analysis, pressure-test the numbers, then move it into Better Dispo.')]) ]));
+  const address=el('input',{placeholder:'123 Main St, City, ST 12345'}), run=el('button',{class:'btn-primary'},'Analyze property'), status=el('div',{class:'hint'}), results=el('div');
+  const search=el('div',{class:'card dealbuildersearch'},[el('label',{},'Property address'),el('div',{class:'dealbuildersearchrow'},[address,run]),status]); wrap.appendChild(search); wrap.appendChild(results);
+  run.onclick=async()=>{ if(!address.value.trim()){status.textContent='Enter a complete address.';return} run.disabled=true;run.textContent='Analyzing…';status.textContent='Pulling property records, valuation data and comparable properties…';results.innerHTML='';
+    try{const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()}); const a=r.analysis, p=a.subject||{}, aiDraft=r.aiDraft||null; status.textContent=`Analysis generated ${new Date(a.generatedAt).toLocaleString()} · Property data: ${a.provider}. Estimates are decision-support, not an appraisal or inspection.`;
+      const selected=new Set((a.comparables||[]).map((_,i)=>i)); const calcArv=()=>{const vals=[...(a.comparables||[])].filter((_,i)=>selected.has(i)).map(c=>Number(c.price)).filter(Boolean);return vals.length?Math.round(vals.reduce((x,y)=>x+y,0)/vals.length):Number(a.arv?.estimate||0)};
+      if(aiDraft?.description){ results.appendChild(el('div',{class:'card aidraftcard'},[el('div',{class:'sectiontitle'},'AI Property Summary'),el('div',{class:'hint'},'Drafted only from returned property/valuation facts. Review before using it in marketing.'),el('p',{},aiDraft.description)])); }
+      const summary=el('div',{class:'dealgrid'},[
+        metricCard('Provider ARV',money(a.arv?.estimate||0),a.arv?.low&&a.arv?.high?`${money(a.arv.low)}–${money(a.arv.high)} range`:'Estimate'), metricCard('Beds / baths',`${p.bedrooms??'—'} / ${p.bathrooms??'—'}`,`${Number(p.squareFootage||0).toLocaleString()||'—'} sq ft`), metricCard('Year built',p.yearBuilt||'—',p.propertyType||'Property'), metricCard('Rent estimate',a.rent?.estimate?money(a.rent.estimate):'—','Long-term estimate')]); results.appendChild(summary);
+      const rehabSel=el('select',{},(a.rehab||[]).map(x=>el('option',{value:x.key},`${x.label} — ${money(x.estimate)}`))); const ask=el('input',{type:'number',placeholder:'Your purchase / contract price'}); const assignment=el('input',{type:'number',value:'10000'}); const hold=el('input',{type:'number',value:'12000'}); const numbers=el('div',{class:'dealnumbers'}); const update=()=>{const arv=calcArv(), rh=(a.rehab||[]).find(x=>x.key===rehabSel.value)?.estimate||0, purchase=Number(ask.value)||0, fees=Number(assignment.value)||0, hc=Number(hold.value)||0, flip=arv-purchase-rh-hc, mao70=Math.max(0,Math.round(arv*.70-rh-fees)); numbers.innerHTML=''; numbers.append(metricCard('Working ARV',money(arv),'Average of selected comps')); numbers.append(metricCard('70% MAO',money(mao70),'ARV × 70% − rehab − assignment')); numbers.append(metricCard('Projected flip spread',money(flip),'Before financing/tax; edit assumptions')); };
+      const analyzer=el('div',{class:'card dealanalyzer'},[el('div',{class:'sectiontitle'},'Deal Analyzer'),el('div',{class:'hint'},'Change the assumptions. Nothing here is treated as a verified fact.'),twoUp('Purchase / contract price',ask,'Repair scenario',rehabSel),twoUp('Assignment target',assignment,'Holding / closing allowance',hold),numbers]); [rehabSel,ask,assignment,hold].forEach(x=>x.oninput=update); update(); results.appendChild(analyzer);
+      const comps=el('div',{class:'card compsworkspace'},[el('div',{class:'sectiontitle'},'Smart Comps Workspace'),el('div',{class:'hint'},'Include or exclude comparables to see how your working ARV changes. Provider AVM remains visible above.')]); (a.comparables||[]).forEach((c,i)=>{const ck=el('input',{type:'checkbox',checked:'checked'});ck.onchange=()=>{ck.checked?selected.add(i):selected.delete(i);update()}; comps.appendChild(el('label',{class:'comprow'},[ck,el('div',{class:'grow'},[el('b',{},c.formattedAddress||'Comparable property'),el('div',{class:'hint'},`${c.bedrooms??'—'} bd · ${c.bathrooms??'—'} ba · ${Number(c.squareFootage||0).toLocaleString()} sq ft · ${c.distance!=null?Number(c.distance).toFixed(2)+' mi':''}`)]),el('strong',{},money(c.price||0))])); }); results.appendChild(comps);
+      const rh=el('div',{class:'card rehabcards'},[el('div',{class:'sectiontitle'},'Repair Scenarios'),el('div',{class:'hint'},'Planning allowances based mainly on size/age — not a property inspection. Choose only after reviewing actual condition.')]); (a.rehab||[]).forEach(x=>rh.appendChild(el('div',{class:'rehabrow'},[el('div',{},[el('b',{},x.label),el('div',{class:'hint'},x.scope)]),el('strong',{},`${money(x.estimate)} · ~$${x.perSqFt}/sf`)]))); results.appendChild(rh);
+      const use=el('button',{class:'submitbtn'},'Use this property in a new listing'); use.onclick=()=>{state.dealBuilderDraft={address:p.addressLine1||p.formattedAddress||address.value,city:[p.city,p.state].filter(Boolean).join(', '),propertyType:p.propertyType||'',arv:calcArv(),beds:p.bedrooms,baths:p.bathrooms,sqft:p.squareFootage,year:p.yearBuilt,rehab:(a.rehab||[]).find(x=>x.key===rehabSel.value)?.estimate||'',asking:ask.value,notes:aiDraft?.description||''};go('compose')}; results.appendChild(use);
+    }catch(e){status.textContent=e.message} finally{run.disabled=false;run.textContent='Analyze property'} };
+  return wrap;
+}
+function metricCard(k,v,s){return el('div',{class:'metriccard'},[el('span',{},k),el('strong',{},v),el('small',{},s||'')])}
+
+async function renderBuyerCRM(){
+  const wrap=el('div',{class:'page'});wrap.appendChild(el('div',{class:'pagehead'},[el('div',{},[el('h2',{},'Buyer CRM'),el('div',{class:'sub'},'A private follow-up pipeline for the buyers behind your deals.')]),el('button',{class:'btn-primary',onclick:()=>openEditor()},'Add buyer')])); const host=el('div');wrap.appendChild(host);
+  async function load(){const r=await api('GET','/api/buyer-crm');host.innerHTML=''; if(!r.contacts.length){host.appendChild(el('div',{class:'empty'},[el('h3',{},'Build your buyer pipeline'),el('p',{},'Save buyer criteria, follow-up status and private notes so relationships do not disappear into spreadsheets and DMs.'),el('button',{class:'btn-primary',onclick:()=>openEditor()},'Add first buyer')]));return} const board=el('div',{class:'crmgrid'}); ['new','contacted','interested','pof','offer','closed','inactive'].forEach(st=>{const col=el('div',{class:'crmcol'},[el('h3',{},st==='pof'?'POF received':st[0].toUpperCase()+st.slice(1))]);r.contacts.filter(x=>x.status===st).forEach(x=>col.appendChild(el('button',{class:'crmcard',onclick:()=>openEditor(x)},[el('b',{},x.name),el('span',{},x.markets||'No market saved'),el('small',{},x.buyBox||x.email||'Open to add criteria')] )));board.appendChild(col)});host.appendChild(board)}
+  function openEditor(x={}){const modal=el('div',{class:'tutorialshade'}),card=el('div',{class:'tutorialcard crmeditor'}); const f={name:el('input',{value:x.name||'',placeholder:'Buyer / company name'}),email:el('input',{value:x.email||'',placeholder:'Email'}),phone:el('input',{value:x.phone||'',placeholder:'Phone'}),markets:el('input',{value:x.markets||'',placeholder:'Markets / ZIPs'}),buyBox:el('textarea',{placeholder:'Property types, price range, rehab tolerance, strategy…'},x.buyBox||''),notes:el('textarea',{placeholder:'Private relationship and follow-up notes'},x.notes||''),status:el('select',{},['new','contacted','interested','pof','offer','closed','inactive'].map(v=>el('option',{value:v,selected:(x.status||'new')===v?'selected':null},v==='pof'?'POF received':v[0].toUpperCase()+v.slice(1))))}; card.appendChild(el('h2',{},x.id?'Edit buyer':'Add buyer')); ['name','email','phone','markets','buyBox','notes','status'].forEach(k=>{card.appendChild(el('label',{},({name:'Name',email:'Email',phone:'Phone',markets:'Markets',buyBox:'Buy box',notes:'Private notes',status:'Pipeline status'})[k]));card.appendChild(f[k])}); const actions=el('div',{class:'tutorialactions'}); if(x.id)actions.appendChild(el('button',{class:'btn-danger',onclick:async()=>{if(confirm('Remove this buyer from your private CRM?')){await api('DELETE','/api/buyer-crm/'+x.id);modal.remove();load()}}},'Delete'));actions.appendChild(el('button',{class:'btn-ghost',onclick:()=>modal.remove()},'Cancel'));actions.appendChild(el('button',{class:'btn-primary',onclick:async()=>{try{await api('POST','/api/buyer-crm',{id:x.id,...Object.fromEntries(Object.entries(f).map(([k,e])=>[k,e.value]))});modal.remove();load()}catch(e){toast(e.message,'err')}}},'Save buyer'));card.appendChild(actions);modal.appendChild(card);document.body.appendChild(modal)}
+  await load();return wrap;
+}
+
 async function renderCompose() {
   const wrap = el('div', { class: 'panel' });
   wrap.appendChild(el('h2', {}, 'Post a property'));
@@ -2010,6 +2059,9 @@ async function renderCompose() {
     videoUrl: el('input', { placeholder: 'https://youtube.com/… (optional walkthrough)' }),
     notes: el('textarea', { placeholder: 'Condition, access, why they\'re selling.' })
   };
+  if (state.dealBuilderDraft) { const d=state.dealBuilderDraft; ['address','city','propertyType','asking','arv','rehab','beds','baths','sqft','year','notes'].forEach(k=>{ if(d[k]!==undefined&&d[k]!==null&&f[k]) f[k].value=d[k]; }); state.dealBuilderDraft=null; }
+  const builderLink = el('button',{class:'btn-primary',type:'button',onclick:()=>go('dealbuilder')},'Analyze an address with AI Deal Builder');
+  wrap.appendChild(el('div',{class:'dealbuilderentry'},[el('div',{},[el('b',{},'Starting with an address?'),el('div',{class:'hint'},'Pull property intelligence, comps, ARV range and repair scenarios before you build the listing.')]),builderLink]));
   const importText = el('textarea', { placeholder: 'Paste your existing Facebook deal post, email blast, text message or deal notes here…', style: 'min-height:130px' });
   const importStatus = el('div', { class: 'hint' });
   const importBtn = el('button', { class: 'btn-ghost', type: 'button' }, 'Import existing deal');
@@ -2497,7 +2549,7 @@ async function renderMe() {
   const nav = el('div', { class: 'card' });
   [['Wallet & payouts', () => go('wallet')], ['Offers', () => go('offers')], ['Orders', () => go('orders')],
    [state.user.role === 'admin' ? 'Admin — shop listings' : 'My shop listings', () => go('shopmanage')],
-   ['Saved properties', () => go('saved')], ['Network & friends', () => go('network')], ['Messages', () => go('messages')], ...(state.access?.wholesale || state.user.companyId ? [['Company workspace', () => go('companyworkspace')]] : []), ['Buy box', () => go('buybox')], ['Buyer demand insights', () => go('insights')],
+   ['AI Deal Builder', () => go('dealbuilder')], ['Buyer CRM', () => go('buyercrm')], ['Saved properties', () => go('saved')], ['Network & friends', () => go('network')], ['Messages', () => go('messages')], ...(state.access?.wholesale || state.user.companyId ? [['Company workspace', () => go('companyworkspace')]] : []), ['Buy box', () => go('buybox')], ['Buyer demand insights', () => go('insights')],
    ['Investor workspace' + (state.access?.platinum ? '' : ' 🔒'), () => go('workspace')],
    ['Plans & billing', () => go('upgrade')],
    ...(state.user.role === 'admin' ? [
@@ -2789,6 +2841,7 @@ async function renderSettings() {
   sbox.appendChild(toggleRow('Display membership level on my profile', 'Shows your current Free, Pro, Platinum or Wholesale Teams level beside your name. You can hide it anytime.', s.showMembershipLevel !== false, async on => {
     const { settings } = await api('PATCH', '/api/me/settings', { showMembershipLevel: on }); state.user.settings = settings; toast(on ? 'Membership level is visible' : 'Membership level hidden', 'ok');
   }));
+  sbox.appendChild(el('button', { class:'btn-ghost', style:'margin:0 16px 16px;width:calc(100% - 32px)', onclick:()=>startTutorial(true) }, 'Restart platform tutorial'));
   wrap.appendChild(sbox);
 
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Account & security'));

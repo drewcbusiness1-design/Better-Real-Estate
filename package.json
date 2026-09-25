@@ -1,6 +1,6 @@
 {
   "name": "better-real-estate",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "private": true,
   "description": "Better Real Estate \u2014 social feed for off-market property, with marketplace, wallet, promotions and subscriptions. Deploys to Netlify.",
   "main": "server.js",
@@ -11,7 +11,7 @@
     "seed": "node seed.js",
     "seed:clear": "node seed.js --clear",
     "preflight": "node preflight.js",
-    "test": "node tests/cj-adapter.test.js && node tests/dropship.test.js && node tests/ai-marketing.test.js && node tests/integration-wiring.test.js && node tests/social-network.test.js && node tests/account-company.test.js && node tests/better-dispo.test.js && node tests/communications.test.js && node tests/growth-rewards.test.js && node tests/professional-ops.test.js"
+    "test": "node tests/cj-adapter.test.js && node tests/dropship.test.js && node tests/ai-marketing.test.js && node tests/integration-wiring.test.js && node tests/social-network.test.js && node tests/account-company.test.js && node tests/better-dispo.test.js && node tests/communications.test.js && node tests/growth-rewards.test.js && node tests/professional-ops.test.js && node tests/v26-features.test.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

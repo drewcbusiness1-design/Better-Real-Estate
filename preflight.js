@@ -63,6 +63,9 @@ else if (String(process.env.GOOGLE_MAPS_API_KEY).trim().length < 20) bad('GOOGLE
 else ok('Google Maps Places key present (server-side only).');
 
 head('AI listing assistant');
+if (!process.env.RENTCAST_API_KEY) soft('RENTCAST_API_KEY not set — v26 address Deal Builder cannot pull property records, AVM or comps until configured.');
+else if (String(process.env.RENTCAST_API_KEY).trim().length < 10) bad('RENTCAST_API_KEY looks too short to be a real API key.');
+
 if (!process.env.OPENAI_API_KEY) soft('OPENAI_API_KEY not set — AI listing writing stays disabled, but the rest of the site works normally.');
 else if (String(process.env.OPENAI_API_KEY).trim().length < 20) bad('OPENAI_API_KEY looks too short to be a real API key.');
 else ok(`OpenAI key present; model ${process.env.OPENAI_MODEL || 'gpt-5.6-luna'}.`);

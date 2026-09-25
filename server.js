@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const mailer = require('./mailer');
 
 const { loadDB, saveDB } = require('./store');
+const propertyIntel = require('./property-intel');
 const { writeImage, readImage } = require('./storage');
 const dropship = require('./dropship');
 const cjAdapter = require('./cj-adapter');
@@ -218,6 +219,8 @@ const defaultSettings = () => ({
   messageEmailDelayMinutes: 60,
   notifyOnMatch: true,
   showMembershipLevel: true,
+  tutorialCompletedVersion: 0,
+  tutorialDismissedVersion: 0,
   // Admin-only preference. Undefined on older accounts intentionally behaves
   // as ON so the site owner starts receiving signup notifications immediately.
   notifyOnNewSignup: true
@@ -739,6 +742,8 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (typeof body.notifyOnMessage === 'boolean') next.notifyOnMessage = body.notifyOnMessage;
   if (typeof body.notifyOnMatch === 'boolean') next.notifyOnMatch = body.notifyOnMatch;
   if (typeof body.showMembershipLevel === 'boolean') next.showMembershipLevel = body.showMembershipLevel;
+  if (body.tutorialCompletedVersion !== undefined) next.tutorialCompletedVersion = Math.max(0, Number(body.tutorialCompletedVersion)||0);
+  if (body.tutorialDismissedVersion !== undefined) next.tutorialDismissedVersion = Math.max(0, Number(body.tutorialDismissedVersion)||0);
   if (isAdminUser(req.user) && typeof body.notifyOnNewSignup === 'boolean') next.notifyOnNewSignup = body.notifyOnNewSignup;
   if (body.messageEmailDelayMinutes !== undefined) {
     const n = Number(body.messageEmailDelayMinutes);
@@ -1379,6 +1384,28 @@ app.post('/api/dispo/parse', requireAuth, async (req, res) => {
   }
   res.json({ deal: cleanImportedDeal(parsed), enhanced, mode: enhanced ? 'ai' : 'smart-parser' });
 });
+
+app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
+  const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
+  if(!propertyIntel.configured()) return res.status(503).json({error:'Address intelligence needs RENTCAST_API_KEY configured in Netlify.'});
+  try { const analysis=await propertyIntel.analyze(address); let aiDraft=null; if(ai.configured()){ try { const p=analysis.subject||{}; aiDraft=await ai.generateListingCopy({kind:'property',facts:{city:[p.city,p.state].filter(Boolean).join(', '),propertyType:p.propertyType,bedrooms:p.bedrooms,bathrooms:p.bathrooms,squareFootage:p.squareFootage,yearBuilt:p.yearBuilt,arvEstimate:analysis.arv?.estimate,arvRangeLow:analysis.arv?.low,arvRangeHigh:analysis.arv?.high,lastSaleDate:p.lastSaleDate,lastSalePrice:p.lastSalePrice},images:[],allowedCategories:[]}); } catch(e){ console.error('[deal builder ai copy]',e.message); } } res.json({analysis,aiDraft}); }
+  catch(e){ console.error('[property intel]',e.message); res.status(502).json({error:String(e.message).slice(0,300)}); }
+});
+
+app.get('/api/buyer-crm', requireAuth, async (req,res)=>{
+  req.db.buyerCrm=req.db.buyerCrm||[]; const rows=req.db.buyerCrm.filter(x=>x.ownerId===req.user.id).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  res.json({contacts:rows});
+});
+app.post('/api/buyer-crm', requireAuth, async (req,res)=>{
+  req.db.buyerCrm=req.db.buyerCrm||[]; const b=req.body||{}; const now=new Date().toISOString();
+  let row=b.id&&req.db.buyerCrm.find(x=>x.id===b.id&&x.ownerId===req.user.id);
+  if(!row){ row={id:crypto.randomUUID(),ownerId:req.user.id,createdAt:now}; req.db.buyerCrm.push(row); }
+  row.name=String(b.name||row.name||'').trim().slice(0,100); row.email=String(b.email||row.email||'').trim().slice(0,160); row.phone=String(b.phone||row.phone||'').trim().slice(0,50);
+  row.markets=String(b.markets||row.markets||'').trim().slice(0,300); row.buyBox=String(b.buyBox||row.buyBox||'').trim().slice(0,600); row.notes=String(b.notes||row.notes||'').trim().slice(0,1200);
+  row.status=['new','contacted','interested','pof','offer','closed','inactive'].includes(b.status)?b.status:(row.status||'new'); row.updatedAt=now;
+  if(!row.name) return res.status(400).json({error:'Buyer name is required.'}); await saveDB(req.db); res.json({contact:row});
+});
+app.delete('/api/buyer-crm/:id', requireAuth, async (req,res)=>{ req.db.buyerCrm=req.db.buyerCrm||[]; const n=req.db.buyerCrm.length; req.db.buyerCrm=req.db.buyerCrm.filter(x=>!(x.id===req.params.id&&x.ownerId===req.user.id)); if(req.db.buyerCrm.length===n)return res.status(404).json({error:'Buyer not found.'}); await saveDB(req.db); res.json({ok:true}); });
 
 app.get('/api/buyers-looking', requireAuth, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
