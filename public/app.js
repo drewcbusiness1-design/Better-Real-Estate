@@ -1991,7 +1991,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 27;
+const TUTORIAL_VERSION = 28;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2001,41 +2001,93 @@ const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:2,admin:4};
 function tutorialStepsFor(tier=tutorialTier()){
  const rank=TUTORIAL_RANK[tier]??0;
  return [
- {view:'feed',selector:'#app',min:0,title:'Welcome to Better Real Estate',copy:'This guided tour moves through the actual site, highlights the area being explained, and only shows tools your current access can use.'},
- {view:'feed',selector:'#tabbar button:nth-child(1)',min:0,title:'Feed',copy:'Discover real-estate opportunities and activity. Open listings here to review the full deal.'},
- {view:'shop',selector:'#tabbar button:nth-child(2)',min:0,title:'Shop',copy:'Browse the marketplace side of Better Real Estate without leaving your professional workspace.'},
- {view:'compose',selector:'.composepage',min:0,title:'Post a property',copy:'Create a listing manually, import existing deal notes, or move a reviewed AI Deal Builder analysis into the form.'},
- {view:'network',selector:'#tabbar button:nth-child(4)',min:0,title:'Network',copy:'Find professionals, follow people, manage friends, and discover Buyers Looking through public buy boxes.'},
- {view:'messages',selector:'#app .page',min:0,title:'Messages',copy:'Keep deal conversations inside Better Real Estate. Message reminder timing is controlled in Settings.'},
- {view:'me',selector:'#tabbar button:nth-child(5)',min:0,title:'Profile & tools',copy:'Your Profile is the launch point for saved properties, buy boxes, leaderboard, professional tools and membership controls.'},
- {view:'saved',selector:'#app .page',min:0,title:'Saved properties',copy:'Keep properties you want to revisit here. Higher-tier workspace tools can build on these saved deals.'},
- {view:'buybox',selector:'#app .page',min:0,title:'Your buy box',copy:'Tell Better Real Estate what you buy so deal discovery and matching can work around your real criteria.'},
- {view:'leaderboard',selector:'#app .page',min:0,title:'Leaderboard',copy:'Verified closings earn points for both sides of the transaction. Use the leaderboard to track monthly and all-time activity and membership rewards.'},
- {view:'wallet',selector:'#app .page',min:0,title:'Wallet & payouts',copy:'Your wallet is where eligible marketplace sales, referral credits and payout activity are organized.'},
- {view:'boostpicker',selector:'#app .page',min:0,title:'Promote a listing',copy:'Choose one of your listings to boost when you want additional visibility. Promotion options stay separate from the normal feed experience.'},
- {view:'dealbuilder',selector:'.dealbuildersearch',min:1,title:'AI Deal Builder',copy:'Start with an address. Better Real Estate AI creates a preliminary ARV, repair scenarios, description and deal numbers for you to review.'},
+ {view:'feed',selector:null,min:0,title:'Welcome to Better Real Estate',copy:'We’ll walk through the workspace one feature at a time. The tour only includes tools available with your current membership.'},
+ {view:'feed',selector:'#tabbar button:nth-child(1)',min:0,title:'Feed',copy:'Your real-estate feed. Discover opportunities and open a listing to review the full deal.'},
+ {view:'shop',selector:'#tabbar button:nth-child(2)',min:0,title:'Shop',copy:'Browse the marketplace side of Better Real Estate without leaving your workspace.'},
+ {view:'compose',selector:'.composepage .dealbuilderentry',min:0,title:'Post a property',copy:'Start a listing here. You can build it manually, import existing deal notes, or begin with an AI Deal Builder analysis.'},
+ {view:'network',selector:'#tabbar button:nth-child(4)',min:0,title:'Network',copy:'Find professionals, follow people, manage friends, and discover buyers through public buy boxes.'},
+ {view:'messages',selector:'#app .page',min:0,title:'Messages',copy:'Keep deal conversations inside Better Real Estate. Reminder timing can be changed in Settings.'},
+ {view:'me',selector:'#tabbar button:nth-child(5)',min:0,title:'Profile & tools',copy:'Your Profile connects you to saved properties, buy boxes, leaderboard, professional tools and membership controls.'},
+ {view:'saved',selector:'#app .page',min:0,title:'Saved properties',copy:'Keep properties you want to revisit here.'},
+ {view:'buybox',selector:'#app .page',min:0,title:'Your buy box',copy:'Save what you buy so discovery and buyer matching can work around your actual criteria.'},
+ {view:'leaderboard',selector:'#app .page',min:0,title:'Leaderboard',copy:'Verified closings earn points for both sides. Track monthly and all-time activity and the membership rewards attached to points.'},
+ {view:'wallet',selector:'#app .page',min:0,title:'Wallet & payouts',copy:'Eligible marketplace sales, referral credits and payout activity are organized here.'},
+ {view:'boostpicker',selector:'#app .page',min:0,title:'Promote a listing',copy:'Choose one of your listings to boost when you want additional visibility.'},
+ {view:'dealbuilder',selector:'.dealbuildersearch',min:1,title:'AI Deal Builder',copy:'Start with an address. Better Real Estate AI creates preliminary ARV, repair scenarios, description and deal numbers for you to review.'},
  {view:'buyercrm',selector:'.buyercrmpage',min:1,title:'Buyer CRM',copy:'Keep buyer markets, buy boxes, private notes and follow-up stages in one pipeline.'},
  {view:'insights',selector:'.insightspage',min:2,title:'Demand Insights',copy:'See where published buyer demand is concentrated by market, property type and strategy.'},
- {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties side by side and keep private deal notes in one place.'},
- {view:'companyworkspace',selector:'#app .page',min:3,title:'Wholesale Team workspace',copy:'Team access adds a shared company workspace with separate member logins and company collaboration.'},
- {view:'admin',selector:'#app .page',min:4,title:'Admin controls',copy:'Admin access contains platform management tools such as verification, memberships, reports and operational controls. These are never shown in ordinary-member tours.'},
- {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart this tour here anytime.'},
- {view:'feed',selector:'#app',min:0,title:'You are ready',copy:'That covers your current access. When you unlock additional features, Better Real Estate will offer a short tour of only the newly available tools.'}
+ {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
+ {view:'companyworkspace',selector:'#app .page',min:3,title:'Wholesale Team workspace',copy:'Team access adds a shared company workspace with separate member logins and collaboration.'},
+ {view:'admin',selector:'#app .page',min:4,title:'Admin controls',copy:'Admin access contains verification, memberships, reports and operational controls. Ordinary members never see this step.'},
+ {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
+ {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
  ].filter(x=>rank>=x.min);
 }
 function tutorialKey(tier=tutorialTier()){return `v${TUTORIAL_VERSION}:${tier}`;}
 async function startTutorial(force=false,onlyNew=false){
- if(!state.user)return; const tier=tutorialTier(),key=tutorialKey(tier);
+ if(!state.user)return;
+ const tier=tutorialTier(),key=tutorialKey(tier);
  const seen=Array.isArray(state.user.settings?.tutorialCompletedKeys)?state.user.settings.tutorialCompletedKeys:[];
- if(!force&&seen.includes(key))return; let steps=tutorialStepsFor(tier);
+ if(!force&&seen.includes(key))return;
+ let steps=tutorialStepsFor(tier);
  if(onlyNew){const prev=Number(state.user.settings?.tutorialHighestRank??-1),now=TUTORIAL_RANK[tier]??0;steps=steps.filter(x=>x.min>prev&&x.min<=now);if(!steps.length)return;}
- let i=0,target=null; const shade=el('div',{class:'tutorialshade guidedtour'}),card=el('div',{class:'tutorialcard guidedtourcard'});shade.appendChild(card);document.body.appendChild(shade);
- const clear=()=>{if(target){target.classList.remove('tutorialfocus');target=null;}};
+ let i=0,closed=false;
+ const root=el('div',{class:'guided-tour-root','aria-live':'polite'});
+ const dimTop=el('div',{class:'tour-dim tour-dim-top'}),dimLeft=el('div',{class:'tour-dim tour-dim-left'}),dimRight=el('div',{class:'tour-dim tour-dim-right'}),dimBottom=el('div',{class:'tour-dim tour-dim-bottom'});
+ const ring=el('div',{class:'tour-focus-ring'}),card=el('div',{class:'guided-tour-card',role:'dialog','aria-modal':'true'});
+ root.append(dimTop,dimLeft,dimRight,dimBottom,ring,card); document.body.appendChild(root);
+ const allDims=[dimTop,dimLeft,dimRight,dimBottom];
  const save=async(dismiss=false)=>{const body={tutorialCompletedVersion:TUTORIAL_VERSION,tutorialCompletedKeys:[...new Set([...seen,key])],tutorialHighestRank:Math.max(Number(state.user.settings?.tutorialHighestRank??-1),TUTORIAL_RANK[tier]??0)};if(dismiss)body.tutorialDismissedVersion=TUTORIAL_VERSION;try{const r=await api('PATCH','/api/me/settings',body);state.user.settings=r.settings;}catch{}};
- const finish=async(d=false)=>{clear();shade.remove();await save(d);};
- const place=node=>{if(!node)return;const r=node.getBoundingClientRect(),vw=innerWidth,vh=innerHeight,cw=Math.min(430,vw-32),ch=Math.min(card.offsetHeight||280,vh-32);let left=Math.max(16,Math.min(vw-cw-16,r.right+22)),top=Math.max(16,Math.min(vh-ch-16,r.top));if(r.right+22+cw>vw)left=Math.max(16,r.left-cw-22);if(vw<760){left=16;top=Math.max(16,Math.min(vh-ch-16,r.bottom+16));}card.style.setProperty('--tour-left',`${left}px`);card.style.setProperty('--tour-top',`${top}px`);};
- const focus=async step=>{clear();if(state.view!==step.view){go(step.view);await new Promise(r=>setTimeout(r,180));}await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));target=document.querySelector(step.selector)||document.querySelector('#app');if(target){target.classList.add('tutorialfocus');target.scrollIntoView({behavior:'smooth',block:'center'});}setTimeout(()=>place(target),220);};
- const draw=async()=>{const step=steps[i];card.innerHTML='';card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));card.appendChild(el('div',{class:'tutorialmembership'},`Showing ${tier==='wholesale'?'Team':tier[0].toUpperCase()+tier.slice(1)} access`));const a=el('div',{class:'tutorialactions'});if(i>0)a.appendChild(el('button',{class:'btn-ghost',onclick:()=>{i--;draw()}},'Back'));a.appendChild(el('button',{class:'btn-ghost',onclick:()=>{if(i<steps.length-1){i++;draw()}else finish()}},i===steps.length-1?'Finish':'Skip this step'));a.appendChild(el('button',{class:'btn-primary',onclick:()=>{if(i===steps.length-1)finish();else{i++;draw()}}},i===steps.length-1?'Finish':'Next'));card.appendChild(a);card.appendChild(el('button',{class:'tutorialskip',onclick:()=>finish(true)},'Skip entire tour'));await focus(step);}; await draw();
+ const cleanup=()=>{closed=true;window.removeEventListener('resize',reposition);window.removeEventListener('scroll',reposition,true);root.remove();};
+ const finish=async(d=false)=>{cleanup();await save(d);};
+ const waitForTarget=async selector=>{if(!selector)return null;for(let n=0;n<40&&!closed;n++){const node=document.querySelector(selector);if(node&&node.getClientRects().length)return node;await new Promise(r=>setTimeout(r,50));}return null;};
+ let currentTarget=null;
+ const setBox=(node)=>{
+   const vw=window.innerWidth,vh=window.innerHeight,pad=8;
+   if(!node){ring.style.display='none';allDims.forEach(d=>{d.style.cssText='position:fixed;inset:0;display:block'});return null;}
+   const raw=node.getBoundingClientRect();
+   const l=Math.max(8,raw.left-pad),t=Math.max(8,raw.top-pad),r=Math.min(vw-8,raw.right+pad),b=Math.min(vh-8,raw.bottom+pad),w=Math.max(0,r-l),h=Math.max(0,b-t);
+   ring.style.display='block';ring.style.left=`${l}px`;ring.style.top=`${t}px`;ring.style.width=`${w}px`;ring.style.height=`${h}px`;
+   dimTop.style.cssText=`left:0;top:0;width:100vw;height:${t}px`;
+   dimBottom.style.cssText=`left:0;top:${b}px;width:100vw;height:${Math.max(0,vh-b)}px`;
+   dimLeft.style.cssText=`left:0;top:${t}px;width:${l}px;height:${h}px`;
+   dimRight.style.cssText=`left:${r}px;top:${t}px;width:${Math.max(0,vw-r)}px;height:${h}px`;
+   return {left:l,top:t,right:r,bottom:b,width:w,height:h};
+ };
+ const placeCard=(box)=>{
+   const vw=window.innerWidth,vh=window.innerHeight,margin=16,gap=18,cw=Math.min(420,vw-margin*2),ch=Math.min(card.offsetHeight||300,vh-margin*2);
+   let left=Math.max(margin,(vw-cw)/2),top=Math.max(margin,(vh-ch)/2);
+   if(box){const spaces={right:vw-box.right,left:box.left,bottom:vh-box.bottom,top:box.top};const best=Object.entries(spaces).sort((a,b)=>b[1]-a[1])[0][0];
+     if(best==='right'&&spaces.right>=cw+gap){left=box.right+gap;top=Math.min(Math.max(margin,box.top),vh-ch-margin)}
+     else if(best==='left'&&spaces.left>=cw+gap){left=box.left-cw-gap;top=Math.min(Math.max(margin,box.top),vh-ch-margin)}
+     else if(best==='bottom'&&spaces.bottom>=ch+gap){top=box.bottom+gap;left=Math.min(Math.max(margin,box.left),vw-cw-margin)}
+     else if(spaces.top>=ch+gap){top=box.top-ch-gap;left=Math.min(Math.max(margin,box.left),vw-cw-margin)}
+   }
+   card.style.left=`${Math.round(left)}px`;card.style.top=`${Math.round(top)}px`;card.style.width=`${Math.round(cw)}px`;
+ };
+ function reposition(){if(closed)return;placeCard(setBox(currentTarget));}
+ window.addEventListener('resize',reposition);window.addEventListener('scroll',reposition,true);
+ const focus=async step=>{
+   currentTarget=null;setBox(null);
+   if(state.view!==step.view){go(step.view);await new Promise(r=>setTimeout(r,80));}
+   const target=await waitForTarget(step.selector);
+   if(target){target.scrollIntoView({behavior:'auto',block:'center',inline:'nearest'});await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));currentTarget=target;}
+   reposition();
+ };
+ const move=delta=>{const next=Math.max(0,Math.min(steps.length-1,i+delta));if(next===i&&delta>0)return finish();i=next;draw();};
+ const draw=async()=>{
+   if(closed)return; const step=steps[i]; card.innerHTML='';
+   card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));
+   card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
+   card.appendChild(el('div',{class:'tutorialmembership'},`Showing ${tier==='wholesale'?'Team':tier[0].toUpperCase()+tier.slice(1)} access`));
+   const actions=el('div',{class:'tutorialactions'});
+   if(i>0)actions.appendChild(el('button',{type:'button',class:'btn-ghost',onclick:()=>move(-1)},'Back'));
+   actions.appendChild(el('button',{type:'button',class:'btn-ghost',onclick:()=>i===steps.length-1?finish():move(1)},i===steps.length-1?'Finish':'Skip this step'));
+   actions.appendChild(el('button',{type:'button',class:'btn-primary',onclick:()=>i===steps.length-1?finish():move(1)},i===steps.length-1?'Finish':'Next'));
+   card.appendChild(actions);card.appendChild(el('button',{type:'button',class:'tutorialskip',onclick:()=>finish(true)},'Skip entire tour'));
+   await focus(step);
+ };
+ await draw();
 }
 
 async function renderDealBuilder(){

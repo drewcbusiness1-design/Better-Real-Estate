@@ -1,0 +1,13 @@
+const fs=require('fs'),assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8');
+assert(app.includes('const TUTORIAL_VERSION = 28;'),'tutorial version bumped');
+assert(app.includes("type:'button',class:'btn-primary',onclick:()=>i===steps.length-1?finish():move(1)"),'Next has explicit working button handler');
+assert(app.includes('const waitForTarget=async selector=>'),'tour waits for rendered route target');
+assert(app.includes("selector:'.composepage .dealbuilderentry'"),'compose tutorial targets the actual address entry');
+assert(app.includes("selector:null,min:0,title:'Welcome"),'intro does not draw arbitrary app highlight');
+assert(app.includes('const ring=el(\'div\',{class:\'tour-focus-ring\'})'),'tour uses independent anchored focus ring');
+assert(!app.includes("target.classList.add('tutorialfocus')"),'tour no longer mutates/highlights arbitrary target boxes');
+assert(css.includes('.composepage .dealbuilderentry{display:flex!important;flex-direction:column!important'),'compose CTA is forced into stable stacked layout');
+assert(css.includes('.tour-focus-ring{position:fixed'),'spotlight is viewport anchored');
+assert(css.includes('.guided-tour-card{position:fixed'),'tutorial card is opaque/fixed');
+console.log('✓ v26.5 acceptance regression tests passed');

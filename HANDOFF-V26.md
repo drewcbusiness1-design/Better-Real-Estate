@@ -30,3 +30,12 @@ The platform should increasingly carry a professional from: find an address -> a
 - When a user gains access to meaningful new features through an upgrade/grant/team access, offer a short tutorial for the newly unlocked features rather than forcing the entire beginner tour again.
 - Significant future product features must be incorporated into the appropriate onboarding/What's New flow.
 - Preserve the user's authority rule and exhaustive pre-ZIP QA rule: do not improvise substitutions or make the user discover integration/UI failures after deployment.
+
+
+## v26.5 acceptance requirements
+- The Post a Property address-first CTA must never collapse copy into narrow word columns or let its button overflow. It uses a stable stacked layout at all widths.
+- Guided onboarding is a functional product tour, not a decorative overlay. Next/Back/Skip must work, route changes must complete, and the spotlight must be geometrically anchored to the live target element.
+- Intro/final steps intentionally have no spotlight. Missing targets must fall back to a neutral dim state, never a random rectangle.
+- Tours remain membership-aware and upgrade-aware. Never show users tutorials for features they cannot access.
+- Prior user screenshots of broken wrapping, overflowing CTA, inert Next, and arbitrary orange highlight are permanent regression cases and release blockers.
+- Do not ship a ZIP when these complete journeys have not been exhaustively checked with all available tooling.
