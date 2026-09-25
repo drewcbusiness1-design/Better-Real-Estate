@@ -1,0 +1,12 @@
+const fs=require('fs'),assert=require('assert');
+const server=fs.readFileSync('server.js','utf8'), client=fs.readFileSync('public/app.js','utf8'), ai=fs.readFileSync('ai.js','utf8'), store=fs.readFileSync('store.js','utf8');
+assert(server.includes("app.post('/api/property-analysis'")&&ai.includes('analyzeProperty'), 'AI property analysis missing');
+assert(server.includes('analysisLimit')&&server.includes('return 5')&&server.includes('isPlatinum')&&server.includes('isWholesale'), 'analysis plan limits missing');
+assert(server.includes("/api/admin/memberships/verification")&&client.includes('Grant verification'), 'admin verification grant missing');
+assert(server.includes('showMembership')&&client.includes('Show membership on my profile'), 'membership display setting missing');
+assert(client.includes('renderDealHub')&&server.includes("app.post('/api/deal-tools'"), 'Deal Hub missing');
+for(const type of ['contact','deal','room','task','watchlist','privateProperty','lostDeal','template']) assert(server.includes(`'${type}'`), `missing ${type} deal tool`);
+assert(server.includes("/api/listings/:id/questions")&&client.includes('Property Q&A'), 'listing Q&A missing');
+assert(store.includes('propertyAnalyses')&&store.includes('dealTools')&&store.includes('listingQuestions'), 'v24 collections missing');
+assert(client.includes("shop:'<svg")&&client.includes("me:'<svg"), 'refined Shop/Profile nav icons missing');
+console.log('✓ v24 Deal OS, AI analysis, verification, profile membership, Q&A & icon tests passed');

@@ -726,6 +726,7 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (body.feedDensity === 'comfortable' || body.feedDensity === 'compact') next.feedDensity = body.feedDensity;
   if (typeof body.notifyOnMessage === 'boolean') next.notifyOnMessage = body.notifyOnMessage;
   if (typeof body.notifyOnMatch === 'boolean') next.notifyOnMatch = body.notifyOnMatch;
+  if (typeof body.showMembership === 'boolean') next.showMembership = body.showMembership;
   if (isAdminUser(req.user) && typeof body.notifyOnNewSignup === 'boolean') next.notifyOnNewSignup = body.notifyOnNewSignup;
   if (body.messageEmailDelayMinutes !== undefined) {
     const n = Number(body.messageEmailDelayMinutes);
@@ -1743,6 +1744,7 @@ app.get('/api/users/:id/listings', async (req, res) => {
   const ownerCompany = owner.companyId ? db.companies.find(c => c.id === owner.companyId) : null;
   res.json({
     owner: publicProfileUser(owner),
+    membershipLabel: owner.settings?.showMembership === true ? (isWholesale(owner) ? 'Wholesale Teams' : isPlatinum(owner) ? 'Platinum' : isPro(owner) ? 'Pro' : 'Free') : null,
     company: ownerCompany ? publicCompany(ownerCompany) : null,
     listings: db.listings.filter(l => l.ownerId === owner.id && (viewer?.id === owner.id || listingFreshness(l).availabilityStatus !== 'archived')).map(l => gateListing(l, viewer, db)),
     followerCount: db.follows.filter(f => f.followingId === owner.id).length,
@@ -1866,6 +1868,32 @@ app.post('/api/promotions/buy', requireAuth, async (req, res) => {
   await saveDB(req.db);
   res.json({ listing, usedFreeBoost, adminIncluded });
 });
+
+
+/* ============================ LISTING Q&A ============================ */
+app.get('/api/listings/:id/questions', requireAuth, async(req,res)=>{ const listing=req.db.listings.find(l=>l.id===req.params.id); if(!listing)return res.status(404).json({error:'Listing not found.'}); const items=(req.db.listingQuestions||[]).filter(q=>q.listingId===listing.id).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)); res.json({items,owner:listing.ownerId===req.user.id||isAdminUser(req.user)}); });
+app.post('/api/listings/:id/questions', requireAuth, async(req,res)=>{ const listing=req.db.listings.find(l=>l.id===req.params.id); if(!listing)return res.status(404).json({error:'Listing not found.'}); const body=String(req.body?.question||'').trim().slice(0,500); if(!body)return res.status(400).json({error:'Enter a question.'}); const q={id:crypto.randomUUID(),listingId:listing.id,byUserId:req.user.id,byName:req.user.name,question:body,answer:'',createdAt:new Date().toISOString(),answeredAt:null}; req.db.listingQuestions=req.db.listingQuestions||[];req.db.listingQuestions.push(q);await saveDB(req.db);res.json({item:q}); });
+app.patch('/api/listings/:listingId/questions/:id', requireAuth, async(req,res)=>{ const listing=req.db.listings.find(l=>l.id===req.params.listingId); if(!listing)return res.status(404).json({error:'Listing not found.'}); if(listing.ownerId!==req.user.id&&!isAdminUser(req.user))return res.status(403).json({error:'Only the listing owner can answer questions.'}); const q=(req.db.listingQuestions||[]).find(x=>x.id===req.params.id&&x.listingId===listing.id);if(!q)return res.status(404).json({error:'Question not found.'});q.answer=String(req.body?.answer||'').trim().slice(0,1000);q.answeredAt=q.answer?new Date().toISOString():null;await saveDB(req.db);res.json({item:q}); });
+
+/* ============================ v24 DEAL OS + AI ANALYSIS ============================ */
+function analysisLimit(user){ if(isAdminUser(user)||isPlatinum(user)||isWholesale(user)) return Infinity; if(isPro(user)) return 5; return 0; }
+function analysisUsage(user){ const day=new Date().toISOString().slice(0,10); return user.propertyAnalysisDay===day?Number(user.propertyAnalysisCount||0):0; }
+app.get('/api/property-analysis/usage', requireAuth, async(req,res)=>{ const limit=analysisLimit(req.user), used=analysisUsage(req.user); res.json({enabled:limit>0,limit:Number.isFinite(limit)?limit:null,used,remaining:Number.isFinite(limit)?Math.max(0,limit-used):null,configured:ai.configured()}); });
+app.post('/api/property-analysis', requireAuth, async(req,res)=>{
+  const limit=analysisLimit(req.user); if(limit<=0) return res.status(403).json({error:'AI property analysis is available on Pro, Platinum and Wholesale Teams.'});
+  const day=new Date().toISOString().slice(0,10), used=analysisUsage(req.user); if(Number.isFinite(limit)&&used>=limit) return res.status(429).json({error:'You have used today’s 5 Pro property analyses. Platinum and Wholesale Teams include unlimited analysis.'});
+  const facts=req.body?.facts||{}; if(!String(facts.address||'').trim()) return res.status(400).json({error:'Enter a property address first.'});
+  const result=await ai.analyzeProperty(facts); req.user.propertyAnalysisDay=day; req.user.propertyAnalysisCount=used+1;
+  req.db.propertyAnalyses=req.db.propertyAnalyses||[]; req.db.propertyAnalyses.push({id:crypto.randomUUID(),userId:req.user.id,facts,result,createdAt:new Date().toISOString()}); await saveDB(req.db);
+  res.json({analysis:result,usage:{limit:Number.isFinite(limit)?limit:null,used:used+1,remaining:Number.isFinite(limit)?Math.max(0,limit-used-1):null}});
+});
+app.get('/api/property-analysis/history', requireAuth, async(req,res)=>res.json({items:(req.db.propertyAnalyses||[]).filter(x=>x.userId===req.user.id).slice().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,30)}));
+
+const DEAL_TOOL_TYPES=new Set(['contact','deal','room','task','watchlist','privateProperty','lostDeal','template']);
+app.get('/api/deal-tools', requireAuth, async(req,res)=>res.json({items:(req.db.dealTools||[]).filter(x=>x.userId===req.user.id || (x.companyId&&x.companyId===req.user.companyId)).sort((a,b)=>new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt))}));
+app.post('/api/deal-tools', requireAuth, async(req,res)=>{ const type=String(req.body?.type||''); if(!DEAL_TOOL_TYPES.has(type)) return res.status(400).json({error:'Invalid workspace item.'}); const item={id:crypto.randomUUID(),userId:req.user.id,companyId:req.user.companyId||null,type,title:String(req.body?.title||'Untitled').slice(0,140),status:String(req.body?.status||'').slice(0,60),data:req.body?.data&&typeof req.body.data==='object'?req.body.data:{},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}; req.db.dealTools=req.db.dealTools||[]; req.db.dealTools.push(item); await saveDB(req.db); res.json({item}); });
+app.patch('/api/deal-tools/:id', requireAuth, async(req,res)=>{ const item=(req.db.dealTools||[]).find(x=>x.id===req.params.id&&(x.userId===req.user.id||(x.companyId&&x.companyId===req.user.companyId))); if(!item)return res.status(404).json({error:'Item not found.'}); if(req.body?.title!==undefined)item.title=String(req.body.title).slice(0,140); if(req.body?.status!==undefined)item.status=String(req.body.status).slice(0,60); if(req.body?.data&&typeof req.body.data==='object')item.data={...item.data,...req.body.data}; item.updatedAt=new Date().toISOString(); await saveDB(req.db); res.json({item}); });
+app.delete('/api/deal-tools/:id', requireAuth, async(req,res)=>{ const before=(req.db.dealTools||[]).length; req.db.dealTools=(req.db.dealTools||[]).filter(x=>!(x.id===req.params.id&&(x.userId===req.user.id||(x.companyId&&x.companyId===req.user.companyId)))); if(req.db.dealTools.length===before)return res.status(404).json({error:'Item not found.'}); await saveDB(req.db); res.json({ok:true}); });
 
 /* ============================ SELLER ANALYTICS ============================ */
 app.get('/api/listings/:id/analytics', requireAuth, async (req, res) => {
@@ -2800,7 +2828,7 @@ app.get('/api/admin/memberships', requireAuth, requireAdmin, async (req, res) =>
       paidPlanUntil: u.planUntil || null,
       grant: membershipGrantSummary(u),
       access: accessFor(u),
-      createdAt: u.createdAt || null
+      createdAt: u.createdAt || null, verified: !!u.verified, verificationPending: !!u.verificationPending
     }));
   const history = (req.db.membershipGrants || [])
     .slice()
@@ -2840,6 +2868,14 @@ app.post('/api/admin/memberships/revoke', requireAuth, requireAdmin, async (req,
   revokeMembershipGrant(req.db, user, req.user.id);
   await saveDB(req.db);
   res.json({ ok: true, access: accessFor(user) });
+});
+
+
+app.post('/api/admin/memberships/verification', requireAuth, requireAdmin, async (req,res)=>{
+  const user=req.db.users.find(u=>u.id===req.body?.userId && u.role!=='admin');
+  if(!user) return res.status(404).json({error:'User not found.'});
+  user.verified=req.body?.verified===true; if(user.verified) user.verificationPending=false;
+  await saveDB(req.db); res.json({ok:true,verified:user.verified});
 });
 
 app.post('/api/admin/memberships/award-leaderboard', requireAuth, requireAdmin, async (req, res) => {
