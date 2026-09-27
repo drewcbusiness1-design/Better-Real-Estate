@@ -210,7 +210,7 @@ function startViewPolling(fn, ms = 5000) {
 function go(view, extra = {}, options = {}) { Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
 function render() {
   stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter();
-  const founderWelcomePending=!!(((state.user?.founderLaunchPosition&&!state.user?.founderLaunchNoticeSeenAt)||demoFounderPreview())&&!state.founderWelcomeOpen&&!state.founderWelcomeScheduled);
+  const founderWelcomePending=!!(((state.user?.founderLaunchPosition&&!state.user?.founderLaunchNoticeSeenAt)||(demoFounderPreview()&&!demoFounderPreviewDismissed()))&&!state.founderWelcomeOpen&&!state.founderWelcomeScheduled);
   if(founderWelcomePending){state.founderWelcomeScheduled=true;setTimeout(()=>{state.founderWelcomeScheduled=false;showFounderWelcome(false);},320);return;}
   if(state.launchTutorialAfterNav){state.launchTutorialAfterNav=false;setTimeout(()=>startTutorial(false),450);}
   else if(state.launchNewFeatureTutorial){state.launchNewFeatureTutorial=false;setTimeout(()=>startTutorial(false,true),450);}
@@ -2657,6 +2657,8 @@ async function renderChat() {
 }
 
 function demoFounderPreview(){return state.user?.demo&&state.user?.demoPreview?.type==='founder'?state.user.demoPreview:null;}
+function demoFounderPreviewDismissKey(preview=demoFounderPreview()){return preview?`bre-demo-founder-welcome-dismissed:${preview.createdAt||preview.position||'active'}`:null;}
+function demoFounderPreviewDismissed(){const key=demoFounderPreviewDismissKey();return !!(key&&sessionStorage.getItem(key)==='1');}
 function founderDisplayPosition(){return Number(demoFounderPreview()?.position||state.user?.founderLaunchPosition||0)||null;}
 function founderInviteMessage(){
   const link=`${location.origin}/s/join?ref=${encodeURIComponent(state.user?.referralCode||'')}`;
@@ -2685,7 +2687,7 @@ function showFounderWelcome(force=false){
     el('div',{class:'founder-welcome-actions'},[
       el('button',{class:'btn-ghost',onclick:copyFounderInvite},'Copy invite'),
       el('button',{class:'btn-ghost',onclick:async()=>{if(navigator.share){try{await navigator.share({title:'Better Real Estate',text,url:link});}catch{}}else copyFounderInvite();}},'Share'),
-      el('button',{class:'btn-primary',onclick:async()=>{if(!preview){try{await api('POST','/api/founder-program/acknowledge');state.user.founderLaunchNoticeSeenAt=new Date().toISOString();}catch{}}state.founderWelcomeOpen=false;shade.remove();render();}},preview?'Close preview':'Continue')
+      el('button',{class:'btn-primary',onclick:async()=>{if(preview){const key=demoFounderPreviewDismissKey(preview);if(key)sessionStorage.setItem(key,'1');}else{try{await api('POST','/api/founder-program/acknowledge');state.user.founderLaunchNoticeSeenAt=new Date().toISOString();}catch{}}state.founderWelcomeOpen=false;shade.remove();render();}},preview?'Close preview':'Continue')
     ])
   );
   shade.appendChild(card);document.body.appendChild(shade);

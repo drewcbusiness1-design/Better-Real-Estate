@@ -260,3 +260,9 @@ Before every future Better Real Estate build, patch, release, or ZIP-producing c
 
 ## v29.7 Demo Center repair — permanent regression rules
 The Admin Demo Center must remain an obvious complete journey: Create Demo Account -> select Demo -> select experience -> Start Preview -> Enter Demo -> Return to Admin / Reset Preview. All selectors must function in light/dark mode, controls must stay fully inside cards, field labels must remain visible, buttons must be equal-height/centered, and no action may be clipped or ambiguous. Admin may enter only explicitly marked Demo accounts through the controlled demo-session endpoint; this must never weaken normal authentication for real accounts. Demo sessions retain all financial, Founder, analytics, referral and payout exclusions.
+
+
+## v29.8 — Founder Preview Close Repair
+- Demo Founder welcome Close preview MUST dismiss the current preview instance and MUST NOT reopen on the render immediately following close.
+- Dismissal is browser-session scoped to that exact preview instance; a newly started Founder preview may display again.
+- Preserve real Founder acknowledgement separately from Demo preview dismissal.
