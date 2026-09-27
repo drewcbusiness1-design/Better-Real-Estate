@@ -96,3 +96,16 @@ v27 extends the confirmed-good v26.5 baseline. It must preserve all v26.5 functi
 - Admin time-period and verification controls must remain theme-consistent in light/dark modes. Admin user surfaces show account age.
 - Tutorial version 30 includes Quick Options. “Skip this step” is intentionally removed; Back and Next/Finish are the balanced step-navigation controls, while Skip entire tour remains available.
 - These are screenshot-derived regression requirements and are release blockers if they regress.
+
+## v27.2 inherited acceptance regression
+Quick Options must always render as a clearly readable, opaque, theme-consistent panel. Long shortcut lists must scroll inside the panel and never extend beyond the viewport or strand actions below the screen. Verify this in both light/dark themes and short/mobile viewports. This requirement is inherited recursively by every later handoff.
+
+## v27.3 inherited Quick Options acceptance rule — latest rule overrides v27.2 opacity wording
+- Preserve the approved translucent/glass Quick Options visual treatment; do NOT make the panel fully opaque merely to solve readability.
+- The customizer's secondary descriptions must remain clearly readable over the glass surface in light/dark themes.
+- Shortcut checkboxes are custom Better Real Estate controls, never browser-default blue; checked state uses the platform accent.
+- The shortcut list retains independent scrolling on short/mobile viewports.
+- Customization includes a visible Back control that returns to the normal Quick Options menu without closing the Quick Options experience. Back and Save are level/even.
+- Tutorial release 31 teaches the updated customization/back behavior. Every later user-facing change still requires tutorial review/update.
+- This latest rule supersedes v27.2's word "opaque" while preserving v27.2's readability and scrolling requirements.
+- This rule is recursively inherited by every future handoff.

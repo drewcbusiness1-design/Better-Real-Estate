@@ -29,3 +29,19 @@ No unapproved external API or paid service was introduced for these features.
 - Admin activity period selection now uses theme-consistent selected states.
 - Account verification controls now use theme-consistent button treatment; account age is displayed in admin user surfaces.
 - Tutorial updated to v30 for Quick Options and simplified by removing redundant “Skip this step”; Back/Next remain balanced with Skip entire tour retained.
+
+## v27.2 — Quick Options readability + scrolling
+- Fixed Quick Options/customizer contrast by resolving the operating-network compatibility theme tokens to the site's real light/dark theme surfaces and text colors.
+- Quick Options card is now an opaque themed surface instead of visually blending into the dimmed page.
+- Shortcut labels/descriptions use full theme-appropriate contrast.
+- Customizer is viewport-bounded and its option list scrolls independently with trackpad, mouse wheel, keyboard/touch scrolling while the header and save control remain reachable.
+- Added short-viewport and mobile sizing rules.
+- Added a regression test covering opaque theme tokens, readability, viewport bounds and scrolling.
+
+## v27.3 — Quick Options glass refinement
+- Restored the user-approved translucent/glass Quick Options surface while retaining viewport-bounded internal scrolling.
+- Increased customizer secondary-copy contrast without removing transparency.
+- Replaced browser-blue checkboxes with Better Real Estate themed custom checkbox controls.
+- Added an even, persistent Back + Save action row; Back returns to the normal Quick Options menu.
+- Updated Quick Options tutorial guidance to release 31.
+- Added regression coverage for glass treatment, readability, themed checkbox state, scrolling, Back behavior, and tutorial update.

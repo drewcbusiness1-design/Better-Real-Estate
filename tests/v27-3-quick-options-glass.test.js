@@ -1,0 +1,14 @@
+const fs=require('fs'); const assert=require('assert');
+const css=fs.readFileSync('public/style.css','utf8');
+const app=fs.readFileSync('public/app.js','utf8');
+assert(css.includes('background:color-mix(in srgb,var(--surface) 78%,transparent)!important'),'glass surface must remain translucent');
+assert(css.includes('backdrop-filter:blur(24px) saturate(125%)'),'glass blur must remain present');
+assert(css.includes('.quick-custom-row small{color:var(--ink-2)!important;font-weight:600!important'),'customizer secondary text must be readable');
+assert(css.includes('input[type="checkbox"]{appearance:none'),'checkboxes must not use browser blue styling');
+assert(css.includes('background:var(--accent);border-color:var(--accent)'),'checked state must use BRE accent');
+assert(css.includes('.quick-custom-list{flex:1 1 auto;min-height:0;overflow-y:auto!important'),'customizer must retain independent scrolling');
+assert(css.includes('.quick-custom-actions{display:grid;grid-template-columns:1fr 1fr'),'Back and Save must be level/even');
+assert(app.includes("const back=el('button',{class:'btn-ghost',type:'button'},'Back')"),'customizer must include Back');
+assert(app.includes('shade.remove();openQuickOptions();'),'Back must return to Quick Options');
+assert(app.includes("release:31,title:'Quick options'"),'tutorial must be updated for this user-facing change');
+console.log('v27.3 quick options glass acceptance: PASS');

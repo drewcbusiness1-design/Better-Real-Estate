@@ -1,0 +1,10 @@
+const fs=require('fs'); const assert=require('assert');
+const css=fs.readFileSync('public/style.css','utf8');
+const app=fs.readFileSync('public/app.js','utf8');
+assert(css.includes('--card:var(--surface)'),'legacy card token must resolve to opaque theme surface');
+assert(css.includes('.quick-custom-list{flex:1 1 auto;min-height:0;overflow-y:auto!important'),'quick options list must scroll independently');
+assert(css.includes('max-height:calc(100dvh - 96px)!important'),'quick options card must fit viewport');
+assert(css.includes('.quick-custom-row b{color:var(--ink)!important'),'quick option labels need full contrast');
+assert(css.includes('.quick-custom-row small{color:var(--ink-soft)!important;opacity:1!important'),'quick option descriptions need readable contrast');
+assert(app.includes("el('h3',{},'Choose shortcuts')"),'customizer remains wired');
+console.log('v27.2 quick options acceptance: PASS');
