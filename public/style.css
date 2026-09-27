@@ -839,3 +839,23 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .form-modal label{display:block;margin:9px 2px 5px;font-size:11px;font-weight:800;color:var(--muted)}.form-modal textarea{min-height:110px}.form-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .profile-markets{display:flex;gap:5px;flex-wrap:wrap;margin:5px 0}.profile-markets span{padding:4px 7px;border-radius:999px;background:var(--soft);border:1px solid var(--line);font-size:10px;font-weight:800}
 .feedtools button{width:auto;white-space:nowrap}.pipeline-card{overflow:hidden}.pipeline-card select,.pipeline-card button{width:100%;min-width:0;max-width:100%;box-sizing:border-box}.room-offer{display:flex;flex-direction:column;gap:4px;padding:11px 0;border-bottom:1px solid var(--line)}.room-offer:last-child{border-bottom:0}.room-offer span,.room-offer small{color:var(--muted);font-size:11px}.room-message-stream{display:flex;flex-direction:column;gap:7px;max-height:260px;overflow:auto;margin-bottom:10px}.room-message{align-self:flex-start;max-width:88%;display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:12px;background:var(--soft);font-size:12px}.room-message.mine{align-self:flex-end;background:color-mix(in srgb,var(--accent) 12%,var(--card))}.room-message small{font-size:9px;color:var(--muted)}.deal-stage-public{display:flex;flex-direction:column;gap:3px;padding:12px;border-radius:12px;background:var(--soft)}.deal-stage-public b{text-transform:capitalize}.deal-stage-public span{font-size:11px;color:var(--muted)}
+
+/* v27.1 presentation + quick options acceptance fixes */
+.topquick{padding:0!important;width:38px!important;height:38px!important;min-height:38px!important;border-radius:10px!important;background:transparent!important;color:var(--ink)!important;border:1px solid transparent!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}
+.topquick:hover{background:var(--soft)!important;border-color:var(--line)!important}
+.feedcommand{display:block;padding:12px 14px;margin:4px 0 18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 8px 24px rgba(0,0,0,.035)}
+.feedcommand-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.feedcommand .mini-metric{min-width:0;padding:11px 12px;border-radius:11px;background:var(--surface)}
+.searchbar-pro{grid-template-columns:minmax(220px,2fr) 118px 138px 170px minmax(92px,auto)}
+.searchbar-pro>button{width:100%!important;min-width:92px!important;padding-left:14px!important;padding-right:14px!important;white-space:nowrap!important}
+.activity-controls button{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;font-weight:700;box-shadow:none}
+.activity-controls button.active{background:color-mix(in srgb,var(--accent) 12%,var(--card))!important;color:var(--ink)!important;border-color:color-mix(in srgb,var(--accent) 55%,var(--line))!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 15%,transparent)}
+.adminverifyrow .compactbtn,.verifiedaction{background:var(--card)!important;color:var(--ink)!important;border:1px solid var(--line)!important;min-width:154px!important}
+.adminverifyrow .compactbtn:hover,.verifiedaction:hover{background:var(--soft)!important;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))!important}
+.quick-customize{width:100%;margin-top:8px;padding:11px 13px;border:1px solid var(--line);border-radius:11px;background:var(--soft);color:var(--ink);font-weight:800}
+.quick-custom-list{display:grid;gap:5px;margin:4px 0 12px}.quick-custom-row{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px}.quick-custom-row input{width:17px;height:17px;margin:0}.quick-custom-row span{display:flex;flex-direction:column;gap:2px}.quick-custom-row small{color:var(--muted)}
+.guided-tour-card .tour-actions{align-items:center}.guided-tour-card .tour-actions button{min-height:40px}
+@media(max-width:900px){.feedcommand-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.feedcommand-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.searchbar-pro>button{width:100%!important}.topquick{display:none!important}}
+
+.guided-tour-card .tutorialactions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important}.guided-tour-card .tutorialactions button{width:100%!important;margin:0!important}.guided-tour-card .tutorialactions button:disabled{visibility:hidden}.guided-tour-card .tutorialactions .btn-primary{grid-column:auto!important}

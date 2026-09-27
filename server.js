@@ -761,6 +761,7 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (typeof body.notifyOnMatch === 'boolean') next.notifyOnMatch = body.notifyOnMatch;
   if (typeof body.showMembershipLevel === 'boolean') next.showMembershipLevel = body.showMembershipLevel;
   if (typeof body.showActivityStatus === 'boolean') next.showActivityStatus = body.showActivityStatus;
+  if (Array.isArray(body.quickOptions)) { const allowed=new Set(['compose','dealbuilder','buyercrm','pipeline','buybox','search','messages','liked','admin']); next.quickOptions=[...new Set(body.quickOptions.map(String).filter(x=>allowed.has(x)))].slice(0,6); if(!isAdminUser(req.user)) next.quickOptions=next.quickOptions.filter(x=>x!=='admin'); }
   if (body.tutorialCompletedVersion !== undefined) next.tutorialCompletedVersion = Math.max(0, Number(body.tutorialCompletedVersion)||0);
   if (body.tutorialDismissedVersion !== undefined) next.tutorialDismissedVersion = Math.max(0, Number(body.tutorialDismissedVersion)||0);
   if (Array.isArray(body.tutorialCompletedKeys)) next.tutorialCompletedKeys = [...new Set(body.tutorialCompletedKeys.map(x => String(x).slice(0,80)))].slice(-30);

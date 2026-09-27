@@ -32,7 +32,9 @@ function iconSvg(name, size = 20) {
     bolt:'<path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/>',
     wallet:'<path d="M3 6h15a3 3 0 0 1 3 3v10H5a2 2 0 0 1-2-2V6Z"/><path d="M3 6a3 3 0 0 1 3-3h11v3"/><path d="M16 12h5v4h-5a2 2 0 1 1 0-4Z"/>',
     moon:'<path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/>',
-    sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>'
+    sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>',
+    search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+    grid:'<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>'
   };
   const span = el('span', { class:'svgicon', 'aria-hidden':'true' });
   span.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.home}</svg>`;
@@ -235,8 +237,8 @@ function renderTop() {
   nav.appendChild(inboxBtn);
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Boost a listing', onclick: () => go('boostpicker') }, iconSvg('bolt',19)));
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Wallet', onclick: () => go('wallet') }, iconSvg('wallet',19)));
-  nav.appendChild(el('button', { class: 'topquick', title: 'Quick create', onclick: () => openQuickCreate() }, '+ Create'));
-  nav.appendChild(el('button', { class: 'iconbtn', title: 'Search', onclick: () => go('search') }, '⌕'));
+  nav.appendChild(el('button', { class: 'iconbtn topquick', title: 'Quick options', 'aria-label':'Quick options', onclick: () => openQuickOptions() }, iconSvg('grid',19)));
+  nav.appendChild(el('button', { class: 'iconbtn', title: 'Search', 'aria-label':'Search', onclick: () => go('search') }, iconSvg('search',19)));
   nav.appendChild(el('button', { onclick: () => go('settings'), class: state.view === 'settings' ? 'active' : '' }, 'Settings'));
 }
 
@@ -519,7 +521,7 @@ async function renderFeed() {
   const vb = verifyBanner(); if (vb) wrap.appendChild(vb);
   const tb = trialBar(); if (tb) wrap.appendChild(tb);
   let dash=null; try{dash=await api('GET','/api/dashboard');}catch{}
-  if(dash) wrap.appendChild(el('div',{class:'feedcommand'},[el('div',{class:'feedcommand-copy'},[el('div',{class:'eyebrow'},'YOUR WORKSPACE'),el('h2',{},'What needs your attention'),el('div',{class:'sub'},'Your markets, deals and conversations in one place.')]),el('div',{class:'feedcommand-stats'},[miniMetric(dash.matched,'Market matches'),miniMetric(dash.buyerMatches,'Buyer matches'),miniMetric(dash.pendingOffers,'Pending offers'),miniMetric(dash.upcoming?new Date(dash.upcoming.at).toLocaleDateString():'—','Next deadline')]) ]));
+  if(dash) wrap.appendChild(el('div',{class:'feedcommand'},[el('div',{class:'feedcommand-stats'},[miniMetric(dash.matched,'Market matches'),miniMetric(dash.buyerMatches,'Buyer matches'),miniMetric(dash.pendingOffers,'Pending offers'),miniMetric(dash.upcoming?new Date(dash.upcoming.at).toLocaleDateString():'—','Next deadline')]) ]));
   wrap.appendChild(el('div', { class: 'feedhead' }, [
     el('div',{class:'feedmode'},[el('button',{class:state.feedMode==='for-you'?'active':'',onclick:()=>{state.feedMode='for-you';render();}},'For You'),el('button',{class:state.feedMode==='following'?'active':'',onclick:()=>{state.feedMode='following';render();}},'Following')]),
     el('div', {class:'feedtools'}, [el('button', { class: 'filterbtn', onclick: () => go('search') }, 'Search'),el('button', { class: 'filterbtn', onclick: () => go('saved') }, 'Liked'),el('button', { class: 'filterbtn', onclick: () => go('savedsearches') }, 'Deal alerts')])
@@ -2005,7 +2007,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 29;
+const TUTORIAL_VERSION = 30;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2039,6 +2041,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
  {view:'companyworkspace',selector:'.companyhero',min:3,release:29,title:'Wholesale Team workspace',copy:'Team access adds shared buyer CRM, pipeline assignments, internal notes, activity and analytics while each teammate keeps a separate login.'},
  {view:'admin',selector:'.admin-activity',min:4,release:29,title:'Admin activity & user analytics',copy:'See who is active now, unique users over preset or custom periods, market activity, funnel signals and inspect individual accounts. Ordinary members never see this step.'},
+ {view:'feed',selector:'.topquick',min:0,release:30,title:'Quick options',copy:'Open your customizable shortcut menu from anywhere. Choose the platform actions you use most; admins can keep user management one click away.'},
  {view:'settings',selector:'.market-settings',min:0,release:29,title:'Investment markets',copy:'Choose the states you work in. They boost relevant properties in For You without hiding opportunities elsewhere.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
@@ -2102,8 +2105,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
    card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
    card.appendChild(el('div',{class:'tutorialmembership'},`Showing ${tier==='wholesale'?'Team':tier[0].toUpperCase()+tier.slice(1)} access`));
    const actions=el('div',{class:'tutorialactions'});
-   if(i>0)actions.appendChild(el('button',{type:'button',class:'btn-ghost',onclick:()=>move(-1)},'Back'));
-   actions.appendChild(el('button',{type:'button',class:'btn-ghost',onclick:()=>i===steps.length-1?finish():move(1)},i===steps.length-1?'Finish':'Skip this step'));
+   actions.appendChild(el('button',{type:'button',class:'btn-ghost',disabled:i===0?'disabled':null,onclick:()=>move(-1)},'Back'));
    actions.appendChild(el('button',{type:'button',class:'btn-primary',onclick:()=>i===steps.length-1?finish():move(1)},i===steps.length-1?'Finish':'Next'));
    card.appendChild(actions);card.appendChild(el('button',{type:'button',class:'tutorialskip',onclick:()=>finish(true)},'Skip entire tour'));
    await focus(step);
@@ -3540,12 +3542,36 @@ async function renderMemberships() {
 /* ================= v27 OPERATING NETWORK ================= */
 const STATE_CODES=['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
 function miniMetric(value,label){return el('div',{class:'mini-metric'},[el('b',{},String(value)),el('span',{},label)]);}
-function openQuickCreate(){
-  const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card'});
-  card.append(el('div',{class:'quick-head'},[el('div',{},[el('div',{class:'eyebrow'},'QUICK CREATE'),el('h3',{},'Start something')]),el('button',{class:'iconbtn',onclick:()=>shade.remove()},'×')]));
-  [['Post a property','Create or import a listing','compose'],['Analyze a deal','Address-first AI Deal Builder','dealbuilder'],['Add a buyer','Save a buyer to your CRM','buyercrm'],['Add a lead','Put an opportunity in your pipeline','pipeline'],['Create buy box','Tell Better Real Estate what you buy','buybox']].forEach(([t,d,v])=>card.appendChild(el('button',{class:'quick-option',onclick:()=>{shade.remove();go(v);}},[el('b',{},t),el('span',{},d)])));
-  shade.appendChild(card);document.body.appendChild(shade);
+function quickOptionCatalog(){
+ const base=[
+  {id:'compose',title:'Post a property',desc:'Create or import a listing',view:'compose'},
+  {id:'dealbuilder',title:'Analyze a deal',desc:'Open AI Deal Builder',view:'dealbuilder'},
+  {id:'buyercrm',title:'Add a buyer',desc:'Open your buyer CRM',view:'buyercrm'},
+  {id:'pipeline',title:'Deal pipeline',desc:'View and manage opportunities',view:'pipeline'},
+  {id:'buybox',title:'Buy boxes',desc:'Manage what you buy',view:'buybox'},
+  {id:'search',title:'Search',desc:'Find properties and people',view:'search'},
+  {id:'messages',title:'Messages',desc:'Open conversations',view:'messages'},
+  {id:'liked',title:'Liked properties',desc:'View watched properties',view:'liked'}
+ ];
+ if(state.access?.adminUnlimited) base.push({id:'admin',title:'Admin users',desc:'Open user activity and account controls',view:'admin'});
+ return base;
 }
+function selectedQuickOptions(){const allowed=new Set(quickOptionCatalog().map(x=>x.id));const saved=state.user?.settings?.quickOptions;const defaults=state.access?.adminUnlimited?['admin','compose','dealbuilder','search','messages']:['compose','dealbuilder','search','messages','liked'];return (Array.isArray(saved)?saved:defaults).filter(x=>allowed.has(x)).slice(0,6);}
+async function saveQuickOptions(ids){const {settings}=await api('PATCH','/api/me/settings',{quickOptions:ids});state.user.settings=settings;}
+function openQuickOptions(){
+ const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card'});
+ const head=el('div',{class:'quick-head'},[el('div',{},[el('div',{class:'eyebrow'},'QUICK OPTIONS'),el('h3',{},'Your shortcuts')]),el('button',{class:'iconbtn',title:'Close',onclick:()=>shade.remove()},'×')]);card.append(head);
+ const chosen=selectedQuickOptions(),catalog=quickOptionCatalog();catalog.filter(x=>chosen.includes(x.id)).forEach(x=>card.appendChild(el('button',{class:'quick-option',onclick:()=>{shade.remove();go(x.view);}},[el('b',{},x.title),el('span',{},x.desc)])));
+ card.appendChild(el('button',{class:'quick-customize',onclick:()=>{shade.remove();openQuickCustomizer();}},'Customize quick options'));
+ shade.appendChild(card);document.body.appendChild(shade);
+}
+function openQuickCustomizer(){
+ const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card'}),catalog=quickOptionCatalog(),chosen=new Set(selectedQuickOptions());
+ card.appendChild(el('div',{class:'quick-head'},[el('div',{},[el('div',{class:'eyebrow'},'QUICK OPTIONS'),el('h3',{},'Choose shortcuts'),el('div',{class:'sub'},'Select up to 6 actions. You can change these anytime.')]),el('button',{class:'iconbtn',onclick:()=>shade.remove()},'×')]));
+ const list=el('div',{class:'quick-custom-list'});catalog.forEach(x=>{const cb=el('input',{type:'checkbox'});cb.checked=chosen.has(x.id);cb.onchange=()=>{if(cb.checked&&[...list.querySelectorAll('input:checked')].length>6){cb.checked=false;toast('Choose up to 6 quick options.','err');}};list.appendChild(el('label',{class:'quick-custom-row'},[cb,el('span',{},[el('b',{},x.title),el('small',{},x.desc)])]));});
+ const save=el('button',{class:'btn-primary'},'Save quick options');save.onclick=async()=>{const ids=catalog.filter((x,i)=>list.querySelectorAll('input')[i].checked).map(x=>x.id);if(!ids.length)return toast('Choose at least one quick option.','err');try{await saveQuickOptions(ids);shade.remove();toast('Quick options updated.','ok');renderTop();}catch(e){toast(e.message,'err')}};card.append(list,save);shade.appendChild(card);document.body.appendChild(shade);
+}
+
 function openFormModal(title,fields,saveLabel,onSave){const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card form-modal'});card.appendChild(el('div',{class:'quick-head'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER REAL ESTATE'),el('h3',{},title)]),el('button',{class:'iconbtn',onclick:()=>shade.remove()},'×')]));const refs={};fields.forEach(f=>{card.appendChild(el('label',{},f.label));let input;if(f.type==='textarea'){input=el('textarea',{placeholder:f.placeholder||''});input.value=f.value||'';}else{input=el('input',{type:f.type||'text',placeholder:f.placeholder||'',value:f.value||''});}refs[f.key]=input;card.appendChild(input);});const st=el('div',{class:'errmsg'}),actions=el('div',{class:'form-modal-actions'},[el('button',{class:'btn-ghost',onclick:()=>shade.remove()},'Cancel'),el('button',{class:'btn-primary',onclick:async e=>{e.currentTarget.disabled=true;st.textContent='';try{await onSave(Object.fromEntries(Object.entries(refs).map(([k,v])=>[k,v.value])));shade.remove();}catch(err){st.textContent=err.message;e.currentTarget.disabled=false;}}},saveLabel||'Save')]);card.append(st,actions);shade.appendChild(card);document.body.appendChild(shade);setTimeout(()=>Object.values(refs)[0]?.focus(),20);}
 function statePicker(selected=[],onChange){const chosen=new Set(selected||[]),wrap=el('div',{class:'state-picker'});STATE_CODES.forEach(code=>{const b=el('button',{type:'button',class:chosen.has(code)?'on':''},code);b.onclick=()=>{chosen.has(code)?chosen.delete(code):chosen.add(code);b.classList.toggle('on',chosen.has(code));onChange?.([...chosen]);};wrap.appendChild(b);});return wrap;}
 async function renderCommandCenter(){
@@ -3587,6 +3613,8 @@ async function renderDealRoom(){
 
 async function renderVault(listingId){const host=el('div');let r;try{r=await api('GET','/api/listings/'+listingId+'/documents');}catch(e){host.appendChild(el('div',{class:'errmsg'},e.message));return host;}const list=el('div',{class:'vault-list'});r.documents.forEach(d=>list.appendChild(el('div',{class:'vault-row'},[el('a',{href:d.url,target:'_blank',rel:'noopener'},d.name),el('span',{},d.visibility==='participants'?'Shared with participants':'Team only'),r.canManage?el('button',{class:'btn-ghost',onclick:async()=>{await api('DELETE',`/api/listings/${listingId}/documents/${d.id}`);render();}},'Remove'):null] )));host.appendChild(list);if(r.canManage){const file=el('input',{type:'file',accept:'.pdf,image/png,image/jpeg,image/webp'}),visibility=el('select');visibility.append(el('option',{value:'team'},'Team only'),el('option',{value:'participants'},'Share with offer participants'));const up=el('button',{class:'btn-ghost'},'Upload document');up.onclick=()=>{const f=file.files?.[0];if(!f)return toast('Choose a document first','err');if(f.size>5*1024*1024)return toast('Documents must be 5 MB or smaller','err');const reader=new FileReader();reader.onload=async()=>{try{await api('POST',`/api/listings/${listingId}/documents`,{name:f.name,dataUrl:reader.result,visibility:visibility.value});toast('Document added','ok');render();}catch(e){toast(e.message,'err');}};reader.readAsDataURL(f);};host.append(file,visibility,up);}return host;}
 
+function accountAgeLabel(createdAt){if(!createdAt)return 'Account age unavailable';const days=Math.max(0,Math.floor((Date.now()-new Date(createdAt).getTime())/86400000));if(days<1)return 'Joined today';if(days<30)return `Account age ${days} day${days===1?'':'s'}`;const months=Math.floor(days/30.44);if(months<12)return `Account age ${months} month${months===1?'':'s'}`;const years=Math.floor(months/12),rem=months%12;return `Account age ${years}y${rem?' '+rem+'m':''}`;}
+
 /* ================= ADMIN ================= */
 async function renderAdmin() {
   const wrap = el('div', { class: 'page' });
@@ -3609,7 +3637,7 @@ async function renderAdmin() {
   [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
   customStart.style.display=customEnd.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd);activityCard.append(activityControls,activityHost);wrap.appendChild(activityCard);await loadActivity();
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
-  const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;const loadInspector=async()=>{const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));ih.innerHTML='';r.users.slice(0,20).forEach(u=>ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,u.plan].filter(Boolean).join(' · ')),el('small',{},`${u.listings} listings · ${u.saves} liked · ${u.messages} messages · ${u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'}`)]),u.verified?el('span',{class:'vbadge'},'✓ Verified'):null])));};iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};await loadInspector();
+  const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;const loadInspector=async()=>{const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));ih.innerHTML='';r.users.slice(0,20).forEach(u=>ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,u.plan].filter(Boolean).join(' · ')),el('small',{},`${u.listings} listings · ${u.saves} liked · ${u.messages} messages · ${accountAgeLabel(u.createdAt)} · ${u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'}`)]),u.verified?el('span',{class:'vbadge'},'✓ Verified'):null])));};iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};await loadInspector();
 
   const { pending } = await api('GET', '/api/admin/pending');
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Verify closed deals'));
@@ -3647,7 +3675,7 @@ async function renderAdmin() {
       rows.forEach(u=>{
         const btn=el('button',{class:u.verified?'btn-ghost compactbtn verifiedaction':'btn-primary compactbtn'},u.verified?'Remove verification':'Grant verification');
         btn.onclick=async()=>{const next=!u.verified;if(!confirm(`${next?'Grant':'Remove'} account verification for ${u.name}?`))return;try{await api('POST','/api/admin/set-user-verification',{userId:u.id,verified:next});toast(next?'Account verified':'Verification removed','ok');await loadVerifyUsers();}catch(e){toast(e.message,'err')}};
-        verifyResults.appendChild(el('div',{class:'listrow adminverifyrow'},[el('div',{class:'grow'},[el('div',{class:'t'},[u.name,u.verified?el('span',{class:'vbadge'},'✓ Verified'):null]),el('div',{class:'s'},[u.username?'@'+u.username:null,u.email,u.role].filter(Boolean).join(' · '))]),btn]));
+        verifyResults.appendChild(el('div',{class:'listrow adminverifyrow'},[el('div',{class:'grow'},[el('div',{class:'t'},[u.name,u.verified?el('span',{class:'vbadge'},'✓ Verified'):null]),el('div',{class:'s'},[u.username?'@'+u.username:null,u.email,u.role,accountAgeLabel(u.createdAt)].filter(Boolean).join(' · '))]),btn]));
       });
     } catch(e){verifyResults.innerHTML='';verifyResults.appendChild(el('div',{class:'errmsg'},e.message));}
   };
