@@ -170,7 +170,7 @@ async function boot() {
   else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : 'feed';
   else if (state.companyInviteToken) { state.view = 'auth'; state.authMode = 'signup'; }
   else {
-    const publicWithoutAccount = new Set(['home','auth','about','terms','privacy','contact','faq','forgot','buyerportal']);
+    const publicWithoutAccount = new Set(['home','auth','about','terms','privacy','contact','faq','forgot','buyerportal','affiliate']);
     if (requestedView && ROUTED_VIEWS.has(requestedView) && !publicWithoutAccount.has(requestedView)) {
       state.postAuthTarget = {
         view: requestedView,
@@ -3573,7 +3573,21 @@ async function renderTransactionHub(){
  wrap.appendChild(grid);wrap.appendChild(el('div',{class:'hub-exportbar'},[el('div',{},[el('b',{},'Your data stays portable.'),el('span',{},'Export serious business records whenever you need them.')]),el('button',{class:'btn-ghost',onclick:()=>downloadExport('pipeline')},'Export pipeline CSV')]));return wrap;
 }
 async function renderAffiliateCenter(){
- const wrap=el('div',{class:'page affiliate-center'}),d=await api('GET','/api/affiliate/me');wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER AFFILIATES'),el('h2',{},'Affiliate center'),el('div',{class:'sub'},'Earn cash commission from eligible Better Real Estate membership sales after approval.')]),el('span',{class:'affiliate-rate'},'30%') ]));
+ const wrap=el('div',{class:'page affiliate-center'});
+ if(!state.user){
+  wrap.appendChild(el('section',{class:'affiliate-hero affiliate-public'},[
+   el('div',{class:'eyebrow'},'BETTER AFFILIATES'),
+   el('h2',{},'Earn 30% promoting Better Real Estate'),
+   el('p',{},'Create a Better Real Estate account and request affiliate access. Every application is reviewed before an affiliate link is activated.'),
+   el('div',{class:'terms-line'},[el('b',{},'30% commission'),el('span',{},'Eligible attributed membership sales')]),
+   el('div',{class:'affiliate-public-actions'},[
+    el('button',{class:'btn-primary',onclick:()=>{state.postAuthTarget={view:'affiliate'};state.authMode='signup';go('auth');}},'Create account & apply'),
+    el('button',{class:'btn-ghost',onclick:()=>{state.postAuthTarget={view:'affiliate'};state.authMode='login';go('auth');}},'Sign in')
+   ])
+  ]));
+  return wrap;
+ }
+ const d=await api('GET','/api/affiliate/me');wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER AFFILIATES'),el('h2',{},'Affiliate center'),el('div',{class:'sub'},'Earn cash commission from eligible Better Real Estate membership sales after approval.')]),el('span',{class:'affiliate-rate'},'30%') ]));
  if(state.access?.adminUnlimited){try{const ad=await api('GET','/api/admin/affiliates');const panel=el('section',{class:'hub-panel affiliate-admin'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'ADMIN'),el('h3',{},'Affiliate approvals')]),el('span',{class:'sub'},`${ad.applications.length} applications · ${cents(ad.totals.pending)} pending commissions`)])]);if(!ad.applications.length)panel.appendChild(el('div',{class:'hub-empty'},'No affiliate applications yet.'));ad.applications.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).forEach(x=>panel.appendChild(el('div',{class:'affiliate-admin-row'},[el('div',{class:'grow'},[el('b',{},x.name+' · '+x.status),el('span',{},x.channels||x.audience||x.email),el('small',{},`${x.metrics.sales} sales · ${cents(x.metrics.paid)} paid`)]),el('div',{class:'affiliate-admin-actions'},['approved','denied','suspended','revoked'].filter(st=>st!==x.status).slice(0,2).map(st=>el('button',{class:st==='approved'?'btn-primary':'btn-ghost',onclick:async()=>{await api('POST','/api/admin/affiliates/'+x.id+'/status',{status:st});toast('Affiliate '+st,'ok');render();}},st.charAt(0).toUpperCase()+st.slice(1))))])));wrap.appendChild(panel);}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));}}
  if(!d.application){const card=el('section',{class:'affiliate-hero'},[el('h3',{},'Apply to become a Better affiliate'),el('p',{},'Tell us how you plan to introduce Better Real Estate to your audience. Every application is reviewed before affiliate links are activated.'),el('button',{class:'btn-primary',onclick:()=>openFormModal('Affiliate application',[{key:'audience',label:'Your audience',type:'textarea',placeholder:'Who do you reach and approximately how?'},{key:'channels',label:'Channels',placeholder:'Instagram, YouTube, REIA, newsletter…'},{key:'why',label:'Why Better Real Estate?',type:'textarea',placeholder:'How would you promote the platform responsibly?'}],'Submit application',async v=>{await api('POST','/api/affiliate/apply',v);toast('Affiliate application submitted','ok');render();})},'Request affiliate access')]);wrap.appendChild(card);return wrap;}
  const a=d.application;wrap.appendChild(el('div',{class:'affiliate-status '+a.status},[el('div',{},[el('small',{},'APPLICATION STATUS'),el('b',{},a.status.charAt(0).toUpperCase()+a.status.slice(1))]),a.status==='approved'?el('span',{},'Admin approved'):el('span',{},a.status==='pending'?'Waiting for admin review':'Contact support if you have questions') ]));if(a.status!=='approved')return wrap;

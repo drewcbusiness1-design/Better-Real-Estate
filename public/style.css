@@ -912,3 +912,13 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .hub-provider{width:100%;display:flex;align-items:center;gap:10px;padding:11px 0;border:0;border-top:1px solid var(--line);background:transparent;text-align:left}.hub-provider:first-of-type{border-top:0}.hub-provider>div:last-child{display:flex;flex-direction:column;gap:3px}.hub-provider span{font-size:12px;color:var(--ink-soft)}.deal-tool-actions{display:flex;flex-wrap:wrap;gap:8px}.comp-list{margin:8px 0}.timeline-row{display:grid;grid-template-columns:12px 1fr;gap:9px;padding:9px 0;border-top:1px solid var(--line)}.timeline-row:first-of-type{border-top:0}.timeline-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:5px}.timeline-row>div{display:flex;flex-direction:column;gap:3px}.timeline-row small{color:var(--ink-soft)}
 /* v29 presentation safeguards */
 .hub-panel button,.affiliate-center button,.transaction-hub button{min-height:34px}.hub-panel input,.hub-panel textarea,.hub-panel select,.affiliate-center input,.affiliate-center textarea{max-width:100%}.hub-row>*{min-width:0}.hub-row b,.hub-row span,.hub-row small{overflow-wrap:anywhere}.affiliate-link-card>*{min-width:0}.dealroom-grid>.ops-card{min-width:0;overflow:hidden}
+
+/* v29.1 — pipeline presentation regression fix */
+.pipelinepage{max-width:1180px}
+.pipelinepage>.pageheadrow{align-items:center}
+.pipelinepage>.pageheadrow>.btn-primary{flex:0 0 auto;min-width:118px;white-space:nowrap;word-break:normal;line-height:1.2}
+.pipelinepage .pipeline-board{grid-template-columns:repeat(8,minmax(190px,1fr));scrollbar-gutter:stable;padding-bottom:18px;overscroll-behavior-inline:contain}
+.pipelinepage .pipeline-col{min-width:190px}
+.pipelinepage .pipeline-col-head b{white-space:nowrap}
+@media(max-width:800px){.pipelinepage>.pageheadrow>.btn-primary{width:100%;min-width:0}.pipelinepage .pipeline-board{grid-template-columns:repeat(8,190px)}}
+.affiliate-public{max-width:720px;margin:26px auto}.affiliate-public h2{margin:8px 0}.affiliate-public-actions{display:flex;gap:10px;align-items:center;margin-top:18px}.affiliate-public-actions button{white-space:nowrap}@media(max-width:620px){.affiliate-public-actions{align-items:stretch;flex-direction:column}.affiliate-public-actions button{width:100%}}

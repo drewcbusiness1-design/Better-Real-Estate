@@ -173,3 +173,13 @@ Video calling/conferencing remains deliberately OUT of v29 and future ordinary u
 
 ## Recursive inheritance reminder
 This handoff and every future handoff must carry forward the COMPLETE inherited rules and product state. The receiving chat must instruct its successor to do the same. Never summarize away the user's authority, double pre-build review, first-time-every-time target, exhaustive extracted-ZIP QA, tutorial-as-feature rule, protected baseline, maximum-presentability rule, or external-dependency approval rule.
+
+## v29.1 inherited acceptance additions
+- Deal Pipeline must use a sufficiently wide professional workspace on desktop. No stage heading or column may be clipped; `+ Add lead` must never stack on desktop.
+- The Affiliate Center has a shareable public deep link using `?view=affiliate`. Logged-out visitors see the affiliate proposition, then signup/sign-in must return them directly to Affiliate Center. Existing users go directly to their affiliate state/dashboard.
+- These are permanent regression requirements and must be preserved by future handoffs.
+
+## v29.1 inherited acceptance additions
+- Deal Pipeline must use a sufficiently wide professional workspace on desktop. No stage heading or column may be clipped; `+ Add lead` must never stack on desktop.
+- The Affiliate Center has a shareable public deep link using `?view=affiliate`. Logged-out visitors see the affiliate proposition, then signup/sign-in must return them directly to Affiliate Center. Existing users go directly to their affiliate state/dashboard.
+- These are permanent regression requirements and must be preserved by future handoffs.
