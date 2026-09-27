@@ -10,6 +10,8 @@ function publicProfileUser(u) {
     points: Number(u.points || 0),
     verified: !!u.verified,
     buyingStatus: String(u.buyingStatus || 'active'),
+    investmentMarkets: Array.isArray(u.investmentMarkets) ? u.investmentMarkets : [],
+    activityStatus: u.settings?.showActivityStatus === false ? null : (!u.lastActiveAt ? null : (Date.now()-new Date(u.lastActiveAt).getTime()<=5*60_000?'Active now':Date.now()-new Date(u.lastActiveAt).getTime()<=24*3600000?'Active recently':null)),
     createdAt: u.createdAt || null
   } : null;
 }
@@ -29,7 +31,7 @@ function friendRelationship(db, viewerId, otherId) {
 
 function socialUserCard(db, viewerId, u) {
   const listings = (db.listings || []).filter(l => l.ownerId === u.id);
-  const markets = [...new Set([u.location, ...listings.map(l => l.city)].filter(Boolean))].slice(0, 4);
+  const markets = [...new Set([...(u.investmentMarkets||[]), u.location, ...listings.map(l => l.city)].filter(Boolean))].slice(0, 4);
   const company = u.companyId ? (db.companies || []).find(c => c.id === u.companyId) : null;
   const friendship = friendRelationship(db, viewerId, u.id);
   return {

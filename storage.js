@@ -141,4 +141,30 @@ async function readImage(key) {
   return null;
 }
 
-module.exports = { writeImage, readImage };
+
+
+/** Store a small deal-room document (PDF or common image) using the same durable backing store. */
+async function writeDocument(dataUrl, originalName = 'document') {
+  const m = /^data:(application\/pdf|image\/(?:png|jpeg|jpg|webp));base64,(.+)$/.exec(dataUrl || '');
+  if (!m) return null;
+  const buf = Buffer.from(m[2], 'base64');
+  if (!buf.length || buf.length > 5 * 1024 * 1024) return null;
+  const contentType = m[1] === 'image/jpg' ? 'image/jpeg' : m[1];
+  const ext = contentType === 'application/pdf' ? 'pdf' : contentType.split('/')[1].replace('jpeg','jpg');
+  const key = 'doc-' + crypto.randomUUID() + '.' + ext;
+  const store = blobStore();
+  if (store) { try { await store.set(key, buf, { metadata: { contentType, originalName: String(originalName||'document').slice(0,160) } }); return '/api/doc/' + key; } catch (e) { console.warn('[storage] document blob write failed; using database fallback:', e.message); } }
+  if (!FILE_MODE && sql) { await writeDatabaseImage(key, buf, contentType); return '/api/doc/' + key; }
+  if (!IS_SERVERLESS) { if (!fs.existsSync(LOCAL_DIR)) fs.mkdirSync(LOCAL_DIR,{recursive:true}); fs.writeFileSync(path.join(LOCAL_DIR,key),buf); return '/api/doc/' + key; }
+  throw new Error('Document storage is unavailable.');
+}
+async function readDocument(key) {
+  if (!/^[\w.-]+$/.test(key)) return null;
+  const s = blobStore();
+  if (s) { try { const res=await s.getWithMetadata(key,{type:'arrayBuffer'}); if(res) return {buffer:Buffer.from(res.data),contentType:res.metadata?.contentType||'application/octet-stream'}; } catch(e) { console.warn('[storage] document blob read failed; checking fallback:',e.message); } }
+  if (!FILE_MODE && sql) { const stored=await readDatabaseImage(key); if(stored) return stored; }
+  if (!IS_SERVERLESS) { const p=path.join(LOCAL_DIR,key); if(!fs.existsSync(p)) return null; const ext=path.extname(p).slice(1).toLowerCase(); const contentType=ext==='pdf'?'application/pdf':ext==='jpg'||ext==='jpeg'?'image/jpeg':'image/'+ext; return {buffer:fs.readFileSync(p),contentType}; }
+  return null;
+}
+
+module.exports = { writeImage, readImage, writeDocument, readDocument };

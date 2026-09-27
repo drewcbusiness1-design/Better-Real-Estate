@@ -206,3 +206,6 @@ The social tables (`friendRequests` and `friendships`) are created automatically
 
 Admins now have an Email Center for mail-health diagnostics, test delivery, audience counts, previews, test drafts, scheduled/batched opt-in broadcasts and delivery history. Direct-message recipients can opt into unread-message reminder email with a default one-hour delay and configurable timing. Verification mail is awaited instead of silently fire-and-forget, and delivery failures are surfaced so Resend/domain problems can be diagnosed.
 
+
+## v27 Operating Network
+The v27 release adds activity analytics, investment-market personalization, For You/Following feeds, liked-property watching, saved-search deal alerts, advanced buy boxes, universal search, pipeline/deal rooms, structured offers, secure document vault, deal calendar, expanded listing analytics, credibility/activity signals, expanded Team operations, Command Center, Quick Create, Market Hubs and tutorial v29. See `V27-CHANGES.md` and `HANDOFF-V27.md`.
