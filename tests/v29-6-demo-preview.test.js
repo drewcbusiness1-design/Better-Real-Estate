@@ -1,0 +1,12 @@
+const fs=require('fs'),assert=require('assert');
+const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),handoff=fs.readFileSync('HANDOFF-V29.md','utf8');
+assert(server.includes("app.post('/api/admin/demo-accounts/:id/preview'"),'demo preview API missing');
+assert(server.includes("['founder','onboarding','whatsnew','none']"),'preview allowlist missing');
+assert(server.includes("user.demoPreview={type:'founder',position"),'Founder simulation missing');
+assert(app.includes('const TUTORIAL_VERSION = 38;')&&app.includes("release:38,title:'Preview experiences'"),'tutorial v38 missing');
+assert(app.includes("'Preview the real user experience'")&&app.includes("'First 100 Founder welcome'")&&app.includes("'New-user onboarding'")&&app.includes("'What’s New tutorial'"),'preview admin controls missing');
+assert(app.includes("preview?'DEMO PREVIEW · FIRST 100 FOUNDING MEMBER'"),'Founder preview disclosure missing');
+assert(app.includes('Nothing is being awarded to this demo account.'),'safe Founder preview copy missing');
+assert(css.includes('.demo-preview-grid')&&css.includes('align-items:stretch')&&css.includes('justify-content:center'),'preview presentation rules missing');
+assert(handoff.includes('v29.6 — Demo Experience Preview')&&handoff.includes('MUST NOT consume a Founder slot'),'handoff preview safeguards missing');
+console.log('v29.6 demo preview acceptance passed');

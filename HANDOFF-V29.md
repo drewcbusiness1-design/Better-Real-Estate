@@ -241,3 +241,19 @@ Before every future Better Real Estate build, patch, release, or ZIP-producing c
 - Admin grant Extend must extend the active grant rather than resetting it from today or silently switching plans.
 - The Founder welcome/share experience must use the member's actual referral link and remain readable/presentable in light/dark and responsive layouts.
 - Future handoffs must preserve this section and all earlier authoritative rules recursively.
+
+## v29.5 — Controlled Demo Accounts (inherits all prior rules)
+- Demo accounts must be explicitly created by Admin; never infer demo status from an email/name.
+- Demo accounts have `demo: true`, are excluded from First 100 Founder allocation and production growth/activity metrics, and cannot generate real billing, purchases, referral rewards, affiliate commissions, seller/affiliate payouts, or other cash rewards.
+- Admin can choose simulated Free / Better Plus / Platinum / Wholesale Teams access for a demo account without creating a paid subscription.
+- Admin User Inspector must visibly label demo accounts and provide Reset demo and Convert to real actions. Reset preserves login identity/demo status but clears presentation/testing activity. Conversion requires explicit confirmation and must not retroactively create rewards or consume an earlier Founder slot.
+- Demo controls must remain visually aligned, centered, responsive, and theme-consistent. Awkward wrapping, uneven buttons, clipped controls, browser-default styling, or lopsided layouts are release blockers.
+- Tutorial v37 includes the Admin-only demo-account step. Future handoffs must preserve these rules recursively.
+
+
+## v29.6 — Demo Experience Preview (REQUIRED)
+- Controlled demo accounts may be armed with safe preview states for Founder welcome, onboarding, and What’s New.
+- Founder preview may simulate Founder #1–100 but MUST NOT consume a Founder slot, create Founding Member status, issue the 14-day Platinum grant, alter production analytics, or create any financial/reward side effect.
+- Demo preview is an explicit admin-controlled simulation and must be clearly labeled as a preview to avoid confusing Admin with a real award.
+- Preview controls and previewed experiences must preserve the maximum-presentability rule: level/equal-height buttons, centered labels, consistent spacing, theme-matched surfaces, no clipping/wrapping/sloppy alignment, and responsive behavior.
+- Future handoffs must preserve these rules recursively.

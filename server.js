@@ -319,6 +319,8 @@ function publicMembershipLabel(user) {
 }
 
 function accessFor(user) {
+  const demoPlan = demoPlanAccess(user);
+  if (demoPlan) return { adminUnlimited:false, wholesale:demoPlan==='wholesale', platinum:['platinum','wholesale'].includes(demoPlan), pro:['pro','platinum','wholesale'].includes(demoPlan), trial:false, demo:true, demoPlan };
   if (!user) return null;
   const grant = activeMembershipGrant(user);
   return {
@@ -353,7 +355,13 @@ function membershipGrantSummary(user) {
 }
 
 function founderProgramEligible(user) {
-  return !!user && !isAdminUser(user) && user.role !== 'admin' && user.demo !== true;
+  return !!user && !isAdminUser(user) && user.role !== 'admin' && user.demo !== true && user.founderProgramExcluded !== true;
+}
+function isDemoUser(user) { return !!user && user.demo === true; }
+function demoPlanAccess(user) {
+  if (!isDemoUser(user)) return null;
+  const p = String(user.demoPlan || 'free').toLowerCase();
+  return ['free','pro','platinum','wholesale'].includes(p) ? p : 'free';
 }
 function ensureFirst100FounderProgram(db) {
   db.founderAwards = db.founderAwards || [];
@@ -1093,6 +1101,7 @@ app.delete('/api/me/buybox/:index', requireAuth, async (req, res) => {
    means replacing the token source and the two TODO blocks below.
    ========================================================================= */
 app.post('/api/wallet/payment-methods', requireAuth, async (req, res) => {
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot connect real payment or payout methods. Convert the account to a real account first.' });
   const { brand, last4, expMonth, expYear, token } = req.body || {};
   if (!last4 || String(last4).length !== 4 || !/^\d{4}$/.test(String(last4))) return res.status(400).json({ error: 'Card details look wrong.' });
   if (/^\d{12,}$/.test(String(token || ''))) return res.status(400).json({ error: 'Refusing to store a raw card number.' });
@@ -1123,6 +1132,7 @@ app.get('/api/wallet', requireAuth, async (req, res) => {
   });
 });
 app.post('/api/wallet/deposit', requireAuth, async (req, res) => {
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });
   const amount = Math.round(Number(req.body?.amount) || 0);
   if (amount < 500) return res.status(400).json({ error: 'Minimum top-up is $5.00.' });
   if (payments.enabled()) {
@@ -1139,6 +1149,7 @@ app.post('/api/wallet/deposit', requireAuth, async (req, res) => {
   res.json({ balance: balanceOf(req.db, req.user.id) });
 });
 app.post('/api/wallet/payout-method', requireAuth, async (req, res) => {
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot connect real payment or payout methods. Convert the account to a real account first.' });
   // Stripe Connect: the user links their own bank account directly with
   // Stripe on Stripe's own hosted page. Their banking details never touch
   // this server, and once linked, withdrawals below are fully automatic —
@@ -1157,6 +1168,7 @@ app.get('/api/wallet/payout-status', requireAuth, async (req, res) => {
   catch (e) { res.json({ status: null }); }
 });
 app.post('/api/wallet/withdraw', requireAuth, async (req, res) => {
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });
   const amount = Math.round(Number(req.body?.amount) || 0);
   const bal = withdrawableBalanceOf(req.db, req.user);
   if (amount < PRICING.minWithdrawal) return res.status(400).json({ error: `Minimum withdrawal is ${money(PRICING.minWithdrawal)}.` });
@@ -1200,9 +1212,10 @@ async function chargeOrIntent(db, user, amountCents, purpose, description, meta 
   return { paid: true };
 }
 function maybePayReferral(db, user) {
+  if (isDemoUser(user)) return;
   if (user.referredBy && !user.referralPaid) {
     const referrer = db.users.find(u => u.id === user.referredBy);
-    if (referrer) {
+    if (referrer && !isDemoUser(referrer)) {
       ledgerAdd(db, referrer.id, 'referral', PRICING.referralBonus, 'Better Credit — referral · ' + user.name, { nonWithdrawable:true, referredUserId:user.id });
       ledgerAdd(db, user.id, 'referral', PRICING.referralBonus, 'Better Credit — referred signup', { nonWithdrawable:true, referrerId:referrer.id });
       referrer.betterCreditCents = Number(referrer.betterCreditCents||0) + PRICING.referralBonus;
@@ -1214,6 +1227,7 @@ function maybePayReferral(db, user) {
 
 /* ============================ SUBSCRIPTION & UNLOCKS ============================ */
 app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });
   if (isAdminUser(req.user)) return res.json({ user: publicUser(req.user), adminUnlimited: true });
   const period = req.body?.period === 'annual' ? 'annual' : 'monthly';
   const tier = ['pro','platinum','wholesale'].includes(req.body?.tier) ? req.body.tier : 'pro';
@@ -2160,8 +2174,8 @@ const US_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI
 const cleanStates = xs => [...new Set((Array.isArray(xs)?xs:[]).map(x=>String(x||'').trim().toUpperCase()).filter(x=>US_STATES.has(x)))].slice(0,12);
 function listingState(l){ const m=String(l?.city||'').toUpperCase().match(/,\s*([A-Z]{2})(?:\s|$)/); return m?m[1]:''; }
 const activityWindowMs = { '24h':86400000, '7d':7*86400000, '30d':30*86400000 };
-function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
-app.post('/api/activity/heartbeat', requireAuth, async (req,res)=>{ const now=new Date(); req.user.lastActiveAt=now.toISOString(); req.db.activityEvents=req.db.activityEvents||[]; const last=[...req.db.activityEvents].reverse().find(x=>x.userId===req.user.id); if(!last||now-new Date(last.at)>15*60_000)req.db.activityEvents.push({id:crypto.randomUUID(),userId:req.user.id,at:now.toISOString()}); const cutoff=Date.now()-180*86400000; if(req.db.activityEvents.length>50000)req.db.activityEvents=req.db.activityEvents.filter(x=>new Date(x.at).getTime()>=cutoff); await saveDB(req.db); res.json({ok:true,at:req.user.lastActiveAt}); });
+function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
+app.post('/api/activity/heartbeat', requireAuth, async (req,res)=>{ if(isDemoUser(req.user)){req.user.lastActiveAt=new Date().toISOString();await saveDB(req.db);return res.json({ok:true,at:req.user.lastActiveAt,demo:true});} const now=new Date(); req.user.lastActiveAt=now.toISOString(); req.db.activityEvents=req.db.activityEvents||[]; const last=[...req.db.activityEvents].reverse().find(x=>x.userId===req.user.id); if(!last||now-new Date(last.at)>15*60_000)req.db.activityEvents.push({id:crypto.randomUUID(),userId:req.user.id,at:now.toISOString()}); const cutoff=Date.now()-180*86400000; if(req.db.activityEvents.length>50000)req.db.activityEvents=req.db.activityEvents.filter(x=>new Date(x.at).getTime()>=cutoff); await saveDB(req.db); res.json({ok:true,at:req.user.lastActiveAt}); });
 app.get('/api/notifications', requireAuth, async (req,res)=>{const rows=(req.db.dealNotifications||[]).filter(n=>n.userId===req.user.id).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,60);res.json({notifications:rows,unread:rows.filter(n=>!n.read).length});});
 app.post('/api/notifications/read', requireAuth, async (req,res)=>{for(const n of (req.db.dealNotifications||[]))if(n.userId===req.user.id)n.read=true;await saveDB(req.db);res.json({ok:true});});
 app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
@@ -2169,14 +2183,14 @@ app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
   if(preset==='custom'){ const d=new Date(req.query.start); start=Number.isFinite(d.getTime())?d.getTime():now-86400000; } else start=now-(activityWindowMs[preset]||86400000);
   const endQ=new Date(req.query.end); const end=preset==='custom'&&Number.isFinite(endQ.getTime())?Math.min(now,endQ.getTime()):now;
   const inRange=u=>{const t=new Date(u.lastActiveAt||0).getTime();return t>=start&&t<=end};
-  const activeNow=req.db.users.filter(u=>now-new Date(u.lastActiveAt||0).getTime()<=2*60_000).map(safeActivityUser).sort((a,b)=>String(b.lastActiveAt).localeCompare(String(a.lastActiveAt)));
-  const historicalIds=new Set((req.db.activityEvents||[]).filter(e=>{const t=new Date(e.at||0).getTime();return t>=start&&t<=end}).map(e=>e.userId)); const activeUsers=req.db.users.filter(u=>historicalIds.has(u.id)||inRange(u)).map(safeActivityUser).sort((a,b)=>String(b.lastActiveAt).localeCompare(String(a.lastActiveAt)));
-  const listings=req.db.listings.filter(l=>{const t=new Date(l.createdAt||0).getTime();return t>=start&&t<=end});
-  const messages=req.db.messages.filter(m=>{const t=new Date(m.at||m.createdAt||0).getTime();return t>=start&&t<=end});
-  const analyses=(req.db.dealAnalyses||[]).filter(x=>{const t=new Date(x.createdAt||x.at||0).getTime();return t>=start&&t<=end});
-  const signups=req.db.users.filter(u=>{const t=new Date(u.createdAt||0).getTime();return t>=start&&t<=end});
+  const activeNow=req.db.users.filter(u=>!isDemoUser(u)&&now-new Date(u.lastActiveAt||0).getTime()<=2*60_000).map(safeActivityUser).sort((a,b)=>String(b.lastActiveAt).localeCompare(String(a.lastActiveAt)));
+  const historicalIds=new Set((req.db.activityEvents||[]).filter(e=>{const t=new Date(e.at||0).getTime();return t>=start&&t<=end}).map(e=>e.userId)); const activeUsers=req.db.users.filter(u=>!isDemoUser(u)&&(historicalIds.has(u.id)||inRange(u))).map(safeActivityUser).sort((a,b)=>String(b.lastActiveAt).localeCompare(String(a.lastActiveAt)));
+  const demoIds=new Set(req.db.users.filter(isDemoUser).map(u=>u.id)); const listings=req.db.listings.filter(l=>!demoIds.has(l.ownerId)).filter(l=>{const t=new Date(l.createdAt||0).getTime();return t>=start&&t<=end});
+  const messages=req.db.messages.filter(m=>!demoIds.has(m.fromUserId)&&!demoIds.has(m.toUserId)).filter(m=>{const t=new Date(m.at||m.createdAt||0).getTime();return t>=start&&t<=end});
+  const analyses=(req.db.dealAnalyses||[]).filter(x=>!demoIds.has(x.userId)).filter(x=>{const t=new Date(x.createdAt||x.at||0).getTime();return t>=start&&t<=end});
+  const signups=req.db.users.filter(u=>!isDemoUser(u)).filter(u=>{const t=new Date(u.createdAt||0).getTime();return t>=start&&t<=end});
   const marketCounts={}; for(const u of activeUsers) for(const m of (u.markets||[])) marketCounts[m]=(marketCounts[m]||0)+1;
-  res.json({preset,start:new Date(start).toISOString(),end:new Date(end).toISOString(),activeNow,activeUsers,metrics:{activeNow:activeNow.length,uniqueActive:activeUsers.length,returning:activeUsers.filter(u=>new Date(u.createdAt||0).getTime()<start).length,signups:signups.length,profilesCompleted:req.db.users.filter(u=>u.bio||u.avatarUrl||(u.investmentMarkets||[]).length).length,engaged:req.db.users.filter(u=>req.db.listings.some(l=>l.ownerId===u.id)||req.db.messages.some(m=>m.fromUserId===u.id)||req.db.saves.some(x=>x.userId===u.id)).length,paid:req.db.users.filter(u=>isPro(u)||isPlatinum(u)||isWholesale(u)).length,listings:listings.length,messages:messages.length,dealBuilderRuns:analyses.length},plans:req.db.users.reduce((o,u)=>{const p=actualPlanLabel(u);o[p]=(o[p]||0)+1;return o;},{}),markets:Object.entries(marketCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([state,count])=>({state,count}))});
+  res.json({preset,start:new Date(start).toISOString(),end:new Date(end).toISOString(),activeNow,activeUsers,metrics:{activeNow:activeNow.length,uniqueActive:activeUsers.length,returning:activeUsers.filter(u=>new Date(u.createdAt||0).getTime()<start).length,signups:signups.length,profilesCompleted:req.db.users.filter(u=>!isDemoUser(u)&&(u.bio||u.avatarUrl||(u.investmentMarkets||[]).length)).length,engaged:req.db.users.filter(u=>!isDemoUser(u)&&(req.db.listings.some(l=>l.ownerId===u.id)||req.db.messages.some(m=>m.fromUserId===u.id)||req.db.saves.some(x=>x.userId===u.id))).length,paid:req.db.users.filter(u=>!isDemoUser(u)&&(isPro(u)||isPlatinum(u)||isWholesale(u))).length,listings:listings.length,messages:messages.length,dealBuilderRuns:analyses.length},plans:req.db.users.filter(u=>!isDemoUser(u)).reduce((o,u)=>{const p=actualPlanLabel(u);o[p]=(o[p]||0)+1;return o;},{}),markets:Object.entries(marketCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([state,count])=>({state,count}))});
 });
 app.get('/api/admin/user-inspector', requireAuth, requireAdmin, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(); const awards=req.db.founderAwards||[]; const users=req.db.users.filter(u=>!q||[u.name,u.email,u.username].some(v=>String(v||'').toLowerCase().includes(q))).slice(0,40).map(u=>{ const award=awards.find(a=>a.userId===u.id)||null; return {...safeActivityUser(u),listings:req.db.listings.filter(l=>l.ownerId===u.id).length,saves:req.db.saves.filter(s=>s.userId===u.id).length,messages:req.db.messages.filter(m=>m.fromUserId===u.id||m.toUserId===u.id).length,paidPlan:u.plan||'free',paidPlanUntil:u.planUntil||null,grant:membershipGrantSummary(u),access:accessFor(u),founderAward:award}; }); res.json({users}); });
 app.patch('/api/me/markets', requireAuth, async (req,res)=>{ req.user.investmentMarkets=cleanStates(req.body?.states); await saveDB(req.db); res.json({states:req.user.investmentMarkets}); });
@@ -2252,10 +2266,13 @@ app.post('/api/intake/:code', async(req,res)=>{const owner=req.db.users.find(u=>
 app.get('/api/export/:kind', requireAuth, async(req,res)=>{let rows=[];if(req.params.kind==='contacts')rows=(req.db.relationshipContacts||[]).filter(x=>x.userId===req.user.id);else if(req.params.kind==='pipeline')rows=(req.db.pipelineDeals||[]).filter(x=>x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId));else if(req.params.kind==='outcomes')rows=(req.db.dealOutcomes||[]).filter(x=>x.userId===req.user.id);else return res.status(400).json({error:'Unknown export.'});const keys=[...new Set(rows.flatMap(x=>Object.keys(x).filter(k=>!['notes'].includes(k))))];const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';res.type('text/csv').setHeader('Content-Disposition',`attachment; filename="better-${req.params.kind}.csv"`);res.send([keys.map(esc).join(','),...rows.map(r=>keys.map(k=>esc(r[k])).join(','))].join('\n'));});
 
 app.get('/api/affiliate/me', requireAuth, async(req,res)=>{const appRow=(req.db.affiliateApplications||[]).find(a=>a.userId===req.user.id)||null,bal=affiliateBalances(req.db,req.user.id),clicks=(req.db.affiliateClicks||[]).filter(x=>x.affiliateUserId===req.user.id).length,sales=bal.rows.length;res.json({application:appRow,terms:affiliateTerms(),metrics:{clicks,sales,pending:bal.pending,available:bal.available,paid:bal.paid,reversed:bal.reversed},commissions:bal.rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,100),link:appRow?.status==='approved'?`${appBaseUrl()}/s/join?aff=${encodeURIComponent(appRow.code)}`:null,payoutConfigured:!!req.user.stripeAccountId});});
-app.post('/api/affiliate/apply', requireAuth, async(req,res)=>{req.db.affiliateApplications=req.db.affiliateApplications||[];let row=req.db.affiliateApplications.find(a=>a.userId===req.user.id);if(row&&['pending','approved'].includes(row.status))return res.status(409).json({error:`Affiliate application is already ${row.status}.`});const b=req.body||{};row={id:crypto.randomUUID(),userId:req.user.id,name:req.user.name,email:req.user.email,status:'pending',audience:safeText(b.audience,800),channels:safeText(b.channels,500),why:safeText(b.why,1000),code:(req.user.username||req.user.referralCode||crypto.randomBytes(5).toString('hex')).replace(/[^a-z0-9_-]/gi,'').toUpperCase().slice(0,24),rateBps:AFFILIATE_RATE_BPS,termsVersion:affiliateTerms().version,termsAcceptedAt:null,createdAt:new Date().toISOString()};req.db.affiliateApplications.push(row);await saveDB(req.db);res.json({application:row});});
+app.post('/api/affiliate/apply', requireAuth, async(req,res)=>{
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });req.db.affiliateApplications=req.db.affiliateApplications||[];let row=req.db.affiliateApplications.find(a=>a.userId===req.user.id);if(row&&['pending','approved'].includes(row.status))return res.status(409).json({error:`Affiliate application is already ${row.status}.`});const b=req.body||{};row={id:crypto.randomUUID(),userId:req.user.id,name:req.user.name,email:req.user.email,status:'pending',audience:safeText(b.audience,800),channels:safeText(b.channels,500),why:safeText(b.why,1000),code:(req.user.username||req.user.referralCode||crypto.randomBytes(5).toString('hex')).replace(/[^a-z0-9_-]/gi,'').toUpperCase().slice(0,24),rateBps:AFFILIATE_RATE_BPS,termsVersion:affiliateTerms().version,termsAcceptedAt:null,createdAt:new Date().toISOString()};req.db.affiliateApplications.push(row);await saveDB(req.db);res.json({application:row});});
 app.post('/api/affiliate/accept-terms', requireAuth, async(req,res)=>{const a=(req.db.affiliateApplications||[]).find(a=>a.userId===req.user.id&&a.status==='approved');if(!a)return res.status(403).json({error:'Approved affiliate access required.'});const t=affiliateTerms();if(req.body?.version!==t.version)return res.status(409).json({error:'Affiliate terms changed. Review the latest terms.'});a.termsVersion=t.version;a.rateBps=t.rateBps;a.termsAcceptedAt=new Date().toISOString();req.db.affiliateTerms=req.db.affiliateTerms||[];req.db.affiliateTerms.push({id:crypto.randomUUID(),userId:req.user.id,version:t.version,rateBps:t.rateBps,acceptedAt:a.termsAcceptedAt});await saveDB(req.db);res.json({ok:true,application:a});});
-app.post('/api/affiliate/payout-onboarding', requireAuth, async(req,res)=>{const a=affiliateForUser(req.db,req.user.id);if(!a||!a.termsAcceptedAt)return res.status(403).json({error:'Approve and accept affiliate terms first.'});const out=await payments.createConnectAccount(req.user,appBaseUrl());await saveDB(req.db);res.json(out);});
-app.post('/api/affiliate/withdraw', requireAuth, async(req,res)=>{const a=affiliateForUser(req.db,req.user.id);if(!a||!a.termsAcceptedAt)return res.status(403).json({error:'Approved affiliate access required.'});const bal=affiliateBalances(req.db,req.user.id),amount=Math.floor(Number(req.body?.amountCents||bal.available));if(amount<100)return res.status(400).json({error:'Minimum affiliate withdrawal is $1.00.'});if(amount>bal.available)return res.status(400).json({error:'Withdrawal exceeds available affiliate earnings.'});if(!req.user.stripeAccountId)return res.status(400).json({error:'Connect a payout account first.'});const status=await payments.connectAccountStatus(req.user.stripeAccountId);if(!status?.payoutsEnabled)return res.status(400).json({error:'Finish payout verification before withdrawing.'});const transfer=await payments.payout(req.user.stripeAccountId,amount);let left=amount;for(const c of bal.rows.filter(c=>c.status==='available').sort((a,b)=>String(a.availableAt).localeCompare(String(b.availableAt)))){if(left<=0)break;const take=Math.min(left,c.amountCents);if(take===c.amountCents)c.status='paid';else{c.amountCents-=take;req.db.affiliateCommissions.push({...c,id:crypto.randomUUID(),amountCents:take,status:'paid',sourceId:c.sourceId+':partial:'+Date.now()});}c.paidAt=new Date().toISOString();c.transferId=transfer.id;left-=take;}await saveDB(req.db);res.json({ok:true,transferId:transfer.id,amountCents:amount});});
+app.post('/api/affiliate/payout-onboarding', requireAuth, async(req,res)=>{
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot connect real payment or payout methods. Convert the account to a real account first.' });const a=affiliateForUser(req.db,req.user.id);if(!a||!a.termsAcceptedAt)return res.status(403).json({error:'Approve and accept affiliate terms first.'});const out=await payments.createConnectAccount(req.user,appBaseUrl());await saveDB(req.db);res.json(out);});
+app.post('/api/affiliate/withdraw', requireAuth, async(req,res)=>{
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });const a=affiliateForUser(req.db,req.user.id);if(!a||!a.termsAcceptedAt)return res.status(403).json({error:'Approved affiliate access required.'});const bal=affiliateBalances(req.db,req.user.id),amount=Math.floor(Number(req.body?.amountCents||bal.available));if(amount<100)return res.status(400).json({error:'Minimum affiliate withdrawal is $1.00.'});if(amount>bal.available)return res.status(400).json({error:'Withdrawal exceeds available affiliate earnings.'});if(!req.user.stripeAccountId)return res.status(400).json({error:'Connect a payout account first.'});const status=await payments.connectAccountStatus(req.user.stripeAccountId);if(!status?.payoutsEnabled)return res.status(400).json({error:'Finish payout verification before withdrawing.'});const transfer=await payments.payout(req.user.stripeAccountId,amount);let left=amount;for(const c of bal.rows.filter(c=>c.status==='available').sort((a,b)=>String(a.availableAt).localeCompare(String(b.availableAt)))){if(left<=0)break;const take=Math.min(left,c.amountCents);if(take===c.amountCents)c.status='paid';else{c.amountCents-=take;req.db.affiliateCommissions.push({...c,id:crypto.randomUUID(),amountCents:take,status:'paid',sourceId:c.sourceId+':partial:'+Date.now()});}c.paidAt=new Date().toISOString();c.transferId=transfer.id;left-=take;}await saveDB(req.db);res.json({ok:true,transferId:transfer.id,amountCents:amount});});
 app.get('/api/admin/affiliates', requireAuth, requireAdmin, async(req,res)=>{const apps=(req.db.affiliateApplications||[]).map(a=>{const b=affiliateBalances(req.db,a.userId);return {...a,metrics:{pending:b.pending,available:b.available,paid:b.paid,reversed:b.reversed,sales:b.rows.length}}});res.json({applications:apps,terms:affiliateTerms(),totals:{clicks:(req.db.affiliateClicks||[]).length,commissions:(req.db.affiliateCommissions||[]).length,pending:(req.db.affiliateCommissions||[]).filter(x=>x.status==='pending').reduce((n,x)=>n+x.amountCents,0),paid:(req.db.affiliateCommissions||[]).filter(x=>x.status==='paid').reduce((n,x)=>n+x.amountCents,0)}});});
 app.post('/api/admin/affiliates/:id/status', requireAuth, requireAdmin, async(req,res)=>{const a=(req.db.affiliateApplications||[]).find(a=>a.id===req.params.id);if(!a)return res.status(404).json({error:'Application not found.'});const status=req.body?.status;if(!['approved','denied','suspended','revoked'].includes(status))return res.status(400).json({error:'Invalid status.'});a.status=status;a.reviewedAt=new Date().toISOString();a.reviewedBy=req.user.id;if(status==='approved'){a.rateBps=AFFILIATE_RATE_BPS;a.termsVersion=affiliateTerms().version;a.termsAcceptedAt=null;}await saveDB(req.db);res.json({application:a});});
 
@@ -2856,6 +2873,7 @@ app.post('/api/shop/shipping-quote', requireAuth, async (req, res) => {
 });
 
 app.post('/api/shop/buy', requireAuth, async (req, res) => {
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });
   const item = req.db.shopItems.find(i => i.id === req.body?.itemId);
   if (!item || !item.active || item.stock < 1) return res.status(404).json({ error: 'Item unavailable.' });
   if (item.sellerId === req.user.id) return res.status(400).json({ error: "That's your own listing." });
@@ -3285,6 +3303,60 @@ app.post('/api/admin/memberships/award-leaderboard', requireAuth, requireAdmin, 
 });
 
 
+/* ============================ ADMIN DEMO ACCOUNTS ============================ */
+app.post('/api/admin/demo-accounts', requireAuth, requireAdmin, async (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0,80);
+  const email = String(b.email || '').trim().toLowerCase();
+  const password = String(b.password || '');
+  const requestedRole = policy.SIGNUP_ROLES.includes(b.role) ? b.role : 'buyer';
+  const demoPlan = ['free','pro','platinum','wholesale'].includes(String(b.demoPlan||'free').toLowerCase()) ? String(b.demoPlan||'free').toLowerCase() : 'free';
+  if (!name || !email || !password) return res.status(400).json({ error:'Name, email and password are required.' });
+  if (password.length < 6) return res.status(400).json({ error:'Password must be at least 6 characters.' });
+  if (req.db.users.some(u => String(u.email||'').toLowerCase() === email)) return res.status(409).json({ error:'An account with that email already exists.' });
+  const user = {
+    id: crypto.randomUUID(), name, email, username:null, passwordHash:bcrypt.hashSync(password,10), role:requestedRole,
+    bio:'', phone:'', location:'', investmentMarkets:[], avatarUrl:null, points:0, buyBoxes:[defaultBuyBox()], settings:defaultSettings(),
+    plan:'free', planUntil:null, trialUntil:null, unlockCredits:PRICING.freeUnlocks, verified:false, paymentMethods:[], payoutMethod:null,
+    emailVerified:true, marketingOptIn:false, marketingConsentAt:null, marketingUnsubscribedAt:null, marketingLastSentAt:null, marketingSequence:0,
+    referralCode:crypto.randomBytes(3).toString('hex').toUpperCase(), referredBy:null, referralPaid:false,
+    demo:true, demoPlan, demoPreview:null, demoCreatedBy:req.user.id, demoCreatedAt:new Date().toISOString(), createdAt:new Date().toISOString()
+  };
+  ensureUsername(req.db,user); req.db.users.push(user); await saveDB(req.db);
+  res.json({ ok:true, user:{...safeActivityUser(user), demo:true, demoPlan} });
+});
+app.patch('/api/admin/demo-accounts/:id', requireAuth, requireAdmin, async (req,res)=>{
+  const user=req.db.users.find(u=>u.id===req.params.id&&isDemoUser(u)); if(!user)return res.status(404).json({error:'Demo account not found.'});
+  const p=String(req.body?.demoPlan||'').toLowerCase(); if(p&&!['free','pro','platinum','wholesale'].includes(p))return res.status(400).json({error:'Choose Free, Plus, Platinum or Wholesale Teams.'});
+  if(p)user.demoPlan=p; await saveDB(req.db); res.json({ok:true,user:{...safeActivityUser(user),demo:true,demoPlan:user.demoPlan,demoPreview:user.demoPreview||null}});
+});
+app.post('/api/admin/demo-accounts/:id/preview', requireAuth, requireAdmin, async (req,res)=>{
+  const user=req.db.users.find(u=>u.id===req.params.id&&isDemoUser(u)); if(!user)return res.status(404).json({error:'Demo account not found.'});
+  const type=String(req.body?.type||'').toLowerCase();
+  if(!['founder','onboarding','whatsnew','none'].includes(type))return res.status(400).json({error:'Choose Founder welcome, onboarding, What’s New, or clear preview.'});
+  if(type==='none'){user.demoPreview=null;}
+  else if(type==='founder'){
+    const position=Math.max(1,Math.min(100,Math.floor(Number(req.body?.position||7))||7));
+    user.demoPreview={type:'founder',position,createdAt:new Date().toISOString()};
+  }else user.demoPreview={type,createdAt:new Date().toISOString()};
+  await saveDB(req.db);
+  res.json({ok:true,demoPreview:user.demoPreview||null});
+});
+app.post('/api/admin/demo-accounts/:id/reset', requireAuth, requireAdmin, async (req,res)=>{
+  const user=req.db.users.find(u=>u.id===req.params.id&&isDemoUser(u)); if(!user)return res.status(404).json({error:'Demo account not found.'});
+  const keep=new Set(['id','name','email','username','passwordHash','role','referralCode','demo','demoPlan','demoCreatedBy','demoCreatedAt','createdAt','emailVerified']);
+  for(const k of Object.keys(user))if(!keep.has(k))delete user[k];
+  Object.assign(user,{bio:'',phone:'',location:'',investmentMarkets:[],avatarUrl:null,points:0,buyBoxes:[defaultBuyBox()],settings:defaultSettings(),plan:'free',planUntil:null,trialUntil:null,unlockCredits:PRICING.freeUnlocks,verified:false,paymentMethods:[],payoutMethod:null,marketingOptIn:false,referredBy:null,referralPaid:false,demoResetAt:new Date().toISOString()});
+  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','offers','reviews','views','alerts','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms']) req.db[c]=(req.db[c]||[]).filter(x=>x.userId!==user.id&&x.fromUserId!==user.id&&x.toUserId!==user.id&&x.ownerId!==user.id&&x.buyerId!==user.id&&x.sellerId!==user.id&&x.referrerId!==user.id&&x.affiliateUserId!==user.id);
+  req.db.listings=(req.db.listings||[]).filter(x=>x.ownerId!==user.id); req.db.membershipGrants=(req.db.membershipGrants||[]).filter(x=>x.userId!==user.id); await saveDB(req.db); res.json({ok:true});
+});
+app.post('/api/admin/demo-accounts/:id/convert', requireAuth, requireAdmin, async (req,res)=>{
+  const user=req.db.users.find(u=>u.id===req.params.id&&isDemoUser(u)); if(!user)return res.status(404).json({error:'Demo account not found.'});
+  if(String(req.body?.confirmation||'').trim().toUpperCase()!=='CONVERT')return res.status(400).json({error:'Type CONVERT to confirm.'});
+  user.demo=false; user.demoPlan=null; user.founderProgramExcluded=true; user.convertedFromDemoAt=new Date().toISOString(); user.convertedFromDemoBy=req.user.id; await saveDB(req.db);
+  res.json({ok:true,user:safeActivityUser(user)});
+});
+
 /* ============================ ADMIN EMAIL CENTER ============================ */
 app.get('/api/admin/email-center', requireAuth, requireAdmin, async (req, res) => {
   const health = mailer.health();
@@ -3369,6 +3441,7 @@ app.get('/api/payments/config', async (req, res) => {
 // Browser asks to start a payment. Nothing is granted here — the webhook
 // grants it once Stripe confirms the money actually moved.
 app.post('/api/payments/intent', requireAuth, async (req, res) => {
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });
   const { purpose, listingId, tierId } = req.body || {};
   if (!payments.enabled()) return res.status(400).json({ error: 'Payments are not configured yet.' });
 
@@ -3402,6 +3475,7 @@ app.post('/api/payments/intent', requireAuth, async (req, res) => {
 });
 
 app.post('/api/payments/setup-intent', requireAuth, async (req, res) => {
+  if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot connect real payment or payout methods. Convert the account to a real account first.' });
   try {
     const si = await payments.createSetupIntent(req.user);
     await saveDB(req.db);

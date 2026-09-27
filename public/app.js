@@ -184,7 +184,7 @@ async function boot() {
       state.authMode = 'signup';
     } else state.view = requestedView && ROUTED_VIEWS.has(requestedView) ? requestedView : 'home';
   }
-  if (state.user) { await refreshUnread(); const prior=Number(state.user.settings?.tutorialHighestRank??-1), now=TUTORIAL_RANK[tutorialTier()]??0; if(prior>=0 && now>prior) state.launchNewFeatureTutorial=true; const completed=Number(state.user.settings?.tutorialCompletedVersion||0); if(completed>=28 && completed<TUTORIAL_VERSION) state.launchProductUpdateTutorial=true; }
+  if (state.user) { await refreshUnread(); const prior=Number(state.user.settings?.tutorialHighestRank??-1), now=TUTORIAL_RANK[tutorialTier()]??0; if(prior>=0 && now>prior) state.launchNewFeatureTutorial=true; const completed=Number(state.user.settings?.tutorialCompletedVersion||0); if(completed>=28 && completed<TUTORIAL_VERSION) state.launchProductUpdateTutorial=true; const dp=state.user?.demoPreview?.type; if(state.user?.demo&&dp&&!sessionStorage.getItem('bre-demo-preview:'+dp)){sessionStorage.setItem('bre-demo-preview:'+dp,'1');if(dp==='onboarding')state.launchTutorialAfterNav=true;if(dp==='whatsnew')state.launchProductUpdateTutorial=true;} }
   if (!state.verifyToken && !state.resetToken) writeRoute('replace');
   render();
   if (state.user) api('POST','/api/activity/heartbeat').catch(()=>{}); setInterval(()=>{ if(state.user) api('POST','/api/activity/heartbeat').catch(()=>{}); },60000);
@@ -210,7 +210,7 @@ function startViewPolling(fn, ms = 5000) {
 function go(view, extra = {}, options = {}) { Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
 function render() {
   stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter();
-  const founderWelcomePending=!!(state.user?.founderLaunchPosition&&!state.user?.founderLaunchNoticeSeenAt&&!state.founderWelcomeOpen&&!state.founderWelcomeScheduled);
+  const founderWelcomePending=!!(((state.user?.founderLaunchPosition&&!state.user?.founderLaunchNoticeSeenAt)||demoFounderPreview())&&!state.founderWelcomeOpen&&!state.founderWelcomeScheduled);
   if(founderWelcomePending){state.founderWelcomeScheduled=true;setTimeout(()=>{state.founderWelcomeScheduled=false;showFounderWelcome(false);},320);return;}
   if(state.launchTutorialAfterNav){state.launchTutorialAfterNav=false;setTimeout(()=>startTutorial(false),450);}
   else if(state.launchNewFeatureTutorial){state.launchNewFeatureTutorial=false;setTimeout(()=>startTutorial(false,true),450);}
@@ -2023,7 +2023,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 36;
+const TUTORIAL_VERSION = 38;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2063,6 +2063,8 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
  {view:'companyworkspace',selector:'.companyhero',min:3,release:29,title:'Wholesale Team workspace',copy:'Team access adds shared buyer CRM, pipeline assignments, internal notes, activity and analytics while each teammate keeps a separate login.'},
  {view:'admin',selector:'.admin-activity',min:4,release:29,title:'Admin activity & user analytics',copy:'See who is active now, unique users over preset or custom periods, market activity, funnel signals and inspect individual accounts. Ordinary members never see this step.'},
+ {view:'admin',selector:'.demo-account-card',min:4,release:37,title:'Demo accounts',copy:'Create controlled demo accounts for presentations and testing. Demo accounts never consume First 100 Founder places, never count in growth analytics, and cannot generate real billing, referral rewards, affiliate commissions or payouts.'},
+ {view:'admin',selector:'.demo-preview-card',min:4,release:38,title:'Preview experiences',copy:'Use a demo account to safely replay Founder welcome, onboarding, and What’s New experiences without consuming Founder places, issuing access, changing analytics, or creating money.'},
  {view:'admin',selector:'.user-inspector',min:4,release:36,title:'Membership access controls',copy:'Open Manage access on any non-admin account to grant, replace, extend or revoke complimentary membership access without touching the user’s paid subscription.'},
  {view:'me',selector:'.founder-program-card',min:0,release:36,when:()=>!!state.user?.founderLaunchPosition,title:'First 100 Founding Member',copy:'As one of the first 100 qualifying members, your profile carries Founding Member recognition and includes two weeks of complimentary Platinum access. Your referral link is ready to share with your network.'},
  {view:'feed',selector:'.topquick',min:0,release:31,title:'Quick options',copy:'Open your customizable shortcut menu from anywhere. Choose the platform actions you use most, customize up to six shortcuts, and use Back to return to your saved Quick Options without closing the menu.'},
@@ -2653,6 +2655,8 @@ async function renderChat() {
   return wrap;
 }
 
+function demoFounderPreview(){return state.user?.demo&&state.user?.demoPreview?.type==='founder'?state.user.demoPreview:null;}
+function founderDisplayPosition(){return Number(demoFounderPreview()?.position||state.user?.founderLaunchPosition||0)||null;}
 function founderInviteMessage(){
   const link=`${location.origin}/s/join?ref=${encodeURIComponent(state.user?.referralCode||'')}`;
   return {link,text:`I’m one of the first 100 Founding Members on Better Real Estate. It’s a real estate network and workspace for deals, buyers, investors, deal analysis, pipelines and more. Join through my link: ${link}`};
@@ -2662,23 +2666,25 @@ async function copyFounderInvite(){
   try{await navigator.clipboard.writeText(text);toast('Founder invite copied','ok');}catch{prompt('Copy your founder invite',text);}
 }
 function showFounderWelcome(force=false){
-  if(!state.user?.founderLaunchPosition)return;
-  if(!force&&state.user.founderLaunchNoticeSeenAt)return;
+  const preview=demoFounderPreview();
+  const position=founderDisplayPosition();
+  if(!position)return;
+  if(!preview&&!force&&state.user.founderLaunchNoticeSeenAt)return;
   if(state.founderWelcomeOpen)return;
   state.founderWelcomeOpen=true;
   const {link,text}=founderInviteMessage();
   const shade=el('div',{class:'founder-welcome-shade'}),card=el('div',{class:'founder-welcome-card',role:'dialog','aria-modal':'true'});
-  const expires=state.user.founderPlatinumUntil?new Date(state.user.founderPlatinumUntil).toLocaleDateString():null;
+  const expires=preview?new Date(Date.now()+14*86400000).toLocaleDateString():(state.user.founderPlatinumUntil?new Date(state.user.founderPlatinumUntil).toLocaleDateString():null);
   card.append(
-    el('div',{class:'founder-welcome-mark'},`#${state.user.founderLaunchPosition}`),
-    el('div',{class:'eyebrow'},'FIRST 100 FOUNDING MEMBER'),
+    el('div',{class:'founder-welcome-mark'},`#${position}`),
+    el('div',{class:'eyebrow'},preview?'DEMO PREVIEW · FIRST 100 FOUNDING MEMBER':'FIRST 100 FOUNDING MEMBER'),
     el('h2',{},'You helped start Better Real Estate.'),
-    el('p',{class:'founder-welcome-copy'},`You’re one of the first 100 qualifying members. Your account has Founding Member recognition${expires?` and complimentary Platinum access through ${expires}`:''}.`),
+    el('p',{class:'founder-welcome-copy'},preview?`This is a safe preview of Founder #${position}. A real qualifying member would receive Founding Member recognition and 14 days of complimentary Platinum access${expires?` through ${expires}`:''}. Nothing is being awarded to this demo account.`:`You’re one of the first 100 qualifying members. Your account has Founding Member recognition${expires?` and complimentary Platinum access through ${expires}`:''}.`),
     el('div',{class:'founder-share-preview'},[el('small',{},'READY TO SHARE'),el('p',{},text)]),
     el('div',{class:'founder-welcome-actions'},[
       el('button',{class:'btn-ghost',onclick:copyFounderInvite},'Copy invite'),
       el('button',{class:'btn-ghost',onclick:async()=>{if(navigator.share){try{await navigator.share({title:'Better Real Estate',text,url:link});}catch{}}else copyFounderInvite();}},'Share'),
-      el('button',{class:'btn-primary',onclick:async()=>{try{await api('POST','/api/founder-program/acknowledge');state.user.founderLaunchNoticeSeenAt=new Date().toISOString();}catch{}state.founderWelcomeOpen=false;shade.remove();render();}},'Continue')
+      el('button',{class:'btn-primary',onclick:async()=>{if(!preview){try{await api('POST','/api/founder-program/acknowledge');state.user.founderLaunchNoticeSeenAt=new Date().toISOString();}catch{}}state.founderWelcomeOpen=false;shade.remove();render();}},preview?'Close preview':'Continue')
     ])
   );
   shade.appendChild(card);document.body.appendChild(shade);
@@ -3800,20 +3806,45 @@ async function renderAdmin() {
   const loadActivity=async()=>{let url='/api/admin/activity?preset='+activityPreset;if(activityPreset==='custom')url+=`&start=${encodeURIComponent(customStart.value)}&end=${encodeURIComponent(customEnd.value)}`;const d=await api('GET',url);activityHost.innerHTML='';activityHost.appendChild(el('div',{class:'statgrid'},[stat(d.metrics.activeNow,'Active now'),stat(d.metrics.uniqueActive,'Unique active'),stat(d.metrics.returning,'Returning'),stat(d.metrics.signups,'New signups'),stat(d.metrics.listings,'Listings'),stat(d.metrics.messages,'Messages'),stat(d.metrics.dealBuilderRuns,'Deal analyses'),stat(d.metrics.profilesCompleted,'Profiles set up'),stat(d.metrics.engaged,'Engaged users'),stat(d.metrics.paid,'Paid access')]));if(d.activeNow.length){activityHost.appendChild(el('div',{class:'admin-active-list'},[el('b',{},'On the site now'),...d.activeNow.map(u=>el('div',{class:'admin-active-user'},[el('span',{},u.name),el('small',{},[u.plan,...(u.markets||[])].filter(Boolean).join(' · '))]))]));}if(d.markets.length)activityHost.appendChild(el('div',{class:'market-mini'},d.markets.map(m=>el('span',{},`${m.state} · ${m.count}`))));if(d.plans)activityHost.appendChild(el('div',{class:'market-mini'},Object.entries(d.plans).map(([p,n])=>el('span',{},`${p} · ${n}`))));};
   [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
   customStart.style.display=customEnd.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd);activityCard.append(activityControls,activityHost);wrap.appendChild(activityCard);await loadActivity();
+  wrap.appendChild(el('div',{class:'sectiontitle'},'Demo accounts'));
+  const demoCard=el('div',{class:'card demo-account-card'});
+  const demoHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'CONTROLLED TESTING'),el('h3',{},'Create demo account'),el('p',{class:'sub'},'Demo accounts are excluded from First 100 Founder places and growth analytics, and cannot create real billing, referral rewards, affiliate commissions or payouts.')]),el('span',{class:'demo-admin-badge'},'DEMO')]);
+  const demoGrid=el('div',{class:'demo-account-grid'});
+  const dName=el('input',{placeholder:'Display name'}),dEmail=el('input',{type:'email',placeholder:'Demo email'}),dPass=el('input',{type:'password',placeholder:'Password · 6+ characters'});
+  const dRole=el('select',{},[['buyer','Buyer / Investor'],['seller','Seller / Wholesaler'],['agent','Agent'],['service','Service provider']].map(([v,l])=>el('option',{value:v},l)));
+  const dPlan=el('select',{},[['free','Free'],['pro','Better Plus'],['platinum','Platinum'],['wholesale','Wholesale Teams']].map(([v,l])=>el('option',{value:v},l)));
+  const dStatus=el('div',{class:'hint demo-create-status'});
+  const createDemo=el('button',{class:'btn-primary'},'Create demo account');
+  createDemo.onclick=async()=>{dStatus.textContent='';createDemo.disabled=true;try{const r=await api('POST','/api/admin/demo-accounts',{name:dName.value.trim(),email:dEmail.value.trim(),password:dPass.value,role:dRole.value,demoPlan:dPlan.value});toast('Demo account created','ok');dName.value=dEmail.value=dPass.value='';await loadInspector();dStatus.textContent=`Created ${r.user.name}. It is excluded from Founder allocation and production growth metrics.`;}catch(e){dStatus.textContent=e.message;}finally{createDemo.disabled=false;}};
+  demoGrid.append(dName,dEmail,dPass,dRole,dPlan,createDemo);demoCard.append(demoHead,demoGrid,dStatus);wrap.appendChild(demoCard);
+  const previewCard=el('div',{class:'card demo-preview-card'});
+  const previewHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'SAFE EXPERIENCE PREVIEW'),el('h3',{},'Preview the real user experience'),el('p',{class:'sub'},'Replay key signup and membership experiences on a demo account without consuming Founder places, issuing real access, changing analytics, or creating money.')]),el('span',{class:'demo-admin-badge'},'PREVIEW')]);
+  const previewGrid=el('div',{class:'demo-preview-grid'}),pvUser=el('select'),pvType=el('select'),pvPosition=el('input',{type:'number',min:'1',max:'100',value:'7','aria-label':'Simulated Founder position'}),pvRun=el('button',{class:'btn-primary'},'Apply preview'),pvClear=el('button',{class:'btn-ghost'},'Clear preview'),pvStatus=el('div',{class:'hint demo-preview-status'});
+  pvType.append(el('option',{value:'founder'},'First 100 Founder welcome'),el('option',{value:'onboarding'},'New-user onboarding'),el('option',{value:'whatsnew'},'What’s New tutorial'));
+  const refreshDemoChoices=async()=>{const r=await api('GET','/api/admin/user-inspector?q=');pvUser.innerHTML='';r.users.filter(u=>u.demo).forEach(u=>pvUser.appendChild(el('option',{value:u.id},`${u.name} · ${adminPlanLabel(u.demoPlan||'free')}`)));pvRun.disabled=pvClear.disabled=!pvUser.value;};
+  pvType.onchange=()=>{pvPosition.style.display=pvType.value==='founder'?'block':'none';};
+  pvRun.onclick=async()=>{if(!pvUser.value)return;pvRun.disabled=true;try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:pvType.value,position:Number(pvPosition.value||7)});pvStatus.textContent='Preview armed. Sign in to that demo account to see the experience exactly as a user would.';toast('Demo preview ready','ok');}catch(e){pvStatus.textContent=e.message;}finally{pvRun.disabled=false;}};
+  pvClear.onclick=async()=>{if(!pvUser.value)return;try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:'none'});pvStatus.textContent='Preview cleared.';toast('Demo preview cleared','ok');}catch(e){pvStatus.textContent=e.message;}};
+  previewGrid.append(pvUser,pvType,pvPosition,pvRun,pvClear);previewCard.append(previewHead,previewGrid,pvStatus);wrap.appendChild(previewCard);await refreshDemoChoices();
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
   const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;
   const loadInspector=async()=>{
     const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));ih.innerHTML='';
     r.users.slice(0,20).forEach(u=>{
       const badges=el('div',{class:'inspector-badges'});
+      if(u.demo)badges.appendChild(el('span',{class:'demo-admin-badge'},'DEMO'));
       if(u.verified)badges.appendChild(el('span',{class:'vbadge'},'✓ Verified'));
       if(u.foundingMember)badges.appendChild(el('span',{class:'founding-badge'},u.founderAward?`Founding Member · #${u.founderAward.position}`:'Founding Member'));
       const accessText=u.role==='admin'?'Admin · unlimited':u.access?.wholesale?'Wholesale Teams':u.access?.platinum?'Platinum':u.access?.pro?'Plus':u.access?.trial?'Trial':'Free';
-      const details=[`${u.listings} listings`,`${u.saves} liked`,`${u.messages} messages`,accountAgeLabel(u.createdAt),u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'];
+      const details=[u.demo?`Demo access: ${adminPlanLabel(u.demoPlan||'free')}`:null,u.demoPreview?`Preview: ${u.demoPreview.type}${u.demoPreview.position?` #${u.demoPreview.position}`:''}`:null,`${u.listings} listings`,`${u.saves} liked`,`${u.messages} messages`,accountAgeLabel(u.createdAt),u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'].filter(Boolean);
       if(u.grant?.active)details.push(`Grant: ${adminPlanLabel(u.grant.grantPlan)} · ${u.grant.remainingDays}d left`);
       if(u.founderAward)details.push(`First 100 · #${u.founderAward.position}`);
       const actions=el('div',{class:'inspector-actions'});
       if(u.role!=='admin')actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:()=>openAdminAccessModal(u,loadInspector)},'Manage access'));
+      if(u.demo){
+        actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{if(!confirm(`Reset ${u.name} to a clean demo state?`))return;try{await api('POST',`/api/admin/demo-accounts/${u.id}/reset`);toast('Demo account reset','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Reset demo'));
+        actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{if(!confirm(`Convert ${u.name} into a real account? This cannot restore old rewards or Founder eligibility retroactively.`))return;try{await api('POST',`/api/admin/demo-accounts/${u.id}/convert`,{confirmation:'CONVERT'});toast('Converted to real account','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Convert to real'));
+      }
       actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{const next=!u.foundingMember;if(!confirm(`${next?'Grant':'Remove'} Founding Member status for ${u.name}?`))return;try{await api('POST','/api/admin/set-founding-member',{userId:u.id,foundingMember:next});toast(next?'Founding Member granted':'Founding Member removed','ok');await loadInspector();}catch(e){toast(e.message,'err')} }},u.foundingMember?'Remove founding':'Grant founding'));
       ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,accessText].filter(Boolean).join(' · ')),el('small',{},details.join(' · '))]),badges,actions]));
     });

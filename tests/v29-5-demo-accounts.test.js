@@ -1,0 +1,13 @@
+const fs=require('fs'),assert=require('assert');
+const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),handoff=fs.readFileSync('HANDOFF-V29.md','utf8');
+assert(server.includes("app.post('/api/admin/demo-accounts'")&&server.includes("app.post('/api/admin/demo-accounts/:id/reset'")&&server.includes("app.post('/api/admin/demo-accounts/:id/convert'"),'admin demo account lifecycle routes missing');
+assert(server.includes("user.demo !== true && user.founderProgramExcluded !== true"),'demo/converted-demo Founder exclusion missing');
+assert(server.includes("demo:true, demoPlan")&&server.includes("demoCreatedBy:req.user.id"),'explicit demo designation missing');
+assert(server.includes("Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings"),'real-money demo safeguard missing');
+assert(server.includes("if (isDemoUser(user)) return;")&&server.includes("referrer && !isDemoUser(referrer)"),'demo referral reward safeguard missing');
+assert(server.includes("filter(u=>!isDemoUser(u))")&&server.includes("const demoIds=new Set"),'demo analytics exclusion missing');
+assert(app.includes('const TUTORIAL_VERSION = 38;')&&app.includes("release:37,title:'Demo accounts'"),'tutorial v37 demo step missing');
+assert(app.includes("'Create demo account'")&&app.includes("'Reset demo'")&&app.includes("'Convert to real'"),'demo admin controls missing');
+assert(css.includes('.demo-account-grid')&&css.includes('align-items:stretch')&&css.includes('justify-content:center'),'demo presentation alignment rules missing');
+assert(handoff.includes('v29.5 — Controlled Demo Accounts')&&handoff.includes('Future handoffs must preserve these rules recursively'),'handoff missing demo inheritance');
+console.log('v29.5 demo-account acceptance passed');
