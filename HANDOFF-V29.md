@@ -156,15 +156,15 @@ Every new or changed surface must look native to the established Better Real Est
 ## Affiliate rules
 - Affiliate program is separate from ordinary Better Credit referrals.
 - User must have an account and apply. Admin approval is mandatory before affiliate activation.
-- Current initial commission is 30% of eligible membership revenue. Server-side rate basis is 3000 bps.
+- Current commission is 30% ONE-TIME on a qualifying referred customer’s first eligible paid membership transaction only. Server-side rate basis is 3000 bps. Renewals and later billing cycles do not pay another commission.
 - Approved affiliates must affirmatively accept the current in-platform terms/version. Any future rate/terms change must use a new version and require new affirmative acceptance before future earning under those terms. Never silently deem acceptance or retroactively rewrite earned commissions.
-- Commission hold is currently 14 days. Refunds/chargebacks/fraud/ineligible sales may reverse pending/available commission. Prevent self-referrals and duplicate commissions.
+- Commission hold is currently 3 days. Refunds/chargebacks/fraud/ineligible sales may reverse pending/available commission. Prevent self-referrals and duplicate commissions.
 - Cash affiliate earnings are distinct from Better Credit.
 - Payout onboarding/withdrawal uses the EXISTING approved Stripe Connect architecture already in this project. Do not store raw bank/card credentials. Do not silently swap payout providers.
 - Admin affiliate management includes approve/deny/suspend/revoke, application context, performance and commission status.
 
 ## Tutorial v33
-- Tutorial version is 33. v33 What's New includes Transaction Hub and Affiliate Program.
+- Historical: v33 introduced Transaction Hub and Affiliate Program. Current tutorial version is 35.
 - Preserve Back + Next/Finish, separate Skip Entire Tour, no “Skip this step,” live-target spotlighting, membership/access filtering, upgrade-focused tutorials and replay.
 - Every future user-facing update still requires a tutorial/What's New review and end-to-end tutorial QA in the SAME release.
 
@@ -186,12 +186,21 @@ This handoff and every future handoff must carry forward the COMPLETE inherited 
 
 # v29.2 AUTHORITATIVE AFFILIATE + CASH WALLET RULES
 - Affiliate compensation is 30% ONE-TIME on the qualifying referred customer's first eligible paid membership transaction only. Never pay recurring commissions on renewals, later invoices, cancellation/resubscription, upgrades or downgrades unless the user explicitly changes the program later.
-- Affiliate terms version `2026-09-27-v2` uses a 5-day hold. Material compensation changes require affirmative in-platform acceptance before future earning under changed terms.
+- Affiliate terms version `2026-09-27-v3` uses a 3-day hold. Material compensation changes require affirmative in-platform acceptance before future earning under changed terms.
 - Better Credits are platform-only promotional credit and NEVER cash-withdrawable.
 - Affiliate Wallet earnings and legitimate marketplace Seller Wallet/proceeds are real cash. Keep them visually/accountingly distinct from Better Credits.
 - Stripe Connect is the approved payout architecture. Never store raw bank/debit-card credentials. Bank/debit-card payout eligibility is controlled through Stripe Connect; do not promise Instant Payout eligibility where Stripe does not provide it.
 - Refunds, disputes, chargebacks, fraud and ineligible activity can reverse cash earnings under the applicable terms. Keep auditable ledgers and server-side enforcement.
 - All wallet/payout surfaces must obey the permanent Better Real Estate theme/max-presentability rule and tutorial/update QA rules.
 - This v29.2 section supersedes older handoff wording that described affiliate commissions as recurring eligible membership revenue or a 14-day hold. Preserve this recursively in every later handoff.
-- Tutorial version is now 34. v34 What's New teaches the 30%-once/5-day Affiliate Wallet behavior and the cash-vs-Better-Credit distinction, including seller proceeds.
-- Tutorial version is now 34. v34 What's New teaches the 30%-once/5-day Affiliate Wallet behavior and the cash-vs-Better-Credit distinction, including seller proceeds.
+- Tutorial version is now 35. v35 What's New teaches the 30%-once/3-day Affiliate Wallet behavior and the cash-vs-Better-Credit distinction, including seller proceeds.
+- Tutorial version is now 35. v35 What's New teaches the 30%-once/3-day Affiliate Wallet behavior and the cash-vs-Better-Credit distinction, including seller proceeds.
+
+
+# v29.3 AUTHORITATIVE AFFILIATE HOLD + PRESENTATION RULES
+- Affiliate commissions remain 30% ONE-TIME on a qualifying referred customer’s first eligible paid membership transaction only. Never pay recurring renewal/billing-cycle commissions unless the user explicitly changes the program later.
+- Affiliate terms version is `2026-09-27-v3`; the Better Real Estate hold is 3 days before an eligible commission becomes available for withdrawal. Actual payout arrival timing remains controlled by Stripe/account eligibility and is not promised by the 3-day rule.
+- The Affiliate Center must not use the awkward stacked `30% once` square/badge. The approved treatment is a compact horizontal, theme-matched `30%` + `one-time commission` chip/pill that never stacks strangely or looks tacked on.
+- Tutorial version is 35 and must teach the current 30%-once/3-day Affiliate Wallet behavior.
+- This v29.3 section supersedes any older 14-day or 5-day affiliate-hold wording in prior handoff/history sections. Historical changelogs may describe what earlier releases did, but current code/UI/terms/tutorial must use 3 days.
+- Preserve these rules recursively in every future handoff.

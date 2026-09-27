@@ -2146,14 +2146,14 @@ app.get('/api/team-operations', requireAuth, async (req,res)=>{ if(!req.user.com
 
 /* ================= v29 TRANSACTION OS + AFFILIATES ================= */
 const AFFILIATE_RATE_BPS = 3000; // 30.00% — versioned terms below
-const AFFILIATE_HOLD_DAYS = 5;
+const AFFILIATE_HOLD_DAYS = 3;
 function safeText(v,n=500){ return String(v||'').trim().slice(0,n); }
 function canAccessDeal(db,user,listingId){
   const l=db.listings.find(x=>x.id===listingId); if(!l)return false;
   return canManageListing(db,user,l) || db.offers.some(o=>o.listingId===listingId&&(o.buyerId===user.id||o.sellerId===user.id)) || (db.dealCollaborators||[]).some(c=>c.listingId===listingId&&c.userId===user.id&&c.status==='active');
 }
 function logDealActivity(db, listingId, user, kind, text, meta={}){ db.dealActivity=db.dealActivity||[]; db.dealActivity.push({id:crypto.randomUUID(),listingId,userId:user?.id||null,userName:user?.name||'System',kind,text:safeText(text,500),meta,at:new Date().toISOString()}); }
-function affiliateTerms(){ return {version:'2026-09-27-v2',rateBps:AFFILIATE_RATE_BPS,ratePct:30,holdDays:AFFILIATE_HOLD_DAYS,oneTime:true,summary:'30% one-time commission on a qualifying referred customer’s first eligible paid Better Real Estate membership transaction. Renewals and later billing cycles do not earn another commission. Earnings are held for 5 days and may be reversed for refunds, disputes, fraud or ineligible sales.'}; }
+function affiliateTerms(){ return {version:'2026-09-27-v3',rateBps:AFFILIATE_RATE_BPS,ratePct:30,holdDays:AFFILIATE_HOLD_DAYS,oneTime:true,summary:'30% one-time commission on a qualifying referred customer’s first eligible paid Better Real Estate membership transaction. Renewals and later billing cycles do not earn another commission. Earnings are held for 3 days and may be reversed for refunds, disputes, fraud or ineligible sales.'}; }
 function affiliateForUser(db,userId){return (db.affiliateApplications||[]).find(a=>a.userId===userId&&a.status==='approved')||null;}
 function affiliateCommission(db,user,amountCents,sourceId,tier){
   if(!user?.affiliateReferrerId||!amountCents||amountCents<1)return null;

@@ -1,0 +1,16 @@
+const fs=require('fs');const assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8');
+const css=fs.readFileSync('public/style.css','utf8');
+const server=fs.readFileSync('server.js','utf8');
+const handoff=fs.readFileSync('HANDOFF-V29.md','utf8');
+assert(server.includes('const AFFILIATE_HOLD_DAYS = 3;'),'affiliate hold must be 3 days server-side');
+assert(server.includes("version:'2026-09-27-v3'"),'affiliate terms must be v3');
+assert(server.includes('Earnings are held for 3 days'),'affiliate terms summary must say 3 days');
+assert(!app.includes("'30% once'"),'stacked 30% once badge copy must not return');
+assert(app.includes("el('strong',{},'30%')")&&app.includes("el('span',{},'one-time commission')"),'affiliate rate must be a clean horizontal treatment');
+assert(css.includes('.affiliate-rate{display:inline-flex')&&css.includes('border-radius:999px')&&css.includes('white-space:nowrap'),'affiliate rate must use compact horizontal pill styling');
+assert(app.includes('Commissions remain pending for 3 days before becoming available.'),'terms list must state 3-day hold');
+assert(app.includes('withdrawn after the 3-day hold.'),'wallet copy must state 3-day hold');
+assert(app.includes('const TUTORIAL_VERSION = 35;')&&app.includes("release:35,title:'Affiliate Wallet'"),'tutorial must be updated with the change');
+assert(handoff.includes('3-day hold'),'handoff must preserve the current hold');
+console.log('v29.3 affiliate hold + presentation regression: PASS');
