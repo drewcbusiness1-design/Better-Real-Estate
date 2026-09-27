@@ -1,0 +1,16 @@
+const fs=require('fs'), assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8'), css=fs.readFileSync('public/style.css','utf8'), server=fs.readFileSync('server.js','utf8');
+assert(app.includes('Create Demo Account'));
+assert(app.includes('Start Preview'));
+assert(app.includes('Enter Demo'));
+assert(app.includes('Reset Preview'));
+assert(app.includes('Preview ready:'));
+assert(app.includes("pvUser.appendChild(el('option',{value:''}"));
+assert(server.includes("/api/admin/demo-accounts/:id/enter"));
+assert(server.includes("/api/demo/return-admin"));
+assert(server.includes('adminReturnUserId'));
+assert(css.includes('v29.7 — demo center usability + presentation repair'));
+assert(css.includes('.demo-form-grid'));
+assert(css.includes('.demo-preview-form'));
+assert(css.includes('overflow:hidden'));
+console.log('v29.7 demo center repair acceptance passed');

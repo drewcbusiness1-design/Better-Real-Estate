@@ -190,7 +190,7 @@ async function boot() {
   if (state.user) api('POST','/api/activity/heartbeat').catch(()=>{}); setInterval(()=>{ if(state.user) api('POST','/api/activity/heartbeat').catch(()=>{}); },60000);
 }
 async function refreshMe() {
-  try { const before=state.user ? (TUTORIAL_RANK[tutorialTier()]??0) : -1; const d = await api('GET', '/api/me'); state.user = d.user; state.access = d.access; const after=TUTORIAL_RANK[tutorialTier()]??0; if(before>=0 && after>before) state.launchNewFeatureTutorial=true; } catch {}
+  try { const before=state.user ? (TUTORIAL_RANK[tutorialTier()]??0) : -1; const d = await api('GET', '/api/me'); state.user = d.user; state.access = d.access; state.demoAdminSession = !!d.demoAdminSession; const after=TUTORIAL_RANK[tutorialTier()]??0; if(before>=0 && after>before) state.launchNewFeatureTutorial=true; } catch {}
 }
 async function refreshUnread() {
   if (!state.user) { state.unreadCount = 0; state.friendRequestCount = 0; return 0; }
@@ -243,6 +243,7 @@ function renderTop() {
     }
   }, iconSvg(document.documentElement.getAttribute('data-theme') === 'dark' ? 'sun' : 'moon', 19)));
   if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
+  if (state.user?.demo && state.demoAdminSession) nav.appendChild(el('button',{class:'demo-return-btn',title:'Return to Admin',onclick:async()=>{try{await api('POST','/api/demo/return-admin');await refreshMe();go('admin',{}, {replace:true});}catch(e){toast(e.message,'err');}}},'Return to Admin'));
   const inboxBtn = el('button', { class: 'iconbtn', title: 'Messages', onclick: () => go('messages') }, iconSvg('mail',19));
   if (state.unreadCount > 0) inboxBtn.appendChild(el('span', { class: 'msgbadge' }, state.unreadCount > 99 ? '99+' : String(state.unreadCount)));
   nav.appendChild(inboxBtn);
@@ -3808,24 +3809,30 @@ async function renderAdmin() {
   customStart.style.display=customEnd.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd);activityCard.append(activityControls,activityHost);wrap.appendChild(activityCard);await loadActivity();
   wrap.appendChild(el('div',{class:'sectiontitle'},'Demo accounts'));
   const demoCard=el('div',{class:'card demo-account-card'});
-  const demoHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'CONTROLLED TESTING'),el('h3',{},'Create demo account'),el('p',{class:'sub'},'Demo accounts are excluded from First 100 Founder places and growth analytics, and cannot create real billing, referral rewards, affiliate commissions or payouts.')]),el('span',{class:'demo-admin-badge'},'DEMO')]);
-  const demoGrid=el('div',{class:'demo-account-grid'});
-  const dName=el('input',{placeholder:'Display name'}),dEmail=el('input',{type:'email',placeholder:'Demo email'}),dPass=el('input',{type:'password',placeholder:'Password · 6+ characters'});
+  const demoHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'CONTROLLED TESTING'),el('h3',{},'Create demo account'),el('p',{class:'sub'},'Create a safe account for testing Better Real Estate. Demo activity never consumes Founder places, changes growth analytics, or creates real billing, referral rewards, affiliate commissions or payouts.')]),el('span',{class:'demo-admin-badge'},'DEMO')]);
+  const demoGrid=el('div',{class:'demo-form-grid'});
+  const field=(label,control,help='')=>{const f=el('label',{class:'demo-field'},[el('span',{class:'demo-field-label'},label),control]);if(help)f.appendChild(el('small',{},help));return f;};
+  const dName=el('input',{placeholder:'Example: Better Demo'}),dEmail=el('input',{type:'email',placeholder:'demo@example.com'}),dPass=el('input',{type:'password',placeholder:'At least 6 characters'});
   const dRole=el('select',{},[['buyer','Buyer / Investor'],['seller','Seller / Wholesaler'],['agent','Agent'],['service','Service provider']].map(([v,l])=>el('option',{value:v},l)));
   const dPlan=el('select',{},[['free','Free'],['pro','Better Plus'],['platinum','Platinum'],['wholesale','Wholesale Teams']].map(([v,l])=>el('option',{value:v},l)));
-  const dStatus=el('div',{class:'hint demo-create-status'});
-  const createDemo=el('button',{class:'btn-primary'},'Create demo account');
-  createDemo.onclick=async()=>{dStatus.textContent='';createDemo.disabled=true;try{const r=await api('POST','/api/admin/demo-accounts',{name:dName.value.trim(),email:dEmail.value.trim(),password:dPass.value,role:dRole.value,demoPlan:dPlan.value});toast('Demo account created','ok');dName.value=dEmail.value=dPass.value='';await loadInspector();dStatus.textContent=`Created ${r.user.name}. It is excluded from Founder allocation and production growth metrics.`;}catch(e){dStatus.textContent=e.message;}finally{createDemo.disabled=false;}};
-  demoGrid.append(dName,dEmail,dPass,dRole,dPlan,createDemo);demoCard.append(demoHead,demoGrid,dStatus);wrap.appendChild(demoCard);
+  const dStatus=el('div',{class:'demo-feedback','aria-live':'polite'});
+  const createDemo=el('button',{class:'btn-primary demo-primary-action'},'Create Demo Account');
+  const refreshDemoChoices=async()=>{const r=await api('GET','/api/admin/user-inspector?q=');pvUser.innerHTML='';const demos=r.users.filter(u=>u.demo);pvUser.appendChild(el('option',{value:''},demos.length?'Select a demo account':'No demo accounts yet'));demos.forEach(u=>pvUser.appendChild(el('option',{value:u.id},`${u.name} · ${adminPlanLabel(u.demoPlan||'free')}`)));updatePreviewControls();};
+  createDemo.onclick=async()=>{dStatus.textContent='';createDemo.disabled=true;try{const r=await api('POST','/api/admin/demo-accounts',{name:dName.value.trim(),email:dEmail.value.trim(),password:dPass.value,role:dRole.value,demoPlan:dPlan.value});dName.value=dEmail.value=dPass.value='';dStatus.textContent=`Created ${r.user.name}. Choose it below to start a preview.`;dStatus.className='demo-feedback success';toast('Demo account created','ok');await loadInspector();await refreshDemoChoices();pvUser.value=r.user.id;updatePreviewControls();}catch(e){dStatus.textContent=e.message;dStatus.className='demo-feedback error';}finally{createDemo.disabled=false;}};
+  demoGrid.append(field('Display name',dName),field('Demo email',dEmail),field('Password',dPass),field('Role',dRole),field('Simulated membership',dPlan));
+  demoCard.append(demoHead,demoGrid,el('div',{class:'demo-action-row'},[createDemo]),dStatus);wrap.appendChild(demoCard);
+
   const previewCard=el('div',{class:'card demo-preview-card'});
-  const previewHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'SAFE EXPERIENCE PREVIEW'),el('h3',{},'Preview the real user experience'),el('p',{class:'sub'},'Replay key signup and membership experiences on a demo account without consuming Founder places, issuing real access, changing analytics, or creating money.')]),el('span',{class:'demo-admin-badge'},'PREVIEW')]);
-  const previewGrid=el('div',{class:'demo-preview-grid'}),pvUser=el('select'),pvType=el('select'),pvPosition=el('input',{type:'number',min:'1',max:'100',value:'7','aria-label':'Simulated Founder position'}),pvRun=el('button',{class:'btn-primary'},'Apply preview'),pvClear=el('button',{class:'btn-ghost'},'Clear preview'),pvStatus=el('div',{class:'hint demo-preview-status'});
+  const previewHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'SAFE EXPERIENCE PREVIEW'),el('h3',{},'Preview the real user experience'),el('p',{class:'sub'},'Choose a demo account and an experience. Start Preview arms the real user flow, then Enter Demo lets you view it immediately without knowing the demo password.')]),el('span',{class:'demo-admin-badge'},'PREVIEW')]);
+  const previewGrid=el('div',{class:'demo-preview-form'}),pvUser=el('select',{'aria-label':'Demo account'}),pvType=el('select',{'aria-label':'Experience'}),pvPosition=el('input',{type:'number',min:'1',max:'100',value:'7','aria-label':'Simulated Founder position'}),pvRun=el('button',{class:'btn-primary'},'Start Preview'),pvClear=el('button',{class:'btn-ghost'},'Reset Preview'),pvEnter=el('button',{class:'btn-ghost'},'Enter Demo'),pvStatus=el('div',{class:'demo-preview-summary','aria-live':'polite'});
   pvType.append(el('option',{value:'founder'},'First 100 Founder welcome'),el('option',{value:'onboarding'},'New-user onboarding'),el('option',{value:'whatsnew'},'What’s New tutorial'));
-  const refreshDemoChoices=async()=>{const r=await api('GET','/api/admin/user-inspector?q=');pvUser.innerHTML='';r.users.filter(u=>u.demo).forEach(u=>pvUser.appendChild(el('option',{value:u.id},`${u.name} · ${adminPlanLabel(u.demoPlan||'free')}`)));pvRun.disabled=pvClear.disabled=!pvUser.value;};
-  pvType.onchange=()=>{pvPosition.style.display=pvType.value==='founder'?'block':'none';};
-  pvRun.onclick=async()=>{if(!pvUser.value)return;pvRun.disabled=true;try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:pvType.value,position:Number(pvPosition.value||7)});pvStatus.textContent='Preview armed. Sign in to that demo account to see the experience exactly as a user would.';toast('Demo preview ready','ok');}catch(e){pvStatus.textContent=e.message;}finally{pvRun.disabled=false;}};
-  pvClear.onclick=async()=>{if(!pvUser.value)return;try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:'none'});pvStatus.textContent='Preview cleared.';toast('Demo preview cleared','ok');}catch(e){pvStatus.textContent=e.message;}};
-  previewGrid.append(pvUser,pvType,pvPosition,pvRun,pvClear);previewCard.append(previewHead,previewGrid,pvStatus);wrap.appendChild(previewCard);await refreshDemoChoices();
+  const updatePreviewControls=()=>{const has=!!pvUser.value;pvRun.disabled=pvClear.disabled=pvEnter.disabled=!has;const founder=pvType.value==='founder';pvPosition.closest?.('.demo-field')?.classList.toggle('is-hidden',!founder);pvPosition.style.display=founder?'block':'none';};
+  pvType.onchange=updatePreviewControls;pvUser.onchange=()=>{pvStatus.innerHTML='';updatePreviewControls();};
+  pvRun.onclick=async()=>{if(!pvUser.value)return;pvRun.disabled=true;try{const r=await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:pvType.value,position:Number(pvPosition.value||7)});const label=pvType.options[pvType.selectedIndex]?.text||'Preview';pvStatus.innerHTML='';pvStatus.append(el('b',{},`Preview ready: ${label}${r.demoPreview?.position?` · Founder #${r.demoPreview.position}`:''}`),el('span',{},'Enter Demo to see the experience exactly as that user will see it. You can return to Admin from the top navigation.'));toast('Demo preview ready','ok');}catch(e){pvStatus.textContent=e.message;}finally{pvRun.disabled=false;updatePreviewControls();}};
+  pvClear.onclick=async()=>{if(!pvUser.value)return;try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:'none'});pvStatus.innerHTML='';pvStatus.append(el('b',{},'Preview reset'),el('span',{},'The selected demo account is back to its normal demo state.'));toast('Demo preview reset','ok');}catch(e){pvStatus.textContent=e.message;}};
+  pvEnter.onclick=async()=>{if(!pvUser.value)return;if(!confirm('Enter this demo account now? You can return to Admin using the “Return to Admin” button in the top navigation.'))return;try{const r=await api('POST',`/api/admin/demo-accounts/${pvUser.value}/enter`);state.user=r.user;state.access=r.access;state.demoAdminSession=true;state.launchTutorialAfterNav=false;state.launchProductUpdateTutorial=false;go('feed',{}, {replace:true});}catch(e){toast(e.message,'err');}};
+  previewGrid.append(field('Demo account',pvUser,'Only controlled Demo accounts appear here.'),field('Experience',pvType),field('Founder position',pvPosition,'Used only for the Founder welcome.'));
+  previewCard.append(previewHead,previewGrid,el('div',{class:'demo-action-row preview-actions'},[pvRun,pvEnter,pvClear]),pvStatus);wrap.appendChild(previewCard);await refreshDemoChoices();
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
   const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;
   const loadInspector=async()=>{

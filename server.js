@@ -578,7 +578,8 @@ app.get('/api/me', async (req, res) => {
     user: publicUser(u),
     pricing: PRICING,
     balance: u ? balanceOf(db, u.id) : 0,
-    access: accessFor(u)
+    access: accessFor(u),
+    demoAdminSession: !!(u?.demo && req.session?.adminReturnUserId)
   });
 });
 app.get('/api/pricing', async (req, res) => res.json({ pricing: PRICING }));
@@ -3341,6 +3342,21 @@ app.post('/api/admin/demo-accounts/:id/preview', requireAuth, requireAdmin, asyn
   }else user.demoPreview={type,createdAt:new Date().toISOString()};
   await saveDB(req.db);
   res.json({ok:true,demoPreview:user.demoPreview||null});
+});
+app.post('/api/admin/demo-accounts/:id/enter', requireAuth, requireAdmin, async (req,res)=>{
+  const adminId=req.user.id;
+  const user=req.db.users.find(u=>u.id===req.params.id&&isDemoUser(u));
+  if(!user)return res.status(404).json({error:'Demo account not found.'});
+  req.session.adminReturnUserId=adminId;
+  req.session.userId=user.id;
+  res.json({ok:true,user:publicUser(user),access:accessFor(user)});
+});
+app.post('/api/demo/return-admin', requireAuth, async (req,res)=>{
+  if(!isDemoUser(req.user)||!req.session?.adminReturnUserId)return res.status(403).json({error:'No Admin demo session is active.'});
+  const admin=req.db.users.find(u=>u.id===req.session.adminReturnUserId&&u.role==='admin');
+  if(!admin)return res.status(403).json({error:'Admin return session is no longer available.'});
+  req.session.userId=admin.id; delete req.session.adminReturnUserId;
+  res.json({ok:true,user:publicUser(admin),access:accessFor(admin)});
 });
 app.post('/api/admin/demo-accounts/:id/reset', requireAuth, requireAdmin, async (req,res)=>{
   const user=req.db.users.find(u=>u.id===req.params.id&&isDemoUser(u)); if(!user)return res.status(404).json({error:'Demo account not found.'});

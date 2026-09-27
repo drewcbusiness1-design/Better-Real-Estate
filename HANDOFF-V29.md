@@ -257,3 +257,6 @@ Before every future Better Real Estate build, patch, release, or ZIP-producing c
 - Demo preview is an explicit admin-controlled simulation and must be clearly labeled as a preview to avoid confusing Admin with a real award.
 - Preview controls and previewed experiences must preserve the maximum-presentability rule: level/equal-height buttons, centered labels, consistent spacing, theme-matched surfaces, no clipping/wrapping/sloppy alignment, and responsive behavior.
 - Future handoffs must preserve these rules recursively.
+
+## v29.7 Demo Center repair — permanent regression rules
+The Admin Demo Center must remain an obvious complete journey: Create Demo Account -> select Demo -> select experience -> Start Preview -> Enter Demo -> Return to Admin / Reset Preview. All selectors must function in light/dark mode, controls must stay fully inside cards, field labels must remain visible, buttons must be equal-height/centered, and no action may be clipped or ambiguous. Admin may enter only explicitly marked Demo accounts through the controlled demo-session endpoint; this must never weaken normal authentication for real accounts. Demo sessions retain all financial, Founder, analytics, referral and payout exclusions.
