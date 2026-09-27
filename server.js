@@ -44,7 +44,7 @@ const PRICING = {
   freeUnlocks: 5,                 // free detail unlocks before paywall
   unlockCredit: 199,              // $1.99 to unlock one listing's details
   unlockPack: { qty: 10, price: 1499 }, // $14.99 for 10
-  pro: { monthly: 3000, annual: 32000, label: 'Better Pro' },  // $30/mo or $320/yr
+  pro: { monthly: 3000, annual: 32000, label: 'Better Plus' },  // $30/mo or $320/yr
   platinum: { monthly: 5000, annual: 50000, label: 'Better Platinum' },  // $50/mo or $500/yr
   wholesale: { monthly: 14900, annual: 150000, label: 'Better Wholesale Teams', seats: 5 },
   platinumFeeBps: 400,             // marketplace fee for Platinum sellers (vs 700 = 7% standard)
@@ -77,7 +77,7 @@ app.use(cookieSession({
   maxAge: 30 * 24 * 60 * 60 * 1000
 }));
 
-const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, verificationEmailLastError, ...r } = u; return r; };
+const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, plusToolUsage, verificationEmailLastError, ...r } = u; return r; };
 const publicProfileUser = social.publicProfileUser;
 const friendRelationship = social.friendRelationship;
 const socialUserCard = social.socialUserCard;
@@ -300,7 +300,7 @@ function publicMembershipLabel(user) {
   if (a?.adminUnlimited) return 'Admin';
   if (a?.wholesale) return 'Wholesale Teams';
   if (a?.platinum) return 'Platinum';
-  if (a?.pro) return 'Pro';
+  if (a?.pro) return 'Plus';
   if (a?.trial) return 'Trial';
   return 'Free';
 }
@@ -337,7 +337,7 @@ function membershipGrantSummary(user) {
 
 function grantMembership(db, user, { tier, days, reason = '', grantedBy = null, source = 'manual' } = {}) {
   tier = String(tier || '').toLowerCase();
-  if (!GRANT_TIERS.has(tier)) throw new Error('Choose Pro, Platinum or Wholesale Teams.');
+  if (!GRANT_TIERS.has(tier)) throw new Error('Choose Plus, Platinum or Wholesale Teams.');
   const rawDays = Number(days);
   if (!Number.isFinite(rawDays) || rawDays < 1 || rawDays > 730) throw new Error('Choose a grant length between 1 and 730 days.');
   const n = Math.floor(rawDays);
@@ -1011,7 +1011,7 @@ app.post('/api/me/buybox/add', requireAuth, async (req, res) => {
   const boxes = getBuyBoxes(req.user);
   const max = maxBuyBoxesFor(req.user);
   if (boxes.length >= max) {
-    return res.status(403).json({ error: max === 1 ? 'Free and Pro accounts get one buy box — upgrade to Platinum for up to 5.' : `You're at your limit of ${max} buy boxes.` });
+    return res.status(403).json({ error: max === 1 ? 'Free and Plus accounts get one buy box — upgrade to Platinum for up to 5.' : `You're at your limit of ${max} buy boxes.` });
   }
   boxes.push({ ...defaultBuyBox(), label: `Buy box ${boxes.length + 1}`, public: false, strategy: '', updatedAt: new Date().toISOString() });
   req.user.buyBoxes = boxes;
@@ -1389,23 +1389,34 @@ function distributionPack(listing, referralCode = '') {
   return { url, facebook, instagram, sms, emailSubject, emailBody, flyer: { headline, facts, notes: String(listing.notes || '').slice(0,700) } };
 }
 
+function plusToolAllowance(user, tool, limit) {
+  if (isAdminUser(user) || isPlatinum(user) || isWholesale(user)) return { unlimited:true, limit:null, used:0, remaining:null };
+  if (!isPro(user)) return { unlimited:false, allowed:false, limit:0, used:0, remaining:0 };
+  const day = new Date().toISOString().slice(0,10);
+  const root = user.plusToolUsage && user.plusToolUsage.day === day ? user.plusToolUsage : { day, counts:{} };
+  const used = Number(root.counts?.[tool] || 0);
+  return { unlimited:false, allowed:true, limit, used, remaining:Math.max(0,limit-used), day };
+}
+async function consumePlusTool(db, user, tool, limit) {
+  const a = plusToolAllowance(user, tool, limit);
+  if (a.unlimited) return a;
+  if (!a.allowed || a.remaining <= 0) return a;
+  const day = new Date().toISOString().slice(0,10);
+  if (!user.plusToolUsage || user.plusToolUsage.day !== day) user.plusToolUsage = { day, counts:{} };
+  user.plusToolUsage.counts = user.plusToolUsage.counts || {};
+  user.plusToolUsage.counts[tool] = Number(user.plusToolUsage.counts[tool] || 0) + 1;
+  await saveDB(db);
+  return plusToolAllowance(user, tool, limit);
+}
+
 app.post('/api/dispo/parse', requireAuth, async (req, res) => {
   const rawText = String(req.body?.text || '').trim();
   if (rawText.length < 12) return res.status(400).json({ error: 'Paste the deal post, email or text you want to import.' });
   let parsed = heuristicDealImport(rawText); let enhanced = false;
-  if ((isPlatinum(req.user) || isAdminUser(req.user)) && ai.configured()) {
-    const isAdmin = isAdminUser(req.user);
-    const day = new Date().toISOString().slice(0, 10);
-    const limit = 30;
-    if (!isAdmin) {
-      if (req.user.aiUsageDay !== day) { req.user.aiUsageDay = day; req.user.aiUsageCount = 0; }
-      if (Number(req.user.aiUsageCount || 0) < limit) {
-        req.user.aiUsageCount = Number(req.user.aiUsageCount || 0) + 1;
-        await saveDB(req.db);
-        try { parsed = await ai.generateDealImport(rawText); enhanced = true; }
-        catch (e) { console.error('[deal import ai]', e.message); }
-      }
-    } else {
+  if (isPro(req.user) && ai.configured()) {
+    const allowance = plusToolAllowance(req.user, 'dispoAi', 3);
+    if (allowance.unlimited || allowance.remaining > 0) {
+      if (!allowance.unlimited) await consumePlusTool(req.db, req.user, 'dispoAi', 3);
       try { parsed = await ai.generateDealImport(rawText); enhanced = true; }
       catch (e) { console.error('[deal import ai]', e.message); }
     }
@@ -1422,14 +1433,15 @@ function dealBuilderAllowance(user) {
   }
   const used = Number(user.dealBuilderTrialUses || 0);
   const active = inTrial(user);
-  return { unlimited:false, limit:1, used, remaining:active ? Math.max(0,1-used) : 0, trial:true, trialActive:active, label:active ? (used ? 'Free trial analysis used' : '1 free trial analysis available') : 'Pro or Platinum required' };
+  return { unlimited:false, limit:1, used, remaining:active ? Math.max(0,1-used) : 0, trial:true, trialActive:active, label:active ? (used ? 'Free trial analysis used' : '1 free trial analysis available') : 'Plus or Platinum required' };
 }
 app.get('/api/deal-builder/usage', requireAuth, (req,res) => res.json({ usage:dealBuilderAllowance(req.user) }));
+app.get('/api/tools/usage', requireAuth, (req,res)=>res.json({ dealBuilder:dealBuilderAllowance(req.user), listingAi:plusToolAllowance(req.user,'listingAi',2), dispoAi:plusToolAllowance(req.user,'dispoAi',3) }));
 app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
   if(!ai.configured()) return res.status(503).json({error:'AI Deal Builder is not configured. Add OPENAI_API_KEY in Netlify.'});
   const allowance=dealBuilderAllowance(req.user);
-  if(!allowance.unlimited && allowance.remaining<=0) return res.status(403).json({error:isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Pro includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Pro includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.'),code:'DEAL_BUILDER_LIMIT',usage:allowance});
+  if(!allowance.unlimited && allowance.remaining<=0) return res.status(403).json({error:isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Plus includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Plus includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.'),code:'DEAL_BUILDER_LIMIT',usage:allowance});
   try {
     const analysis=await ai.generateAddressDealAnalysis(address); const aiDraft=analysis.description ? { description: analysis.description } : null;
     req.db.dealAnalyses=req.db.dealAnalyses||[]; req.db.dealAnalyses.push({id:crypto.randomUUID(),userId:req.user.id,address,createdAt:new Date().toISOString()});
@@ -1639,6 +1651,18 @@ function destinationWithRef(pathname, referral) {
 
 app.get('/s/join', async (req, res) => {
   const referral = sanitizedReferral(req.query.ref);
+  if (referral) {
+    try {
+      const db = await loadDB();
+      const referrer = (db.users || []).find(u => String(u.referralCode || '').toUpperCase() === referral);
+      if (referrer) {
+        db.referralClicks = db.referralClicks || [];
+        db.referralClicks.push({ id: crypto.randomUUID(), referrerId: referrer.id, code: referral, at: new Date().toISOString() });
+        if (db.referralClicks.length > 50000) db.referralClicks = db.referralClicks.slice(-50000);
+        await saveDB(db);
+      }
+    } catch (e) { console.error('[referral-click]', e.message); }
+  }
   const destination = destinationWithRef('/?view=auth', referral);
   res.type('html').send(shareLandingHtml({
     title: 'Join Better Real Estate',
@@ -1713,6 +1737,15 @@ app.get('/s/buyer/:id', async (req, res) => {
     image: user.avatarUrl || '/brand-logo.png',
     destination
   }));
+});
+
+app.get('/api/referrals/me', requireAuth, async (req, res) => {
+  const referrals = (req.db.users || []).filter(u => u.referredBy === req.user.id);
+  const activated = referrals.filter(u => (u.investmentMarkets || []).length || u.bio || u.avatarUrl || (req.db.listings || []).some(l => l.ownerId === u.id) || (req.db.messages || []).some(m => m.fromUserId === u.id || m.fromId === u.id));
+  const paid = referrals.filter(u => u.referralPaid === true);
+  const clicks = (req.db.referralClicks || []).filter(x => x.referrerId === req.user.id);
+  const creditEarned = (req.db.ledger || []).filter(x => x.userId === req.user.id && x.type === 'referral').reduce((n,x)=>n+Number(x.amount||0),0);
+  res.json({ code:req.user.referralCode, url:`${appBaseUrl()}/s/join?ref=${encodeURIComponent(req.user.referralCode || '')}`, metrics:{ clicks:clicks.length, signups:referrals.length, activated:activated.length, paid:paid.length, creditEarned }, referrals:referrals.slice().sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0)).slice(0,50).map(u=>({ id:u.id,name:u.name,username:u.username||null,createdAt:u.createdAt||null,activated:activated.some(x=>x.id===u.id),paid:u.referralPaid===true })) });
 });
 
 app.post('/api/share-events', requireAuth, async (req, res) => {
@@ -2060,7 +2093,7 @@ const US_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI
 const cleanStates = xs => [...new Set((Array.isArray(xs)?xs:[]).map(x=>String(x||'').trim().toUpperCase()).filter(x=>US_STATES.has(x)))].slice(0,12);
 function listingState(l){ const m=String(l?.city||'').toUpperCase().match(/,\s*([A-Z]{2})(?:\s|$)/); return m?m[1]:''; }
 const activityWindowMs = { '24h':86400000, '7d':7*86400000, '30d':30*86400000 };
-function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Pro':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,plan:actualPlanLabel(u),verified:!!u.verified,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
+function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
 app.post('/api/activity/heartbeat', requireAuth, async (req,res)=>{ const now=new Date(); req.user.lastActiveAt=now.toISOString(); req.db.activityEvents=req.db.activityEvents||[]; const last=[...req.db.activityEvents].reverse().find(x=>x.userId===req.user.id); if(!last||now-new Date(last.at)>15*60_000)req.db.activityEvents.push({id:crypto.randomUUID(),userId:req.user.id,at:now.toISOString()}); const cutoff=Date.now()-180*86400000; if(req.db.activityEvents.length>50000)req.db.activityEvents=req.db.activityEvents.filter(x=>new Date(x.at).getTime()>=cutoff); await saveDB(req.db); res.json({ok:true,at:req.user.lastActiveAt}); });
 app.get('/api/notifications', requireAuth, async (req,res)=>{const rows=(req.db.dealNotifications||[]).filter(n=>n.userId===req.user.id).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,60);res.json({notifications:rows,unread:rows.filter(n=>!n.read).length});});
 app.post('/api/notifications/read', requireAuth, async (req,res)=>{for(const n of (req.db.dealNotifications||[]))if(n.userId===req.user.id)n.read=true;await saveDB(req.db);res.json({ok:true});});
@@ -2201,6 +2234,15 @@ app.post('/api/admin/set-user-verification', requireAuth, requireAdmin, async (r
   res.json({ ok: true, verified: u.verified });
 });
 
+app.post('/api/admin/set-founding-member', requireAuth, requireAdmin, async (req,res)=>{
+  const u=req.db.users.find(x=>x.id===req.body?.userId && x.role!=='admin');
+  if(!u)return res.status(404).json({error:'User not found.'});
+  u.foundingMember=req.body?.foundingMember===true;
+  u.foundingMemberAt=u.foundingMember?new Date().toISOString():null;
+  await saveDB(req.db);
+  res.json({ok:true,foundingMember:u.foundingMember});
+});
+
 
 /* ====================== ADDRESS AUTOCOMPLETE ====================== */
 app.get('/api/address/config', async (req, res) => {
@@ -2297,30 +2339,25 @@ const SHOP_CATEGORIES = ['Appliances','HVAC','Plumbing','Electrical','Flooring',
 
 
 app.get('/api/ai/status', requireAuth, async (req, res) => {
-  res.json({ configured: ai.configured(), available: isPlatinum(req.user), model: ai.configured() ? ai.model() : null });
+  const usage=plusToolAllowance(req.user,'listingAi',2); res.json({ configured: ai.configured(), available: isPro(req.user), model: ai.configured() ? ai.model() : null, usage });
 });
 app.post('/api/ai/listing-copy', requireAuth, async (req, res) => {
   const kind = ['shop','property','cj'].includes(req.body?.kind) ? req.body.kind : 'shop';
   const isAdmin = isAdminUser(req.user);
   if (kind === 'cj' && !isAdmin) return res.status(403).json({ error: 'Admin only.' });
-  if (!isAdmin && !isPlatinum(req.user)) return res.status(403).json({ error: 'AI listing assistance is a Platinum feature.' });
+  if (!isAdmin && !isPro(req.user)) return res.status(403).json({ error: 'AI listing assistance requires Better Plus or higher.' });
   if (!ai.configured()) return res.status(503).json({ error: 'AI listing assistance is not configured yet.' });
 
-  const day = new Date().toISOString().slice(0, 10);
-  const limit = 30;
-  if (!isAdmin) {
-    if (req.user.aiUsageDay !== day) { req.user.aiUsageDay = day; req.user.aiUsageCount = 0; }
-    if (Number(req.user.aiUsageCount || 0) >= limit) return res.status(429).json({ error: 'Daily AI listing limit reached. Try again tomorrow.' });
-    req.user.aiUsageCount = Number(req.user.aiUsageCount || 0) + 1;
-    await saveDB(req.db);
-  }
+  const listingAllowance = plusToolAllowance(req.user, 'listingAi', 2);
+  if (!listingAllowance.unlimited && listingAllowance.remaining <= 0) return res.status(429).json({ error: 'Today’s Better Plus AI listing drafts are used. Platinum includes unlimited AI listing assistance.' });
+  if (!listingAllowance.unlimited) await consumePlusTool(req.db, req.user, 'listingAi', 2);
 
   const facts = req.body?.facts && typeof req.body.facts === 'object' ? req.body.facts : {};
   const images = Array.isArray(req.body?.images) ? req.body.images.slice(0, 3) : [];
   try {
     const draft = await ai.generateListingCopy({ kind, facts, images, allowedCategories: kind === 'property' ? [] : SHOP_CATEGORIES });
     if (draft.categorySuggestion && !SHOP_CATEGORIES.includes(draft.categorySuggestion) && kind !== 'property') draft.categorySuggestion = '';
-    res.json({ draft, remainingToday: isAdmin ? null : Math.max(0, limit - req.user.aiUsageCount), unlimited: isAdmin });
+    const after=plusToolAllowance(req.user,'listingAi',2); res.json({ draft, remainingToday: after.remaining, unlimited: after.unlimited });
   } catch (e) {
     console.error('[ai listing]', e.message);
     res.status(502).json({ error: 'AI listing assistance is temporarily unavailable. ' + e.message });
@@ -3017,7 +3054,7 @@ app.get('/api/admin/revenue', requireAuth, requireAdmin, async (req, res) => {
   const promoRev = req.db.promotions.reduce((s, p) => s + p.price, 0);
   const feeRev = req.db.orders.reduce((s, o) => s + o.fee, 0);
   const unlockRev = req.db.ledger.filter(l => l.description?.startsWith('Listing unlock')).reduce((s, l) => s + Math.abs(l.meta?.charged || l.amount), 0);
-  const subRev = req.db.ledger.filter(l => l.description?.includes('Better Pro')).reduce((s, l) => s + Math.abs(l.meta?.charged || l.amount), 0);
+  const subRev = req.db.ledger.filter(l => l.description?.includes('Better Pro') || l.description?.includes('Better Plus') || l.description?.includes('Better Platinum') || l.description?.includes('Better Wholesale Teams')).reduce((s, l) => s + Math.abs(l.meta?.charged || l.amount), 0);
   res.json({ promoRev, feeRev, unlockRev, subRev, total: promoRev + feeRev + unlockRev + subRev,
     users: req.db.users.length, listings: req.db.listings.length, orders: req.db.orders.length });
 });
@@ -3299,7 +3336,7 @@ app.post('/api/payments/webhook',
           user.plan = 'pro';
           user.planPeriod = period;
           user.planUntil = new Date(base + days * 86400000).toISOString();
-          ledgerAdd(db, user.id, 'purchase', 0, `Better Pro — ${period === 'annual' ? '1 year' : '1 month'}`, { paymentIntentId: pi.id, charged: pi.amount });
+          ledgerAdd(db, user.id, 'purchase', 0, `Better Plus — ${period === 'annual' ? '1 year' : '1 month'}`, { paymentIntentId: pi.id, charged: pi.amount });
         } else if (purpose === 'shop_purchase') {
           const item = db.shopItems.find(i => i.id === pi.metadata.itemId);
           if (item && item.stock > 0) {

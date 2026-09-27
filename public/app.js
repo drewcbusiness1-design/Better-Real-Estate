@@ -445,7 +445,7 @@ function trialBar() {
     ]);
   }
   return el('div', { class: 'trialbar' }, [
-    el('div', {}, `${state.user.unlockCredits} free unlock${state.user.unlockCredits === 1 ? '' : 's'} left. Pro gives you unlimited.`),
+    el('div', {}, `${state.user.unlockCredits} free unlock${state.user.unlockCredits === 1 ? '' : 's'} left. Plus gives you unlimited.`),
     el('button', { onclick: () => go('upgrade') }, 'Upgrade')
   ]);
 }
@@ -794,7 +794,7 @@ async function renderDetail() {
               } catch (e) { toast(e.message, 'err'); }
             }
           }, state.user.unlockCredits > 0 ? 'Use free credit' : 'Unlock ' + cents(state.pricing.unlockCredit)),
-          el('a', { onclick: () => go('upgrade') }, 'or go Pro for unlimited')
+          el('a', { onclick: () => go('upgrade') }, 'or go Plus for unlimited')
         ])
       ])
     ]));
@@ -1024,7 +1024,7 @@ function renderUpgrade() {
     ]));
   }
   if (!adminUnlimited && state.access?.grantPlan && state.access?.grantUntil && new Date(state.access.grantUntil) > new Date()) {
-    const grantName = state.access.grantPlan === 'wholesale' ? 'Wholesale Teams' : state.access.grantPlan === 'platinum' ? 'Platinum' : 'Pro';
+    const grantName = state.access.grantPlan === 'wholesale' ? 'Wholesale Teams' : state.access.grantPlan === 'platinum' ? 'Platinum' : 'Plus';
     wrap.appendChild(el('div', { class: 'grantbanner' }, [
       el('div', {}, [el('b', {}, `Complimentary ${grantName}`), el('div', { class: 'hint' }, `Granted through ${new Date(state.access.grantUntil).toLocaleDateString()}${state.access.grantReason ? ' · ' + state.access.grantReason : ''}. It expires automatically and does not cancel any paid subscription.`)]),
       el('span', { class: 'pill good' }, 'FREE ACCESS')
@@ -1037,13 +1037,13 @@ function renderUpgrade() {
       priceLine: cents(p.platinum.monthly) + '/mo or ' + cents(p.platinum.annual) + '/yr',
       featured: true,
       perks: [
-        'Everything in Pro, plus:',
+        'Everything in Plus, plus:',
         'First-look alerts — emailed the instant a match posts, before anyone else sees it',
         'Up to 5 buy boxes running at once',
         'Seller verification included free (normally ' + cents(p.verificationFee) + ')',
         'One free Super Boost every month (normally ' + cents(p.promotions.superboost.price) + ')',
-        'AI listing assistant — titles, descriptions and photo-aware drafts',
-        'Better Dispo — AI-enhanced deal import, buyer matching and distribution tools',
+        'Unlimited AI listing assistant — titles, descriptions and photo-aware drafts',
+        'Unlimited Better Dispo AI enhancement, buyer matching and distribution tools',
         'Marketplace fee cut to ' + (p.platinumFeeBps / 100) + '% (from ' + (p.marketplaceFeeBps / 100) + '%)',
         'Investor workspace — compare saved properties, keep deal notes'
       ],
@@ -1071,7 +1071,7 @@ function renderUpgrade() {
     tierCard({
       key: 'pro', name: p.pro.label, tagline: 'For anyone unlocking regularly',
       priceLine: cents(p.pro.monthly) + '/mo or ' + cents(p.pro.annual) + '/yr',
-      perks: ['Unlimited listing unlocks', 'Analytics on your own listings', 'Pro badge on your profile'],
+      perks: ['Unlimited listing unlocks', 'Analytics on your own listings', 'Plus badge on your profile', 'AI Deal Builder — 5 analyses per day', 'AI listing assistant — 2 drafts per day', 'Better Dispo AI enhancement — 3 imports per day'],
       current: currentTier === 'pro',
       onMonthly: adminUnlimited ? null : () => subscribeTo('pro', 'monthly', st),
       onAnnual: adminUnlimited ? null : () => subscribeTo('pro', 'annual', st)
@@ -1091,7 +1091,7 @@ function renderUpgrade() {
   const paidTier = state.access?.paidPlan || state.user?.plan || 'free';
   const paidUntil = state.access?.paidPlanUntil || state.user?.planUntil || null;
   if (!adminUnlimited && paidTier !== 'free' && paidUntil && new Date(paidUntil) > new Date() && !companySeatAccess) {
-    const paidName = paidTier === 'wholesale' ? 'Wholesale Teams' : paidTier === 'platinum' ? 'Platinum' : 'Pro';
+    const paidName = paidTier === 'wholesale' ? 'Wholesale Teams' : paidTier === 'platinum' ? 'Platinum' : 'Plus';
     const cst = el('div', { class: 'okmsg' });
     const cancelBtn = el('button', { class: 'btn-ghost' }, 'Cancel auto-renewal');
     cancelBtn.onclick = async () => {
@@ -1132,7 +1132,7 @@ async function subscribeTo(tier, period, st) {
   try {
     const r = await api('POST', '/api/billing/subscribe', { period, tier });
     if (r.checkoutUrl) { window.location.href = r.checkoutUrl; return; }
-    await handlePurchaseResponse(r, `${tier === 'wholesale' ? 'Wholesale Teams' : tier === 'platinum' ? 'Platinum' : 'Pro'} active — billed ${period}.`, async () => { await refreshMe(); render(); });
+    await handlePurchaseResponse(r, `${tier === 'wholesale' ? 'Wholesale Teams' : tier === 'platinum' ? 'Platinum' : 'Plus'} active — billed ${period}.`, async () => { await refreshMe(); render(); });
   } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
 }
 
@@ -1623,9 +1623,9 @@ async function renderSellItem() {
       } catch (e) { aiMsg.textContent = e.message; }
       finally { aiBtn.disabled = false; aiBtn.textContent = '✨ Rewrite with AI'; }
     };
-    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'Platinum AI Listing Assistant'), el('div', { class: 'hint' }, 'Uses your entered facts and up to three photos. It is instructed not to invent product details.'), aiBtn, aiMsg]));
-  } else if (!state.access?.platinum && state.user?.role !== 'admin') {
-    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI listing writing — Platinum'), el('div', { class: 'hint' }, 'Generate a polished title and description from your details and photos.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See Platinum')]));
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, state.access?.platinum || state.access?.wholesale || state.access?.adminUnlimited ? 'Unlimited AI Listing Assistant' : 'Better Plus AI Listing Assistant'), el('div', { class: 'hint' }, 'Uses your entered facts and up to three photos. It is instructed not to invent product details.'), aiBtn, aiMsg]));
+  } else if (!state.access?.pro && state.user?.role !== 'admin') {
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI listing writing — Better Plus'), el('div', { class: 'hint' }, 'Plus includes 2 AI listing drafts per day. Platinum includes unlimited use.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See Plus')]));
   }
 
   const err = el('div', { class: 'errmsg' });
@@ -1803,7 +1803,7 @@ async function renderShopEdit() {
       } catch (e) { aiMsg.textContent = e.message; }
       finally { aiBtn.disabled = false; aiBtn.textContent = '✨ Improve with AI'; }
     };
-    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, admin ? 'AI listing assistant' : 'Platinum AI Listing Assistant'), aiBtn, aiMsg]));
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, admin ? 'AI listing assistant' : state.access?.platinum || state.access?.wholesale || state.access?.adminUnlimited ? 'Unlimited AI Listing Assistant' : 'Better Plus AI Listing Assistant'), aiBtn, aiMsg]));
   }
 
   const status = el('div', { class: 'errmsg' });
@@ -2007,7 +2007,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 30;
+const TUTORIAL_VERSION = 32;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2034,6 +2034,8 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'buybox',selector:'#app .page',min:0,release:29,title:'Advanced buy boxes',copy:'Define states, metros, price, ARV, beds, baths, rehab tolerance, strategy and spread so recommendations and buyer matching reflect what you actually buy.'},
  {view:'leaderboard',selector:'#app .page',min:0,title:'Leaderboard',copy:'Verified closings earn points for both sides. Track monthly and all-time activity and the membership rewards attached to points.'},
  {view:'wallet',selector:'#app .page',min:0,title:'Wallet & payouts',copy:'Eligible marketplace sales, referral credits and payout activity are organized here.'},
+ {view:'me',selector:'.referral-center',min:0,release:32,title:'Referral center',copy:'Share your personal invite link and track link visits, signups, activated referrals and paid referrals from your profile.'},
+ {view:'upgrade',selector:'.tiergrid4',min:0,release:32,title:'Better Plus access',copy:'Better Plus now includes daily access to more premium tools: 5 Deal Builder analyses, 2 AI listing drafts and 3 AI-enhanced Better Dispo imports. Platinum keeps unlimited access.'},
  {view:'boostpicker',selector:'#app .page',min:0,title:'Promote a listing',copy:'Choose one of your listings to boost when you want additional visibility.'},
  {view:'dealbuilder',selector:'.dealbuildersearch',min:1,title:'AI Deal Builder',copy:'Start with an address. Better Real Estate AI creates preliminary ARV, repair scenarios, description and deal numbers for you to review.'},
  {view:'buyercrm',selector:'.buyercrmpage',min:0,title:'Buyer CRM',copy:'Keep buyer markets, buy boxes, private notes and follow-up stages in one pipeline.'},
@@ -2116,7 +2118,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
 async function renderDealBuilder(){
   const wrap=el('div',{class:'page dealbuilderpage'}); wrap.appendChild(el('div',{class:'pagehead'},[el('div',{},[el('div',{class:'dispoeyebrow'},'PROPERTY INTELLIGENCE'),el('h2',{},'AI Deal Builder'),el('div',{class:'sub'},'Start with an address. Better Real Estate AI builds a preliminary ARV, repair scenarios, description and deal analysis for you to review before moving it into Better Dispo.')]) ]));
   const address=el('input',{placeholder:'123 Main St, City, ST 12345'}), run=el('button',{class:'btn-primary'},'Analyze property'), status=el('div',{class:'hint'}), results=el('div'), usage=el('div',{class:'dealbuilderusage'});
-  const paintUsage=(u)=>{ usage.innerHTML=''; if(!u)return; usage.appendChild(el('div',{class:'usagepill '+(u.unlimited?'unlimited':'')},u.label)); if(!u.unlimited) usage.appendChild(el('div',{class:'hint'},u.limit===5?'Pro includes 5 successful new-property analyses per day.':'Free trial includes one successful property analysis.')); };
+  const paintUsage=(u)=>{ usage.innerHTML=''; if(!u)return; usage.appendChild(el('div',{class:'usagepill '+(u.unlimited?'unlimited':'')},u.label)); if(!u.unlimited) usage.appendChild(el('div',{class:'hint'},u.limit===5?'Plus includes 5 successful new-property analyses per day.':'Free trial includes one successful property analysis.')); };
   try{paintUsage((await api('GET','/api/deal-builder/usage')).usage)}catch(e){status.textContent=e.message||'Unable to load Deal Builder allowance.'}
   const search=el('div',{class:'card dealbuildersearch'},[el('div',{class:'dealbuildersearchtop'},[el('label',{},'Property address'),usage]),el('div',{class:'dealbuildersearchrow'},[address,run]),status]); wrap.appendChild(search); wrap.appendChild(results);
   run.onclick=async()=>{ if(!address.value.trim()){status.textContent='Enter a complete address.';return} run.disabled=true;run.textContent='Analyzing…';status.textContent='Building preliminary property, ARV and repair estimates with Better Real Estate AI…';results.innerHTML='';
@@ -2187,11 +2189,13 @@ async function renderCompose() {
     } catch (e) { importStatus.textContent = e.message; }
     finally { importBtn.disabled = false; importBtn.textContent = 'Import existing deal'; }
   };
+  let dispoUsage=null; try{dispoUsage=(await api('GET','/api/tools/usage')).dispoAi;}catch{}
   wrap.appendChild(el('div', { class: 'dispoimport' }, [
     el('div', { class: 'dispoeyebrow' }, 'AUTO AI DEAL BUILDER'),
     el('h3', {}, 'Turn messy deal notes into a ready-to-market deal.'),
     el('div', { class: 'hint' }, 'Paste a Facebook post, email blast, text thread or rough notes. Better Real Estate extracts the deal facts, then Better Dispo handles buyer matching and distribution after you post.'),
-    (state.access?.platinum || state.access?.wholesale || state.access?.adminUnlimited) ? el('div', { class: 'hint', style: 'margin-top:6px' }, 'On eligible plans, this may use the configured AI provider to improve extraction. Review pasted text before submitting if it contains information you do not want sent to the AI provider.') : null,
+    state.access?.pro ? el('div', { class: 'usagepill '+(dispoUsage?.unlimited?'unlimited':''), style:'margin-top:8px' }, dispoUsage?.unlimited?'Unlimited AI-enhanced imports':`${dispoUsage?.remaining ?? 0} of ${dispoUsage?.limit ?? 3} AI-enhanced imports remaining today`) : el('div',{class:'hint',style:'margin-top:6px'},'Smart import is available to everyone. Better Plus adds 3 AI-enhanced imports per day; Platinum is unlimited.'),
+    state.access?.pro ? el('div', { class: 'hint', style: 'margin-top:6px' }, 'AI enhancement may send the pasted text to the configured AI provider. Review it before submitting if it contains information you do not want sent to the AI provider.') : null,
     importText, importBtn, importStatus
   ]));
 
@@ -2635,9 +2639,9 @@ async function renderMe() {
   const mineHeader = el('div', { class: 'profilehero' }, [
     avatarNode(state.user, 'profile'),
     el('div', { class: 'profileherobody' }, [
-      el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, state.user.settings?.showMembershipLevel !== false ? membershipBadge(state.access?.adminUnlimited ? 'Admin' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free') : null]),
+      el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, state.user.foundingMember ? el('span',{class:'founding-badge'},'Founding Member') : null, state.user.settings?.showMembershipLevel !== false ? membershipBadge(state.access?.adminUnlimited ? 'Admin' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free') : null]),
       state.user.username ? el('div', { class: 'profileusername' }, '@' + state.user.username) : null,
-      el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Pro' : state.access?.trial ? 'Trial' : 'Free'}`),
+      el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free'}`),
       state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
       state.user.investmentMarkets?.length ? el('div',{class:'profile-markets'},state.user.investmentMarkets.map(x=>el('span',{},x))) : null,
       state.user.bio ? el('p', { class: 'profilebio' }, state.user.bio) : null,
@@ -2661,14 +2665,16 @@ async function renderMe() {
   groups.forEach(([title,items])=>{const g=el('section',{class:'profile-toolgroup'},[el('div',{class:'eyebrow'},title)]);items.forEach(([t,v])=>g.appendChild(el('button',{class:'profile-tool',onclick:()=>go(v)},[el('span',{},t),el('b',{},'→')])));toolgroups.appendChild(g);});
   wrap.appendChild(toolgroups);
 
-  // referral
-  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Refer a friend'));
-  const referralCard = el('div', { class: 'card', style: 'padding:16px' }, [
-    el('div', { class: 'dnotes' }, `Share Better Real Estate — your referral code is attached automatically to your invite links. You both get ${cents(state.pricing.referralBonus)} in wallet credit when they make their first purchase.`),
-    el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:28px;font-weight:700;margin-top:10px;letter-spacing:.08em" }, state.user.referralCode),
-    el('div', { class: 'hint', style: 'margin-top:5px;word-break:break-all' }, shareUrl('join'))
-  ]);
+  // referral growth dashboard
+  wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Referral center'));
+  const referralCard = el('div', { class: 'card referral-center' });
+  referralCard.appendChild(el('div',{class:'referral-head'},[el('div',{},[el('h3',{},'Grow Better Real Estate'),el('p',{class:'sub'},`Invite real estate professionals. You both receive ${cents(state.pricing.referralBonus)} in wallet credit when their first purchase is completed.`)]),state.user.foundingMember?el('span',{class:'founding-badge'},'Founding Member'):null]));
+  const referralMetrics=el('div',{class:'referral-metrics'},[miniMetric('—','Link visits'),miniMetric('—','Signups'),miniMetric('—','Activated'),miniMetric('—','Paid referrals')]);
+  referralCard.appendChild(referralMetrics);
+  referralCard.appendChild(el('div',{class:'referral-linkbox'},[el('div',{},[el('small',{},'YOUR REFERRAL LINK'),el('b',{style:'word-break:break-all'},shareUrl('join'))]),el('button',{class:'btn-ghost',onclick:async()=>{try{await navigator.clipboard.writeText(shareUrl('join'));toast('Referral link copied','ok')}catch{toast('Copy the link shown here','err')} }},'Copy link')]));
   referralCard.appendChild(shareStrip({ kind: 'join', title: 'Join me on Better Real Estate', text: 'A real-estate-only network for investors, wholesalers, buyers and live deals.' }));
+  const referralList=el('div',{class:'referral-list'}); referralCard.appendChild(referralList);
+  api('GET','/api/referrals/me').then(r=>{referralMetrics.innerHTML='';referralMetrics.append(miniMetric(r.metrics.clicks,'Link visits'),miniMetric(r.metrics.signups,'Signups'),miniMetric(r.metrics.activated,'Activated'),miniMetric(r.metrics.paid,'Paid referrals'));if(r.metrics.creditEarned)referralMetrics.appendChild(miniMetric(cents(r.metrics.creditEarned),'Credit earned'));referralList.innerHTML='';if(r.referrals?.length){referralList.appendChild(el('div',{class:'eyebrow'},'RECENT REFERRALS'));r.referrals.slice(0,8).forEach(x=>referralList.appendChild(el('div',{class:'referral-person'},[el('span',{},x.name+(x.username?' · @'+x.username:'')),el('small',{},x.paid?'Paid':x.activated?'Activated':'Joined')])));} }).catch(()=>{});
   wrap.appendChild(referralCard);
 
   // verification
@@ -2715,7 +2721,7 @@ async function renderProfile() {
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
   const profileBody = el('div', { class: 'profileherobody' }, [
-    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, membershipBadge(owner.publicMembership)]),
+    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, owner.foundingMember ? el('span',{class:'founding-badge'},'Founding Member') : null, membershipBadge(owner.publicMembership)]),
     owner.username ? el('div', { class: 'profileusername' }, '@' + owner.username) : null,
     owner.activityStatus ? el('div',{class:'activity-status'},[el('span',{class:'activity-dot'},''),owner.activityStatus]) : null,
     company ? el('button', { class: 'companychip', onclick: () => go('company', { companyId: company.id }) }, company.name) : null,
@@ -2789,7 +2795,7 @@ async function renderBuyBox() {
     }
     wrap.appendChild(tabs);
     if (maxBoxes === 1) {
-      wrap.appendChild(el('div', { class: 'hint', style: 'margin-bottom:14px' }, 'Free and Pro get one buy box. Platinum runs up to 5 at once.'));
+      wrap.appendChild(el('div', { class: 'hint', style: 'margin-bottom:14px' }, 'Free and Plus get one buy box. Platinum runs up to 5 at once.'));
     }
   }
 
@@ -2951,7 +2957,7 @@ async function renderSettings() {
   sbox.appendChild(toggleRow('Alert me on buy box matches', 'When a new listing fits your criteria.', s.notifyOnMatch !== false, async on => {
     const { settings } = await api('PATCH', '/api/me/settings', { notifyOnMatch: on }); state.user.settings = settings;
   }));
-  sbox.appendChild(toggleRow('Display membership level on my profile', 'Shows your current Free, Pro, Platinum or Wholesale Teams level beside your name. You can hide it anytime.', s.showMembershipLevel !== false, async on => {
+  sbox.appendChild(toggleRow('Display membership level on my profile', 'Shows your current Free, Plus, Platinum or Wholesale Teams level beside your name. You can hide it anytime.', s.showMembershipLevel !== false, async on => {
     const { settings } = await api('PATCH', '/api/me/settings', { showMembershipLevel: on }); state.user.settings = settings; toast(on ? 'Membership level is visible' : 'Membership level hidden', 'ok');
   }));
   sbox.appendChild(toggleRow('Show activity status', 'Shows Active now or Active recently on your public profile without exposing an exact timestamp.', s.showActivityStatus !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{showActivityStatus:on}); state.user.settings=settings; }));
@@ -3429,7 +3435,7 @@ async function renderMemberships() {
   const wrap = el('div', { class: 'page membershipadmin' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('me') }, '← Back'));
   wrap.appendChild(el('div', { class: 'pageheadrow' }, [
-    el('div', {}, [el('h2', {}, 'Membership grants'), el('div', { class: 'sub' }, 'Give a user complimentary Pro, Platinum or Wholesale Teams access for a fixed period. Grants expire automatically and never erase a paid subscription.')])
+    el('div', {}, [el('h2', {}, 'Membership grants'), el('div', { class: 'sub' }, 'Give a user complimentary Plus, Platinum or Wholesale Teams access for a fixed period. Grants expire automatically and never erase a paid subscription.')])
   ]));
 
   const search = el('input', { placeholder: 'Search name, email, @username, role or market…' });
@@ -3438,7 +3444,7 @@ async function renderMemberships() {
   const prizeHost = el('div');
   let seq = 0;
 
-  const grantLabel = plan => plan === 'wholesale' ? 'Wholesale Teams' : plan === 'platinum' ? 'Platinum' : plan === 'pro' ? 'Pro' : 'None';
+  const grantLabel = plan => plan === 'wholesale' ? 'Wholesale Teams' : plan === 'platinum' ? 'Platinum' : plan === 'pro' ? 'Plus' : 'None';
   const fmtDate = d => d ? new Date(d).toLocaleDateString() : '—';
 
   async function load() {
@@ -3459,7 +3465,7 @@ async function renderMemberships() {
         el('div', { class: 'hint' }, leader && leader.points > 0 ? 'Award a time-limited membership with one click. The grant will expire automatically.' : 'A prize becomes available when at least one closing earns verified points this month.')
       ]));
       const prizeControls = el('div', { class: 'grantcontrols compact' });
-      const ptier = el('select', {}, [['platinum','Platinum'],['pro','Pro'],['wholesale','Wholesale Teams']].map(([v,l]) => el('option',{value:v},l)));
+      const ptier = el('select', {}, [['platinum','Platinum'],['pro','Plus'],['wholesale','Wholesale Teams']].map(([v,l]) => el('option',{value:v},l)));
       const pdays = el('input', { type:'number', min:'1', max:'730', value:'30', title:'Days' });
       const award = el('button', { class: 'btn-primary', disabled: !(leader && leader.points > 0) }, 'Award prize');
       award.onclick = async () => {
@@ -3485,7 +3491,7 @@ async function renderMemberships() {
           activeGrant && u.grant.grantReason ? el('div', { class: 'hint' }, u.grant.grantReason) : null
         ]);
         const controls = el('div', { class: 'grantcontrols' });
-        const tier = el('select', {}, [['platinum','Platinum'],['pro','Pro'],['wholesale','Wholesale Teams']].map(([v,l]) => el('option',{value:v},l)));
+        const tier = el('select', {}, [['platinum','Platinum'],['pro','Plus'],['wholesale','Wholesale Teams']].map(([v,l]) => el('option',{value:v},l)));
         const days = el('input', { type:'number', min:'1', max:'730', value:'30', title:'Days' });
         const reason = el('input', { value:'Promotion / complimentary access', placeholder:'Reason' });
         const grant = el('button', { class:'btn-primary' }, activeGrant ? 'Replace grant' : 'Grant');
@@ -3637,7 +3643,7 @@ async function renderAdmin() {
   [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
   customStart.style.display=customEnd.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd);activityCard.append(activityControls,activityHost);wrap.appendChild(activityCard);await loadActivity();
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
-  const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;const loadInspector=async()=>{const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));ih.innerHTML='';r.users.slice(0,20).forEach(u=>ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,u.plan].filter(Boolean).join(' · ')),el('small',{},`${u.listings} listings · ${u.saves} liked · ${u.messages} messages · ${accountAgeLabel(u.createdAt)} · ${u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'}`)]),u.verified?el('span',{class:'vbadge'},'✓ Verified'):null])));};iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};await loadInspector();
+  const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;const loadInspector=async()=>{const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));ih.innerHTML='';r.users.slice(0,20).forEach(u=>ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,u.plan].filter(Boolean).join(' · ')),el('small',{},`${u.listings} listings · ${u.saves} liked · ${u.messages} messages · ${accountAgeLabel(u.createdAt)} · ${u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'}`)]),u.verified?el('span',{class:'vbadge'},'✓ Verified'):null,u.foundingMember?el('span',{class:'founding-badge'},'Founding Member'):null,el('button',{class:'btn-ghost compactbtn',onclick:async()=>{const next=!u.foundingMember;if(!confirm(`${next?'Grant':'Remove'} Founding Member status for ${u.name}?`))return;try{await api('POST','/api/admin/set-founding-member',{userId:u.id,foundingMember:next});toast(next?'Founding Member granted':'Founding Member removed','ok');await loadInspector();}catch(e){toast(e.message,'err')} }},u.foundingMember?'Remove founding':'Grant founding')])));};iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};await loadInspector();
 
   const { pending } = await api('GET', '/api/admin/pending');
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Verify closed deals'));

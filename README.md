@@ -209,3 +209,7 @@ Admins now have an Email Center for mail-health diagnostics, test delivery, audi
 
 ## v27 Operating Network
 The v27 release adds activity analytics, investment-market personalization, For You/Following feeds, liked-property watching, saved-search deal alerts, advanced buy boxes, universal search, pipeline/deal rooms, structured offers, secure document vault, deal calendar, expanded listing analytics, credibility/activity signals, expanded Team operations, Command Center, Quick Create, Market Hubs and tutorial v29. See `V27-CHANGES.md` and `HANDOFF-V27.md`.
+
+
+## Current release
+Better Real Estate v28 — Growth Engine. See `V28-CHANGES.md` and `HANDOFF-V28.md`.

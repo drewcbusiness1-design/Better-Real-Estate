@@ -9,6 +9,8 @@ function publicProfileUser(u) {
     avatarUrl: u.avatarUrl || null,
     points: Number(u.points || 0),
     verified: !!u.verified,
+    foundingMember: !!u.foundingMember,
+    foundingMemberAt: u.foundingMemberAt || null,
     buyingStatus: String(u.buyingStatus || 'active'),
     investmentMarkets: Array.isArray(u.investmentMarkets) ? u.investmentMarkets : [],
     activityStatus: u.settings?.showActivityStatus === false ? null : (!u.lastActiveAt ? null : (Date.now()-new Date(u.lastActiveAt).getTime()<=5*60_000?'Active now':Date.now()-new Date(u.lastActiveAt).getTime()<=24*3600000?'Active recently':null)),

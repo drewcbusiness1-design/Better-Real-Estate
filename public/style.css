@@ -770,7 +770,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 /* v25 professional operations polish */
 .svgicon{display:inline-flex;align-items:center;justify-content:center;line-height:0}.svgicon svg{display:block}.iconbtn .svgicon{pointer-events:none}.tabbar .ic .svgicon{display:flex}.tabbar button.active .svgicon svg{stroke-width:2.1}
 .membershiplevel{display:inline-flex;align-items:center;min-height:22px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;font-family:Inter,sans-serif;font-size:10px;font-weight:750;letter-spacing:.045em;text-transform:uppercase;vertical-align:middle;margin-left:7px;background:var(--surface-2);color:var(--ink-soft)}
-.membershiplevel.platinum{border-color:#c9a75c;color:#8d6b20;background:color-mix(in srgb,#d8b96b 12%,var(--surface))}.membershiplevel.wholesale-teams{border-color:#5d8fd8;color:#3468ad;background:color-mix(in srgb,#5d8fd8 10%,var(--surface))}.membershiplevel.pro{border-color:var(--accent);color:var(--accent)}
+.membershiplevel.platinum{border-color:#c9a75c;color:#8d6b20;background:color-mix(in srgb,#d8b96b 12%,var(--surface))}.membershiplevel.wholesale-teams{border-color:#5d8fd8;color:#3468ad;background:color-mix(in srgb,#5d8fd8 10%,var(--surface))}.membershiplevel.pro,.membershiplevel.plus{border-color:var(--accent);color:var(--accent)}
 .adminverifybtn.verified{border-color:color-mix(in srgb,#2f9d67 45%,var(--line));color:#2f8c5d}.grantcontrols>.adminverifybtn{grid-column:1/-1;width:100%;white-space:nowrap}
 .jvbanner{margin:0 0 16px;padding:12px 15px;border:1px solid color-mix(in srgb,var(--accent) 42%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--accent) 7%,var(--surface));display:flex;gap:10px;align-items:center;font-size:13px}.jvbanner b{font-family:'Bricolage Grotesque',sans-serif}.jvbanner span{color:var(--ink-soft)}
 .checkrow.dealoption{margin:14px 0 18px;padding:14px 15px;border:1px solid var(--line);border-radius:12px;background:var(--surface);display:flex;align-items:flex-start;gap:11px}.checkrow.dealoption input{width:18px;height:18px;margin:2px 0 0;flex:0 0 auto}.checkrow.dealoption span{display:grid;gap:3px}.checkrow.dealoption small{color:var(--ink-soft);font-weight:400;line-height:1.45}
@@ -894,3 +894,12 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .quick-custom-row input[type="checkbox"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 .quick-custom-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;flex:0 0 auto;padding-top:2px;}
 .quick-custom-actions button{width:100%;margin:0!important;min-height:42px;}
+
+/* v28 growth system */
+.referral-center{padding:20px;overflow:hidden}
+.referral-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.referral-head h3{margin:0 0 5px}.referral-head .sub{margin:0;max-width:650px}
+.referral-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.referral-metrics .mini-metric{min-width:0}
+.referral-linkbox{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);margin:14px 0}.referral-linkbox>div{min-width:0;display:grid;gap:4px}.referral-linkbox small{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--muted)}
+.referral-list{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}.referral-person{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}.referral-person:last-child{border-bottom:0}.referral-person small{color:var(--muted)}
+.founding-badge{display:inline-flex;align-items:center;white-space:nowrap;font-size:10px;font-weight:800;letter-spacing:.04em;padding:4px 8px;border-radius:999px;border:1px solid color-mix(in srgb,var(--accent) 55%,var(--line));background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);margin-left:6px;vertical-align:middle}
+@media(max-width:720px){.referral-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.referral-linkbox{align-items:stretch;flex-direction:column}.referral-linkbox button{width:100%}.referral-head{flex-direction:column}}

@@ -106,7 +106,7 @@ for (const route of [
   "app.get('/api/marketing/unsubscribe'",
   "app.post('/api/marketing/unsubscribe'"
 ]) assert.ok(server.includes(route), 'Missing v11 route ' + route);
-assert.ok(server.includes("AI listing assistance is a Platinum feature."), 'Regular AI listing generation must be Platinum-gated');
+assert.ok(server.includes("AI listing assistance requires Better Plus or higher."), 'Regular AI listing generation must be Better Plus-gated after v28');
 assert.ok(server.includes("kind === 'cj' && !isAdmin"), 'CJ AI generation must remain admin-only');
 assert.ok(client.includes('✨ Write listing with AI'), 'Platinum shop sellers need the AI listing button');
 assert.ok(client.includes('✨ Draft property notes with AI'), 'Platinum property posts need AI drafting');
@@ -132,7 +132,7 @@ assert.ok(client.includes("'/api/users/' + encodeURIComponent(state.profileId) +
 assert.ok(server.includes("if (isAdminUser(user)) return true;"), 'Admin must bypass Pro/Platinum expiry gates');
 assert.ok(server.includes('if (isAdminUser(user)) return Number.MAX_SAFE_INTEGER;'), 'Admin buy boxes must be unlimited server-side');
 assert.ok(server.includes('adminUnlimited: isAdminUser(user)'), 'Client access payload must explicitly identify unlimited admin access');
-assert.ok(server.includes('if (!isAdmin) {'), 'AI usage quota must be skipped for admin');
+assert.ok(server.includes('if (isAdminUser(user) || isPlatinum(user) || isWholesale(user)) return { unlimited:true'), 'AI usage quota must be skipped for admin and unlimited tiers');
 assert.ok(server.includes('const adminIncluded = isAdminUser(req.user);'), 'Promotions must be included for admin without monthly limits');
 assert.ok(client.includes('Admin — Unlimited access'), 'Plans screen must identify permanent admin access');
 assert.ok(client.includes('Number.POSITIVE_INFINITY : state.access?.platinum ? 5 : 1'), 'Admin buy-box UI must not cap at Platinum five-box limit');
