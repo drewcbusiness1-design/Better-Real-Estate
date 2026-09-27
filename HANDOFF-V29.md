@@ -26,7 +26,7 @@ The platform should increasingly carry a professional from: find an address -> a
 - Onboarding is a guided tour of the real interface, not a generic transparent modal. It must navigate to and visually focus the feature being explained while dimming unrelated UI.
 - Tutorial UI must remain highly readable and professionally presented in both light and dark modes.
 - Tutorial content is access-aware: never teach ordinary users features they cannot use under their current membership/access.
-- New signups may skip one step or the entire tour and may restart it later.
+- New signups may use Back/Next, skip the entire tour, and restart it later. “Skip this step” is intentionally removed and must not return.
 - When a user gains access to meaningful new features through an upgrade/grant/team access, offer a short tutorial for the newly unlocked features rather than forcing the entire beginner tour again.
 - Significant future product features must be incorporated into the appropriate onboarding/What's New flow.
 - Preserve the user's authority rule and exhaustive pre-ZIP QA rule: do not improvise substitutions or make the user discover integration/UI failures after deployment.
@@ -201,6 +201,43 @@ This handoff and every future handoff must carry forward the COMPLETE inherited 
 - Affiliate commissions remain 30% ONE-TIME on a qualifying referred customer’s first eligible paid membership transaction only. Never pay recurring renewal/billing-cycle commissions unless the user explicitly changes the program later.
 - Affiliate terms version is `2026-09-27-v3`; the Better Real Estate hold is 3 days before an eligible commission becomes available for withdrawal. Actual payout arrival timing remains controlled by Stripe/account eligibility and is not promised by the 3-day rule.
 - The Affiliate Center must not use the awkward stacked `30% once` square/badge. The approved treatment is a compact horizontal, theme-matched `30%` + `one-time commission` chip/pill that never stacks strangely or looks tacked on.
-- Tutorial version is 35 and must teach the current 30%-once/3-day Affiliate Wallet behavior.
+- v29.3 used tutorial version 35 for the affiliate update; current v29.4 tutorial version is 36.
 - This v29.3 section supersedes any older 14-day or 5-day affiliate-hold wording in prior handoff/history sections. Historical changelogs may describe what earlier releases did, but current code/UI/terms/tutorial must use 3 days.
 - Preserve these rules recursively in every future handoff.
+
+# v29.4 AUTHORITATIVE FIRST 100 + ADMIN MEMBERSHIP RULES
+
+## Pre-build execution rule remains mandatory
+Before every future Better Real Estate build, patch, release, or ZIP-producing change, review the full inherited project rules TWICE before touching code. This must include user authority, protected confirmed-good baseline, no unapproved dependencies/substitutions, tutorial impact, membership behavior, maximum-presentability/theme standards, first-time-every-time quality, exhaustive QA, final extracted-ZIP verification, and minimizing the user's time. Every later handoff must preserve this recursively.
+
+## First 100 Founders program
+- The first 100 qualifying non-admin, non-demo user accounts by deterministic signup order receive the First 100 Founding Member launch award. Admin/internal admin accounts and seeded/demo accounts do not consume launch slots.
+- Existing qualifying accounts are backfilled in signup order when v29.4 first runs; future qualifying signups fill remaining slots until exactly 100 awards exist.
+- A durable `founderAwards` collection owns the 100 positions so deleting an awarded account never reopens/recycles that slot. Account deletion anonymizes the award record instead of deleting it.
+- Qualifying users automatically receive Founding Member recognition if they do not already have it. Existing Founder status is not duplicated.
+- Each qualifying user receives a separate 14-day (two-week) complimentary Platinum launch entitlement. It is NOT the same field as a manual membership grant and must never overwrite/break a paid subscription or a separate admin grant. Team/paid entitlements remain stronger when applicable.
+- Admin can see Founder position, award status, Platinum start/end date and remaining program capacity.
+- Qualifying users receive a polished one-time in-platform Founder welcome explaining First 100 status, the two-week Platinum bonus and a ready-to-share network invite using their actual referral link. Their Profile retains a share action afterward.
+- Do not automatically extend the program beyond 100 users without explicit user approval.
+
+## Admin membership access management
+- User Inspector and Admin membership management must support Grant, Replace, Extend and Revoke for complimentary Plus, Platinum or Wholesale Teams access.
+- Admin must see paid plan, separate complimentary grant, First 100 Platinum bonus, effective access, expiration/remaining time and account age without hunting through separate pages.
+- Paid subscriptions, First 100 Platinum and manual complimentary grants are distinct. Never overwrite paid billing when granting/revoking complimentary access.
+- Duration UX includes useful presets (7/14/30/90 days) plus a custom 1–730 day option. Extend adds time to the current active complimentary grant and does not silently change its tier; Replace uses the chosen tier from the current time.
+- Grant/replace/extend/revoke actions require confirmation and are auditable with actor/action/reason/timestamps in membership grant history.
+- Buttons/actions must be level, centered, same-height, theme-matched, non-wrapping on desktop and intentionally stacked only at responsive breakpoints. No lopsided controls or browser-default presentation.
+
+## Tutorial v36
+- Current tutorial version is 36.
+- Eligible First 100 users get a focused First 100 Founding Member step tied to the real Profile Founder card.
+- Admin receives a focused membership-access-control step tied to User Inspector.
+- Preserve all inherited tutorial rules: real live targets, Back + Next/Finish, separate Skip Entire Tour, no Skip This Step, membership/access filtering, route/scroll/spotlight correctness, replay, upgrade/grant-aware guidance, and same-release tutorial updates for every later user-facing change.
+
+## v29.4 release acceptance regressions
+- No admin membership action may be clipped, stacked awkwardly, uneven, off-theme, oversized/undersized or misaligned.
+- First 100 allocation must stay capped at 100 even if an awarded user deletes their account.
+- Founder Platinum must be a separate entitlement and must not overwrite paid subscriptions or manual complimentary grants.
+- Admin grant Extend must extend the active grant rather than resetting it from today or silently switching plans.
+- The Founder welcome/share experience must use the member's actual referral link and remain readable/presentable in light/dark and responsive layouts.
+- Future handoffs must preserve this section and all earlier authoritative rules recursively.

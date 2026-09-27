@@ -208,7 +208,14 @@ function startViewPolling(fn, ms = 5000) {
   }, ms);
 }
 function go(view, extra = {}, options = {}) { Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
-function render() { stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter(); if(state.launchTutorialAfterNav){state.launchTutorialAfterNav=false;setTimeout(()=>startTutorial(false),450);} else if(state.launchNewFeatureTutorial){state.launchNewFeatureTutorial=false;setTimeout(()=>startTutorial(false,true),450);} else if(state.launchProductUpdateTutorial){state.launchProductUpdateTutorial=false;setTimeout(()=>startTutorial(false,false,true),450);} }
+function render() {
+  stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter();
+  const founderWelcomePending=!!(state.user?.founderLaunchPosition&&!state.user?.founderLaunchNoticeSeenAt&&!state.founderWelcomeOpen&&!state.founderWelcomeScheduled);
+  if(founderWelcomePending){state.founderWelcomeScheduled=true;setTimeout(()=>{state.founderWelcomeScheduled=false;showFounderWelcome(false);},320);return;}
+  if(state.launchTutorialAfterNav){state.launchTutorialAfterNav=false;setTimeout(()=>startTutorial(false),450);}
+  else if(state.launchNewFeatureTutorial){state.launchNewFeatureTutorial=false;setTimeout(()=>startTutorial(false,true),450);}
+  else if(state.launchProductUpdateTutorial){state.launchProductUpdateTutorial=false;setTimeout(()=>startTutorial(false,false,true),450);}
+}
 window.addEventListener('popstate', () => {
   const params = new URLSearchParams(location.search);
   const requested = applyRouteParams(params);
@@ -2016,7 +2023,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 35;
+const TUTORIAL_VERSION = 36;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2056,11 +2063,13 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
  {view:'companyworkspace',selector:'.companyhero',min:3,release:29,title:'Wholesale Team workspace',copy:'Team access adds shared buyer CRM, pipeline assignments, internal notes, activity and analytics while each teammate keeps a separate login.'},
  {view:'admin',selector:'.admin-activity',min:4,release:29,title:'Admin activity & user analytics',copy:'See who is active now, unique users over preset or custom periods, market activity, funnel signals and inspect individual accounts. Ordinary members never see this step.'},
+ {view:'admin',selector:'.user-inspector',min:4,release:36,title:'Membership access controls',copy:'Open Manage access on any non-admin account to grant, replace, extend or revoke complimentary membership access without touching the user’s paid subscription.'},
+ {view:'me',selector:'.founder-program-card',min:0,release:36,when:()=>!!state.user?.founderLaunchPosition,title:'First 100 Founding Member',copy:'As one of the first 100 qualifying members, your profile carries Founding Member recognition and includes two weeks of complimentary Platinum access. Your referral link is ready to share with your network.'},
  {view:'feed',selector:'.topquick',min:0,release:31,title:'Quick options',copy:'Open your customizable shortcut menu from anywhere. Choose the platform actions you use most, customize up to six shortcuts, and use Back to return to your saved Quick Options without closing the menu.'},
  {view:'settings',selector:'.market-settings',min:0,release:29,title:'Investment markets',copy:'Choose the states you work in. They boost relevant properties in For You without hiding opportunities elsewhere.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
- ].filter(x=>rank>=x.min);
+ ].filter(x=>rank>=x.min&&(!x.when||x.when()));
 }
 function tutorialKey(tier=tutorialTier()){return `v${TUTORIAL_VERSION}:${tier}`;}
 async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
@@ -2644,6 +2653,80 @@ async function renderChat() {
   return wrap;
 }
 
+function founderInviteMessage(){
+  const link=`${location.origin}/s/join?ref=${encodeURIComponent(state.user?.referralCode||'')}`;
+  return {link,text:`I’m one of the first 100 Founding Members on Better Real Estate. It’s a real estate network and workspace for deals, buyers, investors, deal analysis, pipelines and more. Join through my link: ${link}`};
+}
+async function copyFounderInvite(){
+  const {text}=founderInviteMessage();
+  try{await navigator.clipboard.writeText(text);toast('Founder invite copied','ok');}catch{prompt('Copy your founder invite',text);}
+}
+function showFounderWelcome(force=false){
+  if(!state.user?.founderLaunchPosition)return;
+  if(!force&&state.user.founderLaunchNoticeSeenAt)return;
+  if(state.founderWelcomeOpen)return;
+  state.founderWelcomeOpen=true;
+  const {link,text}=founderInviteMessage();
+  const shade=el('div',{class:'founder-welcome-shade'}),card=el('div',{class:'founder-welcome-card',role:'dialog','aria-modal':'true'});
+  const expires=state.user.founderPlatinumUntil?new Date(state.user.founderPlatinumUntil).toLocaleDateString():null;
+  card.append(
+    el('div',{class:'founder-welcome-mark'},`#${state.user.founderLaunchPosition}`),
+    el('div',{class:'eyebrow'},'FIRST 100 FOUNDING MEMBER'),
+    el('h2',{},'You helped start Better Real Estate.'),
+    el('p',{class:'founder-welcome-copy'},`You’re one of the first 100 qualifying members. Your account has Founding Member recognition${expires?` and complimentary Platinum access through ${expires}`:''}.`),
+    el('div',{class:'founder-share-preview'},[el('small',{},'READY TO SHARE'),el('p',{},text)]),
+    el('div',{class:'founder-welcome-actions'},[
+      el('button',{class:'btn-ghost',onclick:copyFounderInvite},'Copy invite'),
+      el('button',{class:'btn-ghost',onclick:async()=>{if(navigator.share){try{await navigator.share({title:'Better Real Estate',text,url:link});}catch{}}else copyFounderInvite();}},'Share'),
+      el('button',{class:'btn-primary',onclick:async()=>{try{await api('POST','/api/founder-program/acknowledge');state.user.founderLaunchNoticeSeenAt=new Date().toISOString();}catch{}state.founderWelcomeOpen=false;shade.remove();render();}},'Continue')
+    ])
+  );
+  shade.appendChild(card);document.body.appendChild(shade);
+}
+
+function adminPlanLabel(plan){return plan==='wholesale'?'Wholesale Teams':plan==='platinum'?'Platinum':plan==='pro'?'Plus':plan==='admin'?'Admin':plan==='trial'?'Trial':'Free';}
+function openAdminAccessModal(u,onDone=()=>{}){
+  if(!u||u.role==='admin')return;
+  const shade=el('div',{class:'quick-shade admin-access-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card admin-access-card'});
+  const close=()=>shade.remove();
+  const paidActive=u.paidPlan&&u.paidPlan!=='free'&&u.paidPlanUntil&&new Date(u.paidPlanUntil)>new Date();
+  const founderUntil=u.access?.founderPlatinumUntil||u.founderAward?.platinumUntil||null;
+  const founderActive=founderUntil&&new Date(founderUntil)>new Date();
+  const grantActive=!!u.grant?.active;
+  card.appendChild(el('div',{class:'quick-head admin-access-head'},[
+    el('div',{},[el('div',{class:'eyebrow'},'ADMIN · MEMBERSHIP ACCESS'),el('h3',{},u.name),el('div',{class:'sub'},[u.username?'@'+u.username:null,u.email,accountAgeLabel(u.createdAt)].filter(Boolean).join(' · '))]),
+    el('button',{class:'iconbtn',onclick:close,'aria-label':'Close'},'×')
+  ]));
+  card.appendChild(el('div',{class:'admin-access-summary'},[
+    el('div',{class:'admin-access-stat'},[el('small',{},'PAID PLAN'),el('b',{},paidActive?adminPlanLabel(u.paidPlan):'None'),el('span',{},paidActive&&u.paidPlanUntil?`Through ${new Date(u.paidPlanUntil).toLocaleDateString()}`:'Paid billing stays separate')]),
+    el('div',{class:'admin-access-stat'},[el('small',{},'COMPLIMENTARY'),el('b',{},grantActive?adminPlanLabel(u.grant.grantPlan):'None'),el('span',{},grantActive?`${u.grant.remainingDays||'—'} day${u.grant.remainingDays===1?'':'s'} remaining`:'No active admin grant')]),
+    el('div',{class:'admin-access-stat'},[el('small',{},'FOUNDING BONUS'),el('b',{},u.founderAward?`Founder #${u.founderAward.position}`:'Not enrolled'),el('span',{},founderActive?`Platinum through ${new Date(founderUntil).toLocaleDateString()}`:u.founderAward?'Platinum bonus ended':'First 100 program only')]),
+    el('div',{class:'admin-access-stat'},[el('small',{},'EFFECTIVE ACCESS'),el('b',{},u.access?.wholesale?'Wholesale Teams':u.access?.platinum?'Platinum':u.access?.pro?'Plus':u.access?.trial?'Trial':'Free'),el('span',{},'Resolved without changing paid billing')])
+  ]));
+  const form=el('div',{class:'admin-access-form'}),tier=el('select');[['platinum','Platinum'],['pro','Plus'],['wholesale','Wholesale Teams']].forEach(([v,l])=>tier.appendChild(el('option',{value:v},l)));
+  if(grantActive)tier.value=u.grant.grantPlan;
+  const duration=el('select');[['7','7 days'],['14','14 days'],['30','30 days'],['90','90 days'],['custom','Custom days']].forEach(([v,l])=>duration.appendChild(el('option',{value:v},l)));duration.value='30';
+  const customDays=el('input',{type:'number',min:'1',max:'730',value:'30',placeholder:'1–730 days'});
+  const reason=el('input',{value:u.grant?.grantReason||'Promotion / complimentary access',placeholder:'Reason for complimentary access'});
+  const field=(label,node,help)=>el('label',{class:'admin-access-field'},[el('span',{},label),node,help?el('small',{},help):null]);
+  const customField=field('Custom days',customDays,'Used only when Custom days is selected.');customField.style.display='none';
+  duration.onchange=()=>{customField.style.display=duration.value==='custom'?'flex':'none';};
+  form.append(field('Plan',tier,'Choose the complimentary tier.'),field('Duration',duration,'Preset or custom duration.'),customField,field('Reason',reason,'Recorded in the membership audit history.'));
+  card.appendChild(form);
+  const status=el('div',{class:'errmsg admin-access-status'});card.appendChild(status);
+  const daysValue=()=>{const n=Number(duration.value==='custom'?customDays.value:duration.value);return Number.isFinite(n)?Math.floor(n):0;};
+  const act=async(kind)=>{const n=daysValue();if(n<1||n>730){status.textContent='Choose a duration from 1 to 730 days.';return;}const label=kind==='extend'?'extend the current complimentary membership':grantActive?'replace the current complimentary membership':'grant complimentary access';if(!confirm(`Confirm: ${label} for ${u.name}?`))return;try{await api('POST','/api/admin/memberships/grant',{userId:u.id,tier:tier.value,days:n,reason:reason.value.trim(),mode:kind});toast(kind==='extend'?'Membership extended':grantActive?'Membership replaced':'Membership granted','ok');close();await onDone();}catch(e){status.textContent=e.message;}};
+  const actions=el('div',{class:'admin-access-actions'});
+  if(grantActive){
+    actions.append(
+      el('button',{class:'btn-ghost',onclick:()=>act('extend')},`Extend ${adminPlanLabel(u.grant.grantPlan)}`),
+      el('button',{class:'btn-primary',onclick:()=>act('replace')},'Replace grant'),
+      el('button',{class:'dangerbtn',onclick:async()=>{if(!confirm(`Revoke ${u.name}’s complimentary access? Paid access and the First 100 bonus stay untouched.`))return;try{await api('POST','/api/admin/memberships/revoke',{userId:u.id});toast('Complimentary membership revoked','ok');close();await onDone();}catch(e){status.textContent=e.message;}}},'Revoke grant')
+    );
+  }else actions.append(el('button',{class:'btn-primary',onclick:()=>act('replace')},'Grant access'));
+  card.appendChild(actions);shade.appendChild(card);document.body.appendChild(shade);
+}
+
 /* ================= PROFILES ================= */
 async function renderMe() {
   const wrap = el('div', { class: 'page' });
@@ -2652,7 +2735,7 @@ async function renderMe() {
   const mineHeader = el('div', { class: 'profilehero' }, [
     avatarNode(state.user, 'profile'),
     el('div', { class: 'profileherobody' }, [
-      el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, state.user.foundingMember ? el('span',{class:'founding-badge'},'Founding Member') : null, state.user.settings?.showMembershipLevel !== false ? membershipBadge(state.access?.adminUnlimited ? 'Admin' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free') : null]),
+      el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, state.user.foundingMember ? el('span',{class:'founding-badge'},state.user.founderLaunchPosition?`Founding Member · #${state.user.founderLaunchPosition}`:'Founding Member') : null, state.user.settings?.showMembershipLevel !== false ? membershipBadge(state.access?.adminUnlimited ? 'Admin' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free') : null]),
       state.user.username ? el('div', { class: 'profileusername' }, '@' + state.user.username) : null,
       el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free'}`),
       state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
@@ -2666,6 +2749,14 @@ async function renderMe() {
   wrap.appendChild(el('div', { class: 'statgrid' }, [
     stat(cents(w.balance), 'Wallet'), stat(state.user.unlockCredits, 'Unlocks'), stat(d.listings.length, 'Listings')
   ]));
+
+  if(state.user.founderLaunchPosition){
+    const until=state.user.founderPlatinumUntil?new Date(state.user.founderPlatinumUntil):null;
+    wrap.appendChild(el('div',{class:'card founder-program-card'},[
+      el('div',{class:'founder-program-copy'},[el('div',{class:'eyebrow'},`FOUNDING MEMBER #${state.user.founderLaunchPosition}`),el('h3',{},'You’re part of the first 100.'),el('p',{class:'sub'},until&&until>new Date()?`Your complimentary Platinum access is active through ${until.toLocaleDateString()}. Invite your network with your personal referral link.`:'Your Founding Member recognition stays on your profile. Invite your network with your personal referral link.')]),
+      el('button',{class:'btn-ghost founder-share-btn',onclick:()=>showFounderWelcome(true)},'Share founder invite')
+    ]));
+  }
 
   const toolgroups = el('div', { class: 'profile-toolgroups' });
   const groups=[
@@ -2681,7 +2772,7 @@ async function renderMe() {
   // referral growth dashboard
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Referral center'));
   const referralCard = el('div', { class: 'card referral-center' });
-  referralCard.appendChild(el('div',{class:'referral-head'},[el('div',{},[el('h3',{},'Grow Better Real Estate'),el('p',{class:'sub'},`Invite real estate professionals. You both receive ${cents(state.pricing.referralBonus)} in wallet credit when their first purchase is completed.`)]),state.user.foundingMember?el('span',{class:'founding-badge'},'Founding Member'):null]));
+  referralCard.appendChild(el('div',{class:'referral-head'},[el('div',{},[el('h3',{},'Grow Better Real Estate'),el('p',{class:'sub'},`Invite real estate professionals. You both receive ${cents(state.pricing.referralBonus)} in wallet credit when their first purchase is completed.`)]),state.user.foundingMember?el('span',{class:'founding-badge'},state.user.founderLaunchPosition?`Founding Member · #${state.user.founderLaunchPosition}`:'Founding Member'):null]));
   const referralMetrics=el('div',{class:'referral-metrics'},[miniMetric('—','Link visits'),miniMetric('—','Signups'),miniMetric('—','Activated'),miniMetric('—','Paid referrals')]);
   referralCard.appendChild(referralMetrics);
   referralCard.appendChild(el('div',{class:'referral-linkbox'},[el('div',{},[el('small',{},'YOUR REFERRAL LINK'),el('b',{style:'word-break:break-all'},shareUrl('join'))]),el('button',{class:'btn-ghost',onclick:async()=>{try{await navigator.clipboard.writeText(shareUrl('join'));toast('Referral link copied','ok')}catch{toast('Copy the link shown here','err')} }},'Copy link')]));
@@ -2734,7 +2825,7 @@ async function renderProfile() {
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
   const profileBody = el('div', { class: 'profileherobody' }, [
-    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, owner.foundingMember ? el('span',{class:'founding-badge'},'Founding Member') : null, membershipBadge(owner.publicMembership)]),
+    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, owner.foundingMember ? el('span',{class:'founding-badge'},owner.founderLaunchPosition?`Founding Member · #${owner.founderLaunchPosition}`:'Founding Member') : null, membershipBadge(owner.publicMembership)]),
     owner.username ? el('div', { class: 'profileusername' }, '@' + owner.username) : null,
     owner.activityStatus ? el('div',{class:'activity-status'},[el('span',{class:'activity-dot'},''),owner.activityStatus]) : null,
     company ? el('button', { class: 'companychip', onclick: () => go('company', { companyId: company.id }) }, company.name) : null,
@@ -3461,6 +3552,7 @@ async function renderMemberships() {
   const host = el('div', { class: 'membershipusers' });
   const historyHost = el('div');
   const prizeHost = el('div');
+  const founderHost = el('div');
   let seq = 0;
 
   const grantLabel = plan => plan === 'wholesale' ? 'Wholesale Teams' : plan === 'platinum' ? 'Platinum' : plan === 'pro' ? 'Plus' : 'None';
@@ -3475,6 +3567,7 @@ async function renderMemberships() {
       host.innerHTML = '';
       prizeHost.innerHTML = '';
       historyHost.innerHTML = '';
+      founderHost.innerHTML = '';
 
       const leader = data.monthlyLeader;
       const prize = el('div', { class: 'card prizecard' });
@@ -3494,6 +3587,13 @@ async function renderMemberships() {
       };
       prizeControls.append(ptier,pdays,award); prize.appendChild(prizeControls); prizeHost.appendChild(prize);
 
+      const fp=data.founderProgram||{limit:100,claimed:0,remaining:100,awards:[]};
+      const founderCard=el('div',{class:'card founder-admin-card'},[
+        el('div',{class:'founder-admin-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'FIRST 100 FOUNDERS'),el('h3',{},`${fp.claimed} of ${fp.limit} places awarded`),el('div',{class:'hint'},`${fp.remaining} remaining. Qualifying accounts receive Founding Member recognition and two weeks of complimentary Platinum without altering paid billing.`)]),el('span',{class:'founding-badge'},`${fp.claimed}/${fp.limit}`)]),
+        el('div',{class:'founder-admin-list'},(fp.awards||[]).slice(0,100).map(a=>el('div',{class:'founder-admin-row'},[el('b',{},`#${a.position} · ${a.userName||'Deleted account'}`),el('span',{},a.platinumUntil?`Platinum through ${new Date(a.platinumUntil).toLocaleDateString()}`:'Award recorded')])) )
+      ]);
+      founderHost.appendChild(founderCard);
+
       if (!data.users.length) host.appendChild(el('div',{class:'empty compact'},el('p',{},'No users match that search.')));
       data.users.forEach(u => {
         const activeGrant = u.grant?.active;
@@ -3509,29 +3609,15 @@ async function renderMemberships() {
           ]),
           activeGrant && u.grant.grantReason ? el('div', { class: 'hint' }, u.grant.grantReason) : null
         ]);
-        const controls = el('div', { class: 'grantcontrols' });
-        const tier = el('select', {}, [['platinum','Platinum'],['pro','Plus'],['wholesale','Wholesale Teams']].map(([v,l]) => el('option',{value:v},l)));
-        const days = el('input', { type:'number', min:'1', max:'730', value:'30', title:'Days' });
-        const reason = el('input', { value:'Promotion / complimentary access', placeholder:'Reason' });
-        const grant = el('button', { class:'btn-primary' }, activeGrant ? 'Replace grant' : 'Grant');
-        grant.onclick = async () => {
-          const n = Number(days.value);
-          if (!n || n < 1 || n > 730) { toast('Choose 1–730 days','err'); return; }
-          if (!confirm(`Grant ${u.name} ${grantLabel(tier.value)} for ${n} days?`)) return;
-          try { await api('POST','/api/admin/memberships/grant',{ userId:u.id, tier:tier.value, days:n, reason:reason.value.trim() }); toast('Membership granted','ok'); await load(); } catch(e) { toast(e.message,'err'); }
-        };
+        const controls = el('div', { class: 'membershiprowactions' });
+        controls.appendChild(el('button',{class:'btn-primary',onclick:()=>openAdminAccessModal(u,load)},'Manage access'));
         const verifyBtn = el('button', { class: u.verified ? 'btn-ghost adminverifybtn verified' : 'btn-ghost adminverifybtn' }, u.verified ? '✓ Verified' : 'Grant verification');
         verifyBtn.onclick = async () => {
           const next = !u.verified;
           if (!confirm(`${next ? 'Grant' : 'Remove'} account verification for ${u.name}?`)) return;
           try { await api('POST','/api/admin/set-user-verification',{ userId:u.id, verified:next }); toast(next ? 'Account verified' : 'Verification removed','ok'); await load(); } catch(e) { toast(e.message,'err'); }
         };
-        controls.append(tier, days, reason, grant, verifyBtn);
-        if (activeGrant) {
-          const revoke = el('button', { class:'dangerbtn' }, 'Revoke free access');
-          revoke.onclick = async () => { if (!confirm(`Revoke ${u.name}'s complimentary access? Any paid subscription stays untouched.`)) return; try { await api('POST','/api/admin/memberships/revoke',{ userId:u.id }); toast('Complimentary membership revoked','ok'); await load(); } catch(e) { toast(e.message,'err'); } };
-          controls.appendChild(revoke);
-        }
+        controls.appendChild(verifyBtn);
         row.append(meta, controls); host.appendChild(row);
       });
 
@@ -3541,7 +3627,7 @@ async function renderMemberships() {
         el('div',{class:'grow'},[
           el('div',{class:'t'},`${g.userName} · ${grantLabel(g.tier)}`),
           el('div',{class:'s'},`${new Date(g.startsAt).toLocaleDateString()} → ${new Date(g.expiresAt).toLocaleDateString()}${g.revokedAt ? ' · revoked ' + new Date(g.revokedAt).toLocaleDateString() : ''}`),
-          el('div',{class:'hint'},`${g.reason || 'Complimentary membership'} · ${g.source === 'leaderboard' ? 'leaderboard prize' : 'manual grant'}`)
+          el('div',{class:'hint'},`${g.reason || 'Complimentary membership'} · ${g.source === 'leaderboard' ? 'leaderboard prize' : g.action === 'extend' ? 'extended' : g.action === 'replace' ? 'replaced' : 'manual grant'}${g.grantedByName ? ' · by '+g.grantedByName : ''}`)
         ])
       ])));
       historyHost.appendChild(history);
@@ -3555,6 +3641,8 @@ async function renderMemberships() {
   wrap.appendChild(search);
   wrap.appendChild(el('div', { class:'sectiontitle' }, 'Monthly prize'));
   wrap.appendChild(prizeHost);
+  wrap.appendChild(el('div', { class:'sectiontitle' }, 'First 100 Founders'));
+  wrap.appendChild(founderHost);
   wrap.appendChild(el('div', { class:'sectiontitle' }, 'Users'));
   wrap.appendChild(host);
   wrap.appendChild(el('div', { class:'sectiontitle' }, 'Grant history'));
@@ -3713,7 +3801,24 @@ async function renderAdmin() {
   [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
   customStart.style.display=customEnd.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd);activityCard.append(activityControls,activityHost);wrap.appendChild(activityCard);await loadActivity();
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
-  const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;const loadInspector=async()=>{const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));ih.innerHTML='';r.users.slice(0,20).forEach(u=>ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,u.plan].filter(Boolean).join(' · ')),el('small',{},`${u.listings} listings · ${u.saves} liked · ${u.messages} messages · ${accountAgeLabel(u.createdAt)} · ${u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'}`)]),u.verified?el('span',{class:'vbadge'},'✓ Verified'):null,u.foundingMember?el('span',{class:'founding-badge'},'Founding Member'):null,el('button',{class:'btn-ghost compactbtn',onclick:async()=>{const next=!u.foundingMember;if(!confirm(`${next?'Grant':'Remove'} Founding Member status for ${u.name}?`))return;try{await api('POST','/api/admin/set-founding-member',{userId:u.id,foundingMember:next});toast(next?'Founding Member granted':'Founding Member removed','ok');await loadInspector();}catch(e){toast(e.message,'err')} }},u.foundingMember?'Remove founding':'Grant founding')])));};iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};await loadInspector();
+  const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;
+  const loadInspector=async()=>{
+    const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));ih.innerHTML='';
+    r.users.slice(0,20).forEach(u=>{
+      const badges=el('div',{class:'inspector-badges'});
+      if(u.verified)badges.appendChild(el('span',{class:'vbadge'},'✓ Verified'));
+      if(u.foundingMember)badges.appendChild(el('span',{class:'founding-badge'},u.founderAward?`Founding Member · #${u.founderAward.position}`:'Founding Member'));
+      const accessText=u.role==='admin'?'Admin · unlimited':u.access?.wholesale?'Wholesale Teams':u.access?.platinum?'Platinum':u.access?.pro?'Plus':u.access?.trial?'Trial':'Free';
+      const details=[`${u.listings} listings`,`${u.saves} liked`,`${u.messages} messages`,accountAgeLabel(u.createdAt),u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'];
+      if(u.grant?.active)details.push(`Grant: ${adminPlanLabel(u.grant.grantPlan)} · ${u.grant.remainingDays}d left`);
+      if(u.founderAward)details.push(`First 100 · #${u.founderAward.position}`);
+      const actions=el('div',{class:'inspector-actions'});
+      if(u.role!=='admin')actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:()=>openAdminAccessModal(u,loadInspector)},'Manage access'));
+      actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{const next=!u.foundingMember;if(!confirm(`${next?'Grant':'Remove'} Founding Member status for ${u.name}?`))return;try{await api('POST','/api/admin/set-founding-member',{userId:u.id,foundingMember:next});toast(next?'Founding Member granted':'Founding Member removed','ok');await loadInspector();}catch(e){toast(e.message,'err')} }},u.foundingMember?'Remove founding':'Grant founding'));
+      ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,accessText].filter(Boolean).join(' · ')),el('small',{},details.join(' · '))]),badges,actions]));
+    });
+  };
+  iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};await loadInspector();
 
   const { pending } = await api('GET', '/api/admin/pending');
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Verify closed deals'));

@@ -64,6 +64,9 @@ const PRICING = {
   signupTrialDays: 7
 };
 
+const FOUNDER_PROGRAM_LIMIT = 100;
+const FOUNDER_PLATINUM_DAYS = 14;
+
 
 app.use((req, res, next) => {
   // Stripe signs the raw bytes, so the webhook route must not be JSON-parsed.
@@ -147,6 +150,7 @@ async function requireAuth(req, res, next) {
   const user = db.users.find(u => u.id === req.session.userId);
   if (!user) return res.status(401).json({ error: 'Not signed in' });
   let changed = ensureUsername(db, user);
+  if (ensureFirst100FounderProgram(db)) changed = true;
   if (syncOneCompanyMember(db, user)) changed = true;
   const nowMs = Date.now();
   if (!user.lastActiveAt || nowMs - new Date(user.lastActiveAt).getTime() > 60_000) {
@@ -248,6 +252,12 @@ function isAdminUser(user) {
   return !!user && user.role === 'admin' && policy.isAdminEmail(user.email);
 }
 function isCompanyEntitled(user) { return !!(user?.companyPlanUntil && new Date(user.companyPlanUntil) > new Date()); }
+function activeFounderPlatinum(user) {
+  if (!user?.founderPlatinumUntil) return null;
+  const until = new Date(user.founderPlatinumUntil);
+  if (!Number.isFinite(until.getTime()) || until <= new Date()) return null;
+  return { until: until.toISOString(), startedAt: user.founderPlatinumStartedAt || null, position: Number(user.founderLaunchPosition || 0) || null };
+}
 const GRANT_TIERS = new Set(['pro', 'platinum', 'wholesale']);
 function activeMembershipGrant(user) {
   if (!user || !GRANT_TIERS.has(String(user.grantPlan || ''))) return null;
@@ -274,6 +284,7 @@ function isPro(user) {
   return !!user && (
     ((user.plan === 'pro' || user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) ||
     grantIncludes(user, 'pro') ||
+    !!activeFounderPlatinum(user) ||
     isCompanyEntitled(user)
   );
 }
@@ -282,6 +293,7 @@ function isPlatinum(user) {
   return !!user && (
     ((user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) ||
     grantIncludes(user, 'platinum') ||
+    !!activeFounderPlatinum(user) ||
     isCompanyEntitled(user)
   );
 }
@@ -313,6 +325,7 @@ function accessFor(user) {
     pro: isPro(user), platinum: isPlatinum(user), wholesale: isWholesale(user), trial: inTrial(user), full: hasFullAccess(user),
     adminUnlimited: isAdminUser(user), companyId: user.companyId || null, companyRole: user.companyRole || null,
     grantPlan: grant?.plan || null, grantUntil: grant?.until || null, grantReason: grant?.reason || null,
+    founderPlatinumUntil: activeFounderPlatinum(user)?.until || null, founderLaunchPosition: Number(user.founderLaunchPosition || 0) || null,
     paidPlan: user.plan || 'free', paidPlanUntil: user.planUntil || null
   };
 }
@@ -327,45 +340,84 @@ function getBuyBoxes(user) {
 
 function membershipGrantSummary(user) {
   const active = activeMembershipGrant(user);
+  const remainingDays = active ? Math.max(1, Math.ceil((new Date(active.until).getTime() - Date.now()) / 86400000)) : 0;
   return {
     grantPlan: user?.grantPlan || null,
     grantUntil: user?.grantUntil || null,
     grantReason: user?.grantReason || null,
     grantedAt: user?.grantedAt || null,
+    grantedBy: user?.grantedBy || null,
+    remainingDays,
     active: !!active
   };
 }
 
-function grantMembership(db, user, { tier, days, reason = '', grantedBy = null, source = 'manual' } = {}) {
+function founderProgramEligible(user) {
+  return !!user && !isAdminUser(user) && user.role !== 'admin' && user.demo !== true;
+}
+function ensureFirst100FounderProgram(db) {
+  db.founderAwards = db.founderAwards || [];
+  const awards = db.founderAwards;
+  const existingUsers = new Set(awards.map(a => a.userId));
+  let changed = false;
+  const ordered = (db.users || []).filter(founderProgramEligible).slice().sort((a,b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : Number.MAX_SAFE_INTEGER, tb = b.createdAt ? new Date(b.createdAt).getTime() : Number.MAX_SAFE_INTEGER;
+    return ta - tb || String(a.id).localeCompare(String(b.id));
+  });
+  let nextPosition = Math.max(0, ...awards.map(a => Number(a.position || 0))) + 1;
+  for (const user of ordered) {
+    if (awards.length >= FOUNDER_PROGRAM_LIMIT) break;
+    if (existingUsers.has(user.id)) continue;
+    const now = new Date();
+    const position = nextPosition++;
+    const until = new Date(now.getTime() + FOUNDER_PLATINUM_DAYS * 86400000);
+    awards.push({
+      id: `founder100-${position}`, position, userId: user.id, userName: user.name, userEmail: user.email,
+      signupAt: user.createdAt || null, awardedAt: now.toISOString(), platinumStartsAt: now.toISOString(), platinumUntil: until.toISOString()
+    });
+    existingUsers.add(user.id);
+    if (!user.foundingMember) { user.foundingMember = true; user.foundingMemberAt = now.toISOString(); user.foundingMemberSource = 'first100'; }
+    user.founderLaunchPosition = position;
+    user.founderPlatinumStartedAt = now.toISOString();
+    user.founderPlatinumUntil = until.toISOString();
+    user.founderLaunchNoticeSeenAt = null;
+    changed = true;
+  }
+  return changed;
+}
+
+function grantMembership(db, user, { tier, days, reason = '', grantedBy = null, source = 'manual', mode = 'replace' } = {}) {
   tier = String(tier || '').toLowerCase();
   if (!GRANT_TIERS.has(tier)) throw new Error('Choose Plus, Platinum or Wholesale Teams.');
   const rawDays = Number(days);
   if (!Number.isFinite(rawDays) || rawDays < 1 || rawDays > 730) throw new Error('Choose a grant length between 1 and 730 days.');
   const n = Math.floor(rawDays);
   const now = new Date();
-  const expires = new Date(now.getTime() + n * 86400000);
   db.membershipGrants = db.membershipGrants || [];
+  const active = activeMembershipGrant(user);
   const previous = [...db.membershipGrants].reverse().find(g => g.userId === user.id && !g.revokedAt && new Date(g.expiresAt || 0) > now);
-  if (previous) { previous.revokedAt = now.toISOString(); previous.revokedBy = grantedBy || null; previous.revokeReason = 'replaced'; }
+  let expires;
+  if (mode === 'extend') {
+    if (!active) throw new Error('There is no active complimentary membership to extend.');
+    tier = active.plan;
+    const base = new Date(active.until);
+    expires = new Date(base.getTime() + n * 86400000);
+    if (previous) { previous.revokedAt = now.toISOString(); previous.revokedBy = grantedBy || null; previous.revokeReason = 'extended'; }
+    source = 'manual-extend';
+  } else {
+    expires = new Date(now.getTime() + n * 86400000);
+    if (previous) { previous.revokedAt = now.toISOString(); previous.revokedBy = grantedBy || null; previous.revokeReason = 'replaced'; }
+  }
   user.grantPlan = tier;
   user.grantUntil = expires.toISOString();
-  user.grantReason = String(reason || '').trim().slice(0, 180) || (source === 'leaderboard' ? 'Leaderboard prize' : 'Complimentary membership');
+  user.grantReason = String(reason || '').trim().slice(0, 180) || (source === 'leaderboard' ? 'Leaderboard prize' : mode === 'extend' ? 'Complimentary membership extension' : 'Complimentary membership');
   user.grantedAt = now.toISOString();
   user.grantedBy = grantedBy || null;
   db.membershipGrants.push({
-    id: crypto.randomUUID(),
-    userId: user.id,
-    tier,
-    startsAt: now.toISOString(),
-    expiresAt: expires.toISOString(),
-    reason: user.grantReason,
-    source,
-    grantedBy: grantedBy || null,
-    revokedAt: null,
-    createdAt: now.toISOString()
+    id: crypto.randomUUID(), userId: user.id, tier, startsAt: now.toISOString(), expiresAt: expires.toISOString(),
+    reason: user.grantReason, source, action: mode === 'extend' ? 'extend' : (active ? 'replace' : 'grant'),
+    grantedBy: grantedBy || null, revokedAt: null, createdAt: now.toISOString()
   });
-  // Sync every replacement, not only Wholesale grants. Replacing an active
-  // Wholesale grant with a lower tier must remove inherited company access too.
   syncCompanyMemberEntitlements(db, user);
   return activeMembershipGrant(user);
 }
@@ -461,6 +513,7 @@ app.post('/api/signup', async (req, res) => {
   };
   ensureUsername(db, user);
   db.users.push(user);
+  ensureFirst100FounderProgram(db);
   const vtok = crypto.randomBytes(24).toString('hex');
   db.tokens.push({ token: vtok, userId: user.id, kind: 'verify', expires: Date.now() + 7 * 86400000 });
   const affCode=String(req.body?.affiliateCode||'').trim().toUpperCase(); const aff=(db.affiliateApplications||[]).find(a=>a.code===affCode&&a.status==='approved'); if(aff&&aff.userId!==user.id) user.affiliateReferrerId=aff.userId;
@@ -744,6 +797,7 @@ app.delete('/api/me', requireAuth, async (req, res) => {
   }
   for (const l of req.db.ledger) { if (l.userId === userId) l.userId = deletedId; if (l.description && req.user.name) l.description = String(l.description).split(req.user.name).join('Deleted account'); }
   for (const p of req.db.payouts) if (p.userId === userId) p.userId = deletedId;
+  for (const a of (req.db.founderAwards || [])) if (a.userId === userId) { a.userId = deletedId; a.userName = 'Deleted account'; a.userEmail = null; }
   for (const r of req.db.reports) {
     if (r.buyerId === userId) { r.buyerId = deletedId; r.buyerName = 'Deleted account'; r.buyerEmail = null; }
     if (r.sellerId === userId) { r.sellerId = deletedId; r.sellerName = 'Deleted account'; }
@@ -2124,7 +2178,7 @@ app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
   const marketCounts={}; for(const u of activeUsers) for(const m of (u.markets||[])) marketCounts[m]=(marketCounts[m]||0)+1;
   res.json({preset,start:new Date(start).toISOString(),end:new Date(end).toISOString(),activeNow,activeUsers,metrics:{activeNow:activeNow.length,uniqueActive:activeUsers.length,returning:activeUsers.filter(u=>new Date(u.createdAt||0).getTime()<start).length,signups:signups.length,profilesCompleted:req.db.users.filter(u=>u.bio||u.avatarUrl||(u.investmentMarkets||[]).length).length,engaged:req.db.users.filter(u=>req.db.listings.some(l=>l.ownerId===u.id)||req.db.messages.some(m=>m.fromUserId===u.id)||req.db.saves.some(x=>x.userId===u.id)).length,paid:req.db.users.filter(u=>isPro(u)||isPlatinum(u)||isWholesale(u)).length,listings:listings.length,messages:messages.length,dealBuilderRuns:analyses.length},plans:req.db.users.reduce((o,u)=>{const p=actualPlanLabel(u);o[p]=(o[p]||0)+1;return o;},{}),markets:Object.entries(marketCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([state,count])=>({state,count}))});
 });
-app.get('/api/admin/user-inspector', requireAuth, requireAdmin, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(); const users=req.db.users.filter(u=>!q||[u.name,u.email,u.username].some(v=>String(v||'').toLowerCase().includes(q))).slice(0,40).map(u=>({...safeActivityUser(u),listings:req.db.listings.filter(l=>l.ownerId===u.id).length,saves:req.db.saves.filter(s=>s.userId===u.id).length,messages:req.db.messages.filter(m=>m.fromId===u.id||m.toId===u.id).length})); res.json({users}); });
+app.get('/api/admin/user-inspector', requireAuth, requireAdmin, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(); const awards=req.db.founderAwards||[]; const users=req.db.users.filter(u=>!q||[u.name,u.email,u.username].some(v=>String(v||'').toLowerCase().includes(q))).slice(0,40).map(u=>{ const award=awards.find(a=>a.userId===u.id)||null; return {...safeActivityUser(u),listings:req.db.listings.filter(l=>l.ownerId===u.id).length,saves:req.db.saves.filter(s=>s.userId===u.id).length,messages:req.db.messages.filter(m=>m.fromUserId===u.id||m.toUserId===u.id).length,paidPlan:u.plan||'free',paidPlanUntil:u.planUntil||null,grant:membershipGrantSummary(u),access:accessFor(u),founderAward:award}; }); res.json({users}); });
 app.patch('/api/me/markets', requireAuth, async (req,res)=>{ req.user.investmentMarkets=cleanStates(req.body?.states); await saveDB(req.db); res.json({states:req.user.investmentMarkets}); });
 app.post('/api/feed/feedback', requireAuth, async (req,res)=>{ const listingId=String(req.body?.listingId||''),kind=['hide','less'].includes(req.body?.kind)?req.body.kind:null; if(!listingId||!kind)return res.status(400).json({error:'Choose valid feedback.'}); req.db.feedFeedback=req.db.feedFeedback||[]; req.db.feedFeedback=req.db.feedFeedback.filter(f=>!(f.userId===req.user.id&&f.listingId===listingId)); req.db.feedFeedback.push({id:crypto.randomUUID(),userId:req.user.id,listingId,kind,at:new Date().toISOString()}); await saveDB(req.db); res.json({ok:true}); });
 app.patch('/api/saves/:listingId/notifications', requireAuth, async (req,res)=>{ const row=req.db.saves.find(s=>s.userId===req.user.id&&s.listingId===req.params.listingId); if(!row)return res.status(404).json({error:'Save the property first.'}); row.notifyChanges=req.body?.enabled!==false; await saveDB(req.db); res.json({enabled:row.notifyChanges}); });
@@ -2307,6 +2361,13 @@ app.post('/api/admin/set-user-verification', requireAuth, requireAdmin, async (r
   u.verifiedAt = u.verified ? new Date().toISOString() : null;
   await saveDB(req.db);
   res.json({ ok: true, verified: u.verified });
+});
+
+app.post('/api/founder-program/acknowledge', requireAuth, async (req,res)=>{
+  if (!req.user.founderLaunchPosition) return res.status(400).json({ error:'This account is not part of the First 100 Founders program.' });
+  req.user.founderLaunchNoticeSeenAt = new Date().toISOString();
+  await saveDB(req.db);
+  res.json({ ok:true, seenAt:req.user.founderLaunchNoticeSeenAt });
 });
 
 app.post('/api/admin/set-founding-member', requireAuth, requireAdmin, async (req,res)=>{
@@ -3155,7 +3216,8 @@ app.get('/api/admin/memberships', requireAuth, requireAdmin, async (req, res) =>
       access: accessFor(u),
       createdAt: u.createdAt || null,
       verified: !!u.verified,
-      verificationPending: !!u.verificationPending
+      verificationPending: !!u.verificationPending,
+      founderAward: (req.db.founderAwards || []).find(a => a.userId === u.id) || null
     }));
   const history = (req.db.membershipGrants || [])
     .slice()
@@ -3163,10 +3225,12 @@ app.get('/api/admin/memberships', requireAuth, requireAdmin, async (req, res) =>
     .slice(0, 80)
     .map(g => {
       const u = req.db.users.find(x => x.id === g.userId);
-      return { ...g, userName: u?.name || 'Deleted account', userEmail: u?.email || null };
+      const admin = req.db.users.find(x => x.id === g.grantedBy);
+      return { ...g, userName: u?.name || 'Deleted account', userEmail: u?.email || null, grantedByName: admin?.name || (g.grantedBy ? 'Admin' : null) };
     });
   const monthly = leaderboardRows(req.db, 'month');
-  res.json({ users, history, monthlyLeader: monthly[0] || null });
+  const founderAwards = (req.db.founderAwards || []).slice().sort((a,b)=>Number(a.position||0)-Number(b.position||0));
+  res.json({ users, history, monthlyLeader: monthly[0] || null, founderProgram:{limit:FOUNDER_PROGRAM_LIMIT,claimed:founderAwards.length,remaining:Math.max(0,FOUNDER_PROGRAM_LIMIT-founderAwards.length),awards:founderAwards} });
 });
 
 app.post('/api/admin/memberships/grant', requireAuth, requireAdmin, async (req, res) => {
@@ -3179,7 +3243,8 @@ app.post('/api/admin/memberships/grant', requireAuth, requireAdmin, async (req, 
       days: req.body?.days,
       reason: req.body?.reason,
       grantedBy: req.user.id,
-      source: 'manual'
+      source: 'manual',
+      mode: req.body?.mode === 'extend' ? 'extend' : 'replace'
     });
   } catch (e) {
     return res.status(400).json({ error: e.message });

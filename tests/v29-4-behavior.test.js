@@ -1,0 +1,50 @@
+const fs=require('fs'),assert=require('assert'),crypto=require('crypto');
+const src=fs.readFileSync('server.js','utf8');
+function fn(name){const re=new RegExp(`function ${name}\\([^]*?\\n\\}`);const m=src.match(re);if(!m)throw new Error('missing '+name);return m[0];}
+const FOUNDER_PROGRAM_LIMIT=100,FOUNDER_PLATINUM_DAYS=14;
+const isAdminUser=u=>u?.role==='admin';
+const syncCompanyMemberEntitlements=()=>false;
+const GRANT_TIERS=new Set(['pro','platinum','wholesale']);
+eval(fn('activeFounderPlatinum'));
+eval(fn('activeMembershipGrant'));
+eval(fn('founderProgramEligible'));
+eval(fn('ensureFirst100FounderProgram'));
+eval(fn('grantMembership'));
+
+const start=Date.now()-200*86400000;
+const users=[];
+users.push({id:'admin',role:'admin',name:'Admin',email:'admin@example.test',createdAt:new Date(start).toISOString()});
+users.push({id:'demo',role:'buyer',demo:true,name:'Demo',email:'demo@example.test',createdAt:new Date(start+1).toISOString()});
+for(let i=1;i<=105;i++)users.push({id:'u'+i,role:'buyer',name:'User '+i,email:`u${i}@example.test`,createdAt:new Date(start+(i+2)*1000).toISOString(),plan:i===1?'pro':'free',planUntil:i===1?new Date(Date.now()+30*86400000).toISOString():null,grantPlan:i===2?'pro':null,grantUntil:i===2?new Date(Date.now()+20*86400000).toISOString():null,grantReason:i===2?'Existing grant':null});
+const db={users,founderAwards:[],membershipGrants:[]};
+assert.equal(ensureFirst100FounderProgram(db),true);
+assert.equal(db.founderAwards.length,100,'must award exactly first 100 qualifying accounts');
+assert.deepEqual(db.founderAwards.map(a=>a.position),Array.from({length:100},(_,i)=>i+1));
+assert(!users[0].founderLaunchPosition&&!users[1].founderLaunchPosition,'admin/demo must not consume slots');
+assert.equal(users.find(u=>u.id==='u1').founderLaunchPosition,1);
+assert.equal(users.find(u=>u.id==='u100').founderLaunchPosition,100);
+assert(!users.find(u=>u.id==='u101').founderLaunchPosition,'101st qualifying user must not receive Founder award');
+const first=users.find(u=>u.id==='u1');
+assert.equal(first.plan,'pro','Founder bonus must not overwrite paid plan');
+const manual=users.find(u=>u.id==='u2');
+assert.equal(manual.grantPlan,'pro','Founder bonus must not overwrite manual grant');
+assert.equal(manual.grantReason,'Existing grant');
+const founderDays=(new Date(first.founderPlatinumUntil)-new Date(first.founderPlatinumStartedAt))/86400000;
+assert(Math.abs(founderDays-14)<0.01,'Founder Platinum must last 14 days');
+// Deleting an awarded account must not reopen a slot.
+db.users=db.users.filter(u=>u.id!=='u5');
+const newcomer={id:'u106',role:'buyer',name:'User 106',email:'u106@example.test',createdAt:new Date().toISOString()};db.users.push(newcomer);
+assert.equal(ensureFirst100FounderProgram(db),false);
+assert.equal(db.founderAwards.length,100);assert(!newcomer.founderLaunchPosition,'deleted Founder slot must not recycle');
+// Grant / extend / replace behavior.
+const target={id:'grant-user',role:'buyer',plan:'free'};const grantDb={membershipGrants:[],users:[target]};
+let g=grantMembership(grantDb,target,{tier:'pro',days:14,reason:'Test',grantedBy:'admin',mode:'replace'});
+const firstExpiry=new Date(g.until).getTime();assert.equal(target.grantPlan,'pro');
+g=grantMembership(grantDb,target,{tier:'platinum',days:7,reason:'Extend',grantedBy:'admin',mode:'extend'});
+assert.equal(target.grantPlan,'pro','extend must retain current grant tier');
+assert(Math.abs(new Date(g.until).getTime()-firstExpiry-7*86400000)<2000,'extend must add days to existing expiry');
+g=grantMembership(grantDb,target,{tier:'platinum',days:30,reason:'Replace',grantedBy:'admin',mode:'replace'});
+assert.equal(target.grantPlan,'platinum','replace must use chosen tier');
+assert.equal(target.plan,'free','manual grant must not overwrite paid-plan field');
+assert(grantDb.membershipGrants.some(x=>x.action==='extend')&&grantDb.membershipGrants.some(x=>x.action==='replace'),'grant history must record actions');
+console.log('v29.4 Founder allocation + membership behavior: PASS');

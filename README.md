@@ -6,6 +6,11 @@ A social feed for off-market property, with a marketplace, wallet, promotions an
 
 Checkout shipping forms support browser saved-address autofill by default. Optional typed address suggestions use Google Places API (New) through the server; set `GOOGLE_MAPS_API_KEY` to enable them. The API key is never sent to the browser.
 
+
+## v29.4 — First 100 Founders + Membership Access
+
+The first 100 qualifying non-admin/non-demo accounts receive Founding Member recognition plus 14 days of complimentary Platinum. Admin membership management now supports grant/replace/extend/revoke with paid billing, manual grants and Founder Platinum kept separate. Tutorial v36 covers the update by access. No new environment variable or manual migration is required; the existing store layer creates the `founderAwards` collection automatically.
+
 ## Quick start
 
 ```
