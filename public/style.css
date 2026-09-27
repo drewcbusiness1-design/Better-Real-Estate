@@ -922,3 +922,16 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .pipelinepage .pipeline-col-head b{white-space:nowrap}
 @media(max-width:800px){.pipelinepage>.pageheadrow>.btn-primary{width:100%;min-width:0}.pipelinepage .pipeline-board{grid-template-columns:repeat(8,190px)}}
 .affiliate-public{max-width:720px;margin:26px auto}.affiliate-public h2{margin:8px 0}.affiliate-public-actions{display:flex;gap:10px;align-items:center;margin-top:18px}.affiliate-public-actions button{white-space:nowrap}@media(max-width:620px){.affiliate-public-actions{align-items:stretch;flex-direction:column}.affiliate-public-actions button{width:100%}}
+
+/* v29.2 cash/credit clarity */
+.wallet-balance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0 18px}
+.wallet-balance-tile{min-width:0;padding:15px 16px;border:1px solid var(--line);border-radius:16px;background:var(--card);display:flex;flex-direction:column;gap:5px}
+.wallet-balance-tile small{font-size:11px;letter-spacing:.08em;font-weight:800;color:var(--muted)}
+.wallet-balance-tile b{font-size:22px;line-height:1.15}
+.wallet-balance-tile span{font-size:12px;line-height:1.35;color:var(--muted)}
+.wallet-balance-tile.credit{border-style:dashed}
+@media(max-width:760px){.wallet-balance-grid{grid-template-columns:1fr}.wallet-balance-tile{padding:14px}}
+
+.affiliate-terms-list{display:grid;gap:8px;margin:14px 0 16px}
+.affiliate-term-item{display:grid;grid-template-columns:20px minmax(0,1fr);gap:9px;align-items:start;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--card) 82%,transparent);font-size:13px;line-height:1.4}
+.affiliate-term-check{font-weight:900;line-height:1.35}

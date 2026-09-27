@@ -183,3 +183,15 @@ This handoff and every future handoff must carry forward the COMPLETE inherited 
 - Deal Pipeline must use a sufficiently wide professional workspace on desktop. No stage heading or column may be clipped; `+ Add lead` must never stack on desktop.
 - The Affiliate Center has a shareable public deep link using `?view=affiliate`. Logged-out visitors see the affiliate proposition, then signup/sign-in must return them directly to Affiliate Center. Existing users go directly to their affiliate state/dashboard.
 - These are permanent regression requirements and must be preserved by future handoffs.
+
+# v29.2 AUTHORITATIVE AFFILIATE + CASH WALLET RULES
+- Affiliate compensation is 30% ONE-TIME on the qualifying referred customer's first eligible paid membership transaction only. Never pay recurring commissions on renewals, later invoices, cancellation/resubscription, upgrades or downgrades unless the user explicitly changes the program later.
+- Affiliate terms version `2026-09-27-v2` uses a 5-day hold. Material compensation changes require affirmative in-platform acceptance before future earning under changed terms.
+- Better Credits are platform-only promotional credit and NEVER cash-withdrawable.
+- Affiliate Wallet earnings and legitimate marketplace Seller Wallet/proceeds are real cash. Keep them visually/accountingly distinct from Better Credits.
+- Stripe Connect is the approved payout architecture. Never store raw bank/debit-card credentials. Bank/debit-card payout eligibility is controlled through Stripe Connect; do not promise Instant Payout eligibility where Stripe does not provide it.
+- Refunds, disputes, chargebacks, fraud and ineligible activity can reverse cash earnings under the applicable terms. Keep auditable ledgers and server-side enforcement.
+- All wallet/payout surfaces must obey the permanent Better Real Estate theme/max-presentability rule and tutorial/update QA rules.
+- This v29.2 section supersedes older handoff wording that described affiliate commissions as recurring eligible membership revenue or a 14-day hold. Preserve this recursively in every later handoff.
+- Tutorial version is now 34. v34 What's New teaches the 30%-once/5-day Affiliate Wallet behavior and the cash-vs-Better-Credit distinction, including seller proceeds.
+- Tutorial version is now 34. v34 What's New teaches the 30%-once/5-day Affiliate Wallet behavior and the cash-vs-Better-Credit distinction, including seller proceeds.

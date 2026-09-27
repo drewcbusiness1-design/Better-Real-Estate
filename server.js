@@ -1060,6 +1060,8 @@ app.get('/api/wallet', requireAuth, async (req, res) => {
     balance: balanceOf(req.db, req.user.id),
     betterCredit: Math.max(0,Number(req.user.betterCreditCents||0)),
     withdrawableBalance: withdrawableBalanceOf(req.db,req.user),
+    sellerEarnings: req.db.ledger.filter(l=>l.userId===req.user.id&&l.type==='sale').reduce((n,l)=>n+Math.max(0,Number(l.amount||0)),0),
+    sellerWithdrawals: Math.abs(req.db.ledger.filter(l=>l.userId===req.user.id&&l.type==='withdrawal').reduce((n,l)=>n+Math.min(0,Number(l.amount||0)),0)),
     ledger: req.db.ledger.filter(l => l.userId === req.user.id).sort((a,b) => new Date(b.at) - new Date(a.at)).slice(0, 100),
     paymentMethods: req.user.paymentMethods,
     payoutMethod: req.user.payoutMethod,
@@ -2144,22 +2146,26 @@ app.get('/api/team-operations', requireAuth, async (req,res)=>{ if(!req.user.com
 
 /* ================= v29 TRANSACTION OS + AFFILIATES ================= */
 const AFFILIATE_RATE_BPS = 3000; // 30.00% — versioned terms below
-const AFFILIATE_HOLD_DAYS = 14;
+const AFFILIATE_HOLD_DAYS = 5;
 function safeText(v,n=500){ return String(v||'').trim().slice(0,n); }
 function canAccessDeal(db,user,listingId){
   const l=db.listings.find(x=>x.id===listingId); if(!l)return false;
   return canManageListing(db,user,l) || db.offers.some(o=>o.listingId===listingId&&(o.buyerId===user.id||o.sellerId===user.id)) || (db.dealCollaborators||[]).some(c=>c.listingId===listingId&&c.userId===user.id&&c.status==='active');
 }
 function logDealActivity(db, listingId, user, kind, text, meta={}){ db.dealActivity=db.dealActivity||[]; db.dealActivity.push({id:crypto.randomUUID(),listingId,userId:user?.id||null,userName:user?.name||'System',kind,text:safeText(text,500),meta,at:new Date().toISOString()}); }
-function affiliateTerms(){ return {version:'2026-09-27-v1',rateBps:AFFILIATE_RATE_BPS,ratePct:30,holdDays:AFFILIATE_HOLD_DAYS,summary:'30% of eligible Better Real Estate membership revenue. Commissions are held before withdrawal and may be reversed for refunds, disputes, fraud or ineligible sales.'}; }
+function affiliateTerms(){ return {version:'2026-09-27-v2',rateBps:AFFILIATE_RATE_BPS,ratePct:30,holdDays:AFFILIATE_HOLD_DAYS,oneTime:true,summary:'30% one-time commission on a qualifying referred customer’s first eligible paid Better Real Estate membership transaction. Renewals and later billing cycles do not earn another commission. Earnings are held for 5 days and may be reversed for refunds, disputes, fraud or ineligible sales.'}; }
 function affiliateForUser(db,userId){return (db.affiliateApplications||[]).find(a=>a.userId===userId&&a.status==='approved')||null;}
 function affiliateCommission(db,user,amountCents,sourceId,tier){
   if(!user?.affiliateReferrerId||!amountCents||amountCents<1)return null;
   const app=affiliateForUser(db,user.affiliateReferrerId); const currentTerms=affiliateTerms(); if(!app||app.userId===user.id||!app.termsAcceptedAt||app.termsVersion!==currentTerms.version||Number(app.rateBps)!==currentTerms.rateBps)return null;
   db.affiliateCommissions=db.affiliateCommissions||[];
+  // One lifetime membership-acquisition commission per referred customer.
+  // Stripe creates a fresh invoice ID every billing cycle, so source-ID-only
+  // deduplication would accidentally make the program recurring.
   if(db.affiliateCommissions.some(c=>c.sourceId===sourceId))return null;
+  if(db.affiliateCommissions.some(c=>c.affiliateUserId===app.userId&&c.customerUserId===user.id&&c.kind==='membership_acquisition'))return null;
   const amount=Math.floor(Number(amountCents)*Number(app.rateBps||AFFILIATE_RATE_BPS)/10000), now=new Date();
-  const row={id:crypto.randomUUID(),affiliateUserId:app.userId,customerUserId:user.id,sourceId,tier:tier||user.plan||'pro',grossCents:Number(amountCents),rateBps:Number(app.rateBps||AFFILIATE_RATE_BPS),amountCents:amount,status:'pending',createdAt:now.toISOString(),availableAt:new Date(now.getTime()+AFFILIATE_HOLD_DAYS*86400000).toISOString(),termsVersion:app.termsVersion||affiliateTerms().version};
+  const row={id:crypto.randomUUID(),affiliateUserId:app.userId,customerUserId:user.id,sourceId,tier:tier||user.plan||'pro',grossCents:Number(amountCents),rateBps:Number(app.rateBps||AFFILIATE_RATE_BPS),amountCents:amount,status:'pending',createdAt:now.toISOString(),availableAt:new Date(now.getTime()+AFFILIATE_HOLD_DAYS*86400000).toISOString(),termsVersion:app.termsVersion||affiliateTerms().version,kind:'membership_acquisition',oneTime:true};
   db.affiliateCommissions.push(row); return row;
 }
 function affiliateBalances(db,userId){const rows=(db.affiliateCommissions||[]).filter(c=>c.affiliateUserId===userId);const now=Date.now();for(const c of rows)if(c.status==='pending'&&new Date(c.availableAt).getTime()<=now)c.status='available';const sum=st=>rows.filter(c=>c.status===st).reduce((n,c)=>n+Number(c.amountCents||0),0);return {pending:sum('pending'),available:sum('available'),paid:sum('paid'),reversed:sum('reversed'),rows};}
