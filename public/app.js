@@ -85,7 +85,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','dealroom','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','dealroom','transactionhub','affiliate','intake','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -101,6 +101,7 @@ function applyRouteParams(params) {
   if (state.view === 'network') state.networkTab = params.get('tab') || 'discover';
   if (state.view === 'buyerportal') { state.buyerPortalType = params.get('type') || null; state.buyerPortalId = params.get('target') || null; }
   if (params.get('invite')) state.companyInviteToken = params.get('invite');
+  if (state.view === 'intake') state.intakeCode = params.get('code') || null;
   return requested;
 }
 function routeUrl(view = state.view) {
@@ -108,6 +109,7 @@ function routeUrl(view = state.view) {
   if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
   if (view === 'profile' && state.profileId) p.set('user', state.profileId);
+  if (view === 'intake' && state.intakeCode) p.set('code', state.intakeCode);
   if (view === 'chat' && state.chatUserId) p.set('user', state.chatUserId);
   if (view === 'shopitem' && state.shopItemId) p.set('item', state.shopItemId);
   if (view === 'shopedit' && state.shopEditId) p.set('item', state.shopEditId);
@@ -128,6 +130,8 @@ function writeRoute(mode = 'push') {
 async function boot() {
   const params = new URLSearchParams(location.search);
   const incomingRef = String(params.get('ref') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
+  const incomingAff = String(params.get('aff') || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0,24);
+  if(incomingAff){ state.pendingAffiliate=incomingAff; try{localStorage.setItem('bre_affiliate_code',incomingAff);}catch{} try{await api('GET','/api/affiliate/track/'+encodeURIComponent(incomingAff));}catch{} } else { try{state.pendingAffiliate=localStorage.getItem('bre_affiliate_code')||null;}catch{} }
   if (incomingRef) {
     state.pendingReferral = incomingRef;
     try { localStorage.setItem('bre_referral_code', incomingRef); } catch {}
@@ -267,7 +271,7 @@ async function renderApp() {
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
-    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal, insights: renderDemandInsights, dealbuilder: renderDealBuilder, buyercrm: renderBuyerCRM, commandcenter: renderCommandCenter, search: renderUniversalSearch, savedsearches: renderSavedSearches, pipeline: renderPipeline, dealcalendar: renderDealCalendar, markethubs: renderMarketHubs, dealroom: renderDealRoom,
+    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal, insights: renderDemandInsights, dealbuilder: renderDealBuilder, buyercrm: renderBuyerCRM, commandcenter: renderCommandCenter, search: renderUniversalSearch, savedsearches: renderSavedSearches, pipeline: renderPipeline, dealcalendar: renderDealCalendar, markethubs: renderMarketHubs, dealroom: renderDealRoom, transactionhub: renderTransactionHub, affiliate: renderAffiliateCenter, intake: renderDealIntake,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
@@ -394,14 +398,14 @@ function renderAuth() {
     err.textContent = '';
     try {
       const payload = isSignup
-        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role, referralCode: ref.value.trim(), marketingOptIn: marketingOpt.checked }
+        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role, referralCode: ref.value.trim(), affiliateCode: state.pendingAffiliate || '', marketingOptIn: marketingOpt.checked }
         : { email: email.value.trim(), password: pass.value };
       const d = await api('POST', isSignup ? '/api/signup' : '/api/login', payload);
       state.user = d.user; if (d.pricing) state.pricing = d.pricing;
       if (isSignup) {
         state.pendingReferral = null;
         state.launchTutorialAfterNav = true;
-        try { localStorage.removeItem('bre_referral_code'); } catch {}
+        try { localStorage.removeItem('bre_referral_code'); localStorage.removeItem('bre_affiliate_code'); } catch {}
       }
       await refreshMe();
       applyTheme(state.user.settings?.theme || 'light');
@@ -2007,7 +2011,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 32;
+const TUTORIAL_VERSION = 33;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2035,6 +2039,8 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'leaderboard',selector:'#app .page',min:0,title:'Leaderboard',copy:'Verified closings earn points for both sides. Track monthly and all-time activity and the membership rewards attached to points.'},
  {view:'wallet',selector:'#app .page',min:0,title:'Wallet & payouts',copy:'Eligible marketplace sales, referral credits and payout activity are organized here.'},
  {view:'me',selector:'.referral-center',min:0,release:32,title:'Referral center',copy:'Share your personal invite link and track link visits, signups, activated referrals and paid referrals from your profile.'},
+ {view:'transactionhub',selector:'.transaction-hub',min:0,release:33,title:'Transaction hub',copy:'Keep contacts, follow-ups, deal tasks, intake submissions, credentials and closing outcomes together.'},
+ {view:'affiliate',selector:'.affiliate-center',min:0,release:33,title:'Affiliate program',copy:'Apply for approval, accept the current commission terms, track membership sales and withdraw available earnings through secure payouts.'},
  {view:'upgrade',selector:'.tiergrid4',min:0,release:32,title:'Better Plus access',copy:'Better Plus now includes daily access to more premium tools: 5 Deal Builder analyses, 2 AI listing drafts and 3 AI-enhanced Better Dispo imports. Platinum keeps unlimited access.'},
  {view:'boostpicker',selector:'#app .page',min:0,title:'Promote a listing',copy:'Choose one of your listings to boost when you want additional visibility.'},
  {view:'dealbuilder',selector:'.dealbuildersearch',min:1,title:'AI Deal Builder',copy:'Start with an address. Better Real Estate AI creates preliminary ARV, repair scenarios, description and deal numbers for you to review.'},
@@ -2645,7 +2651,7 @@ async function renderMe() {
       state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
       state.user.investmentMarkets?.length ? el('div',{class:'profile-markets'},state.user.investmentMarkets.map(x=>el('span',{},x))) : null,
       state.user.bio ? el('p', { class: 'profilebio' }, state.user.bio) : null,
-      el('button', { class: 'btn-ghost profileeditbtn', onclick: () => go('settings') }, state.user.avatarUrl ? 'Edit profile' : 'Add profile photo')
+      el('div',{class:'profile-actions'},[el('button', { class: 'btn-ghost profileeditbtn', onclick: () => go('settings') }, state.user.avatarUrl ? 'Edit profile' : 'Add profile photo'),el('button',{class:'btn-ghost',onclick:async()=>{const url=location.origin+'/s/profile/'+encodeURIComponent(state.user.username||state.user.id);try{await navigator.clipboard.writeText(url);toast('Public profile link copied','ok')}catch{prompt('Copy public profile link',url);}}},'Copy public profile')])
     ])
   ]);
   wrap.appendChild(mineHeader);
@@ -2656,12 +2662,12 @@ async function renderMe() {
 
   const toolgroups = el('div', { class: 'profile-toolgroups' });
   const groups=[
-    ['Workspace', [['Command center','commandcenter'],['Deal pipeline','pipeline'],['Deal calendar','dealcalendar'],['AI Deal Builder','dealbuilder'],['Buyer CRM','buyercrm'],['Investor workspace'+(state.access?.platinum?'':' 🔒'),'workspace']]],
+    ['Workspace', [['Command center','commandcenter'],['Transaction hub','transactionhub'],['Deal pipeline','pipeline'],['Deal calendar','dealcalendar'],['AI Deal Builder','dealbuilder'],['Buyer CRM','buyercrm'],['Investor workspace'+(state.access?.platinum?'':' 🔒'),'workspace']]],
     ['Discover', [['Liked properties','saved'],['Saved searches & alerts','savedsearches'],['Buy box','buybox'],['Buyer demand insights','insights'],['Market Hubs','markethubs'],['Network & friends','network']]],
-    ['Account & commerce', [['Messages','messages'],['Offers','offers'],['Wallet & payouts','wallet'],['Orders','orders'],[state.user.role==='admin'?'Admin — shop listings':'My shop listings','shopmanage'],['Plans & billing','upgrade']]]
+    ['Account & commerce', [['Messages','messages'],['Offers','offers'],['Affiliate center','affiliate'],['Wallet & payouts','wallet'],['Orders','orders'],[state.user.role==='admin'?'Admin — shop listings':'My shop listings','shopmanage'],['Plans & billing','upgrade']]]
   ];
   if(state.access?.wholesale||state.user.companyId)groups[0][1].push(['Company workspace','companyworkspace']);
-  if(state.user.role==='admin')groups.push(['Administration',[['Admin command center','admin'],['Admin — Email Center','emailcenter'],['Admin — Membership grants','memberships'],['Admin — suppliers','suppliers'],['Admin — fulfilment queue','fulfilment'],['Admin — reports','reports']]]);
+  if(state.user.role==='admin')groups.push(['Administration',[['Admin command center','admin'],['Admin — Affiliates','affiliate'],['Admin — Email Center','emailcenter'],['Admin — Membership grants','memberships'],['Admin — suppliers','suppliers'],['Admin — fulfilment queue','fulfilment'],['Admin — reports','reports']]]);
   groups.forEach(([title,items])=>{const g=el('section',{class:'profile-toolgroup'},[el('div',{class:'eyebrow'},title)]);items.forEach(([t,v])=>g.appendChild(el('button',{class:'profile-tool',onclick:()=>go(v)},[el('span',{},t),el('b',{},'→')])));toolgroups.appendChild(g);});
   wrap.appendChild(toolgroups);
 
@@ -3003,6 +3009,12 @@ async function renderSettings() {
   } }, 'Permanently delete account'));
   dbox.appendChild(delSt); wrap.appendChild(dbox);
 
+  wrap.appendChild(el('div',{class:'sectiontitle'},'Professional services profile'));
+  const spbox=el('div',{class:'card'});const spTypes=el('input',{placeholder:'Services, comma separated — Title, Lending, Contractor',value:(state.user.settings?.serviceTypes||[]).join(', ')});spbox.appendChild(toggleRow('List me as a service provider','Make your professional services discoverable to investors in your markets.',state.user.settings?.serviceProvider===true,async on=>{const r=await api('PATCH','/api/me/settings',{serviceProvider:on,serviceTypes:spTypes.value.split(',').map(x=>x.trim()).filter(Boolean)});state.user.settings=r.settings;}));spbox.appendChild(el('div',{style:'padding:0 16px 16px'},[spTypes,el('button',{class:'btn-ghost',style:'margin-top:8px',onclick:async()=>{const r=await api('PATCH','/api/me/settings',{serviceTypes:spTypes.value.split(',').map(x=>x.trim()).filter(Boolean)});state.user.settings=r.settings;toast('Service profile updated','ok');}},'Save services')]));wrap.appendChild(spbox);
+  wrap.appendChild(el('div',{class:'sectiontitle'},'Notification center'));
+  const np=state.user.settings?.notificationPrefs||{}; const nbox=el('div',{class:'card notification-settings'});
+  [['deals','Deals'],['messages','Messages'],['offers','Offers'],['pipeline','Pipeline'],['referrals','Referrals'],['social','Social'],['savedSearches','Saved searches'],['marketing','Marketing']].forEach(([key,label])=>nbox.appendChild(toggleRow(label,'Control in-app and email attention for this category.',np[key]!==false,async on=>{np[key]=on;const r=await api('PATCH','/api/me/settings',{notificationPrefs:np});state.user.settings=r.settings;})));
+  wrap.appendChild(nbox);
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Email preferences'));
   const ep = await api('GET', '/api/email-preferences').catch(() => ({ marketingOptIn: false, marketingConfigured: false }));
   const ebox = el('div', { class: 'card' });
@@ -3545,6 +3557,37 @@ async function renderMemberships() {
 }
 
 
+
+/* ================= v29 TRANSACTION OS + AFFILIATES ================= */
+function downloadExport(kind){window.location.href='/api/export/'+encodeURIComponent(kind);}
+async function renderTransactionHub(){
+ const wrap=el('div',{class:'page transaction-hub'});wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'TRANSACTION OS'),el('h2',{},'Transaction hub'),el('div',{class:'sub'},'Relationships, follow-ups, deal tasks, intake and closing records in one professional workspace.')]),el('button',{class:'btn-primary',onclick:()=>openFormModal('Add relationship',[{key:'name',label:'Name',placeholder:'Jordan Alvarez'},{key:'email',label:'Email',placeholder:'jordan@email.com'},{key:'tags',label:'Tags',placeholder:'Cash Buyer, Lender, Contractor'},{key:'markets',label:'Markets',placeholder:'NJ, PA'},{key:'notes',label:'Private notes',type:'textarea',placeholder:'What they buy, relationship context, follow-up notes…'}],'Add contact',async v=>{await api('POST','/api/contacts',{...v,tags:v.tags.split(',').map(x=>x.trim()).filter(Boolean),markets:v.markets.split(',').map(x=>x.trim()).filter(Boolean)});render();})},'+ Add contact')]));
+ const d=await api('GET','/api/transaction-hub');const metrics=el('div',{class:'hub-metrics'},[miniMetric(d.contacts.length,'Relationships'),miniMetric(d.tasks.length,'Open tasks'),miniMetric(d.intake.length,'Intake leads'),miniMetric(d.outcomes.length,'Recorded outcomes')]);wrap.appendChild(metrics);
+ const grid=el('div',{class:'hub-grid'});
+ const contacts=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'RELATIONSHIP CRM'),el('h3',{},'People you do business with')]),el('button',{class:'btn-ghost',onclick:()=>downloadExport('contacts')},'Export CSV')])]);if(!d.contacts.length)contacts.appendChild(el('div',{class:'hub-empty'},'Add buyers, lenders, contractors, agents, title contacts and other relationships.'));d.contacts.slice(0,12).forEach(c=>contacts.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},c.name),el('span',{},[...(c.tags||[]),...(c.markets||[])].join(' · ')||c.email||'Relationship'),c.nextFollowUp?el('small',{},'Follow up '+new Date(c.nextFollowUp).toLocaleDateString()):null]),el('button',{class:'btn-ghost',onclick:()=>openFormModal('Update relationship',[{key:'notes',label:'Private notes',type:'textarea',value:c.notes||''},{key:'nextFollowUp',label:'Next follow-up',type:'datetime-local'}],'Save',async v=>{await api('PATCH','/api/contacts/'+c.id,v);render();})},'Update')])));grid.appendChild(contacts);
+ const tasks=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'DEAL TASKS'),el('h3',{},'What needs to happen next')]),el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add deal task',[{key:'title',label:'Task',placeholder:'Confirm EMD receipt'},{key:'listingId',label:'Listing ID (optional)',placeholder:'Link to a deal room if needed'},{key:'dueAt',label:'Due date',type:'datetime-local'}],'Add task',async v=>{await api('POST','/api/deal-tasks',v);render();})},'+ Task')])]);if(!d.tasks.length)tasks.appendChild(el('div',{class:'hub-empty'},'No open tasks.'));d.tasks.slice(0,12).forEach(t=>tasks.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},t.title),t.dueAt?el('small',{},'Due '+new Date(t.dueAt).toLocaleString()):null]),el('button',{class:'hub-check',title:'Complete',onclick:async()=>{await api('PATCH','/api/deal-tasks/'+t.id,{status:'done'});render();}},'✓')])));grid.appendChild(tasks);
+ const intake=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'DEAL INTAKE'),el('h3',{},'Let opportunities come to you')]),el('button',{class:'btn-ghost',onclick:async()=>{const x=await api('GET','/api/intake-link');try{await navigator.clipboard.writeText(x.url);toast('Deal intake link copied','ok')}catch{prompt('Copy your deal intake link',x.url);}}},'Copy intake link')])]);if(!d.intake.length)intake.appendChild(el('div',{class:'hub-empty'},'Share your intake link with sellers and partners. New submissions land here.'));d.intake.slice(0,10).forEach(x=>intake.appendChild(el('div',{class:'hub-row'},el('div',{class:'grow'},[el('b',{},x.address),el('span',{},x.name+(x.asking?' · '+money(x.asking):'')),x.notes?el('small',{},x.notes):null]))));grid.appendChild(intake);
+ const outcomes=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'CLOSING RECORDS'),el('h3',{},'Outcomes & profit')]),el('button',{class:'btn-ghost',onclick:()=>downloadExport('outcomes')},'Export CSV')])]);if(!d.outcomes.length)outcomes.appendChild(el('div',{class:'hub-empty'},'Closed and completed deal outcomes will appear here.'));d.outcomes.slice(0,10).forEach(x=>outcomes.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},x.status.toUpperCase()),el('span',{},'Recorded '+new Date(x.createdAt).toLocaleDateString())]),el('strong',{class:x.profit>=0?'positive':'negative'},money(x.profit))])));grid.appendChild(outcomes);
+ const creds=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'BUYER CREDENTIALS'),el('h3',{},'Proof & qualifications')]),el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add buyer credential',[{key:'label',label:'Credential name',placeholder:'Proof of Funds — Sept 2026'},{key:'note',label:'Private note',type:'textarea',placeholder:'Reference or verification note'}],'Add credential',async v=>{await api('POST','/api/credentials',{type:'proof-of-funds',...v});render();})},'+ Credential')])]);if(!d.credentials.length)creds.appendChild(el('div',{class:'hub-empty'},'Keep credential references here and selectively share deal documents through Deal Rooms.'));d.credentials.forEach(x=>creds.appendChild(el('div',{class:'hub-row'},el('div',{class:'grow'},[el('b',{},x.label),el('small',{},x.note||x.type)]))));grid.appendChild(creds);
+ const services=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'SERVICE NETWORK'),el('h3',{},'Professionals for the deal')]),el('button',{class:'btn-ghost',onclick:()=>go('settings')},'My service profile')])]);try{const sr=await api('GET','/api/service-providers');if(!sr.providers.length)services.appendChild(el('div',{class:'hub-empty'},'Title, lending, contractor and other service profiles will appear as professionals opt in.'));sr.providers.slice(0,8).forEach(u=>services.appendChild(el('button',{class:'hub-provider',onclick:()=>go('profile',{profileId:u.id})},[avatarNode(u),el('div',{},[el('b',{},u.name),el('span',{},(u.settings?.serviceTypes||[]).join(' · ')||u.role)])])));}catch{}grid.appendChild(services);
+ wrap.appendChild(grid);wrap.appendChild(el('div',{class:'hub-exportbar'},[el('div',{},[el('b',{},'Your data stays portable.'),el('span',{},'Export serious business records whenever you need them.')]),el('button',{class:'btn-ghost',onclick:()=>downloadExport('pipeline')},'Export pipeline CSV')]));return wrap;
+}
+async function renderAffiliateCenter(){
+ const wrap=el('div',{class:'page affiliate-center'}),d=await api('GET','/api/affiliate/me');wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER AFFILIATES'),el('h2',{},'Affiliate center'),el('div',{class:'sub'},'Earn cash commission from eligible Better Real Estate membership sales after approval.')]),el('span',{class:'affiliate-rate'},'30%') ]));
+ if(state.access?.adminUnlimited){try{const ad=await api('GET','/api/admin/affiliates');const panel=el('section',{class:'hub-panel affiliate-admin'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'ADMIN'),el('h3',{},'Affiliate approvals')]),el('span',{class:'sub'},`${ad.applications.length} applications · ${cents(ad.totals.pending)} pending commissions`)])]);if(!ad.applications.length)panel.appendChild(el('div',{class:'hub-empty'},'No affiliate applications yet.'));ad.applications.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).forEach(x=>panel.appendChild(el('div',{class:'affiliate-admin-row'},[el('div',{class:'grow'},[el('b',{},x.name+' · '+x.status),el('span',{},x.channels||x.audience||x.email),el('small',{},`${x.metrics.sales} sales · ${cents(x.metrics.paid)} paid`)]),el('div',{class:'affiliate-admin-actions'},['approved','denied','suspended','revoked'].filter(st=>st!==x.status).slice(0,2).map(st=>el('button',{class:st==='approved'?'btn-primary':'btn-ghost',onclick:async()=>{await api('POST','/api/admin/affiliates/'+x.id+'/status',{status:st});toast('Affiliate '+st,'ok');render();}},st.charAt(0).toUpperCase()+st.slice(1))))])));wrap.appendChild(panel);}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));}}
+ if(!d.application){const card=el('section',{class:'affiliate-hero'},[el('h3',{},'Apply to become a Better affiliate'),el('p',{},'Tell us how you plan to introduce Better Real Estate to your audience. Every application is reviewed before affiliate links are activated.'),el('button',{class:'btn-primary',onclick:()=>openFormModal('Affiliate application',[{key:'audience',label:'Your audience',type:'textarea',placeholder:'Who do you reach and approximately how?'},{key:'channels',label:'Channels',placeholder:'Instagram, YouTube, REIA, newsletter…'},{key:'why',label:'Why Better Real Estate?',type:'textarea',placeholder:'How would you promote the platform responsibly?'}],'Submit application',async v=>{await api('POST','/api/affiliate/apply',v);toast('Affiliate application submitted','ok');render();})},'Request affiliate access')]);wrap.appendChild(card);return wrap;}
+ const a=d.application;wrap.appendChild(el('div',{class:'affiliate-status '+a.status},[el('div',{},[el('small',{},'APPLICATION STATUS'),el('b',{},a.status.charAt(0).toUpperCase()+a.status.slice(1))]),a.status==='approved'?el('span',{},'Admin approved'):el('span',{},a.status==='pending'?'Waiting for admin review':'Contact support if you have questions') ]));if(a.status!=='approved')return wrap;
+ if(!a.termsAcceptedAt||a.termsVersion!==d.terms.version||Number(a.rateBps)!==Number(d.terms.rateBps)){wrap.appendChild(el('section',{class:'terms-card'},[el('div',{class:'eyebrow'},'ACTION REQUIRED'),el('h3',{},'Review your affiliate terms'),el('p',{},d.terms.summary),el('div',{class:'terms-line'},[el('b',{},d.terms.ratePct+'% commission'),el('span',{},d.terms.holdDays+'-day hold before earnings become available')]),el('button',{class:'btn-primary',onclick:async()=>{await api('POST','/api/affiliate/accept-terms',{version:d.terms.version});toast('Affiliate terms accepted','ok');render();}},'Agree & activate affiliate link') ]));return wrap;}
+ wrap.appendChild(el('div',{class:'affiliate-metrics'},[miniMetric(d.metrics.clicks,'Link clicks'),miniMetric(d.metrics.sales,'Membership sales'),miniMetric(cents(d.metrics.pending),'Pending'),miniMetric(cents(d.metrics.available),'Available'),miniMetric(cents(d.metrics.paid),'Paid') ]));
+ const link=el('section',{class:'affiliate-link-card'},[el('div',{},[el('small',{},'YOUR AFFILIATE LINK'),el('b',{},d.link)]),el('button',{class:'btn-ghost',onclick:async()=>{await navigator.clipboard.writeText(d.link);toast('Affiliate link copied','ok');}},'Copy link')]);wrap.appendChild(link);
+ const payout=el('section',{class:'payout-card'},[el('div',{},[el('h3',{},'Withdraw earnings'),el('p',{class:'sub'},d.payoutConfigured?'Your secure payout account is connected through Stripe.':'Connect a bank account or eligible payout destination securely through Stripe. Better Real Estate never stores your bank/card credentials.')]),el('div',{class:'payout-actions'},[el('button',{class:'btn-ghost',onclick:async()=>{const r=await api('POST','/api/affiliate/payout-onboarding',{});location.href=r.url;}},d.payoutConfigured?'Manage payout setup':'Connect payout account'),el('button',{class:'btn-primary',disabled:d.metrics.available<100,onclick:async()=>{if(!confirm('Withdraw '+cents(d.metrics.available)+' of available affiliate earnings?'))return;await api('POST','/api/affiliate/withdraw',{amountCents:d.metrics.available});toast('Affiliate withdrawal sent','ok');render();}},d.metrics.available>=100?'Withdraw '+cents(d.metrics.available):'Nothing available yet')])]);wrap.appendChild(payout);
+ if(d.commissions.length){const hist=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},el('div',{},[el('div',{class:'eyebrow'},'EARNINGS'),el('h3',{},'Commission history')]))]);d.commissions.slice(0,25).forEach(c=>hist.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},c.tier+' membership'),el('small',{},new Date(c.createdAt).toLocaleDateString()+' · '+c.status)]),el('strong',{},cents(c.amountCents))])));wrap.appendChild(hist);}return wrap;
+}
+async function renderDealIntake(){const wrap=el('div',{class:'panel intake-public'}),code=state.intakeCode||new URLSearchParams(location.search).get('code');if(!code){wrap.appendChild(el('div',{class:'empty'},'This deal intake link is incomplete.'));return wrap;}const d=await api('GET','/api/intake/'+encodeURIComponent(code));wrap.appendChild(el('div',{class:'eyebrow'},'DEAL INTAKE'));wrap.appendChild(el('h2',{},'Send a property to '+d.owner.name));wrap.appendChild(el('p',{class:'sub'},'Share the basic opportunity details. Your submission goes directly into their Better Real Estate workspace.'));const refs={};[['name','Your name'],['email','Email'],['phone','Phone'],['address','Property address'],['asking','Asking price']].forEach(([k,l])=>{wrap.appendChild(el('label',{},l));refs[k]=el('input',{type:k==='asking'?'number':'text'});wrap.appendChild(refs[k]);});wrap.appendChild(el('label',{},'Property notes'));refs.notes=el('textarea',{placeholder:'Condition, occupancy, timeline, access, anything important…'});wrap.appendChild(refs.notes);const st=el('div',{class:'errmsg'});wrap.append(st,el('button',{class:'submitbtn',onclick:async()=>{try{await api('POST','/api/intake/'+encodeURIComponent(code),Object.fromEntries(Object.entries(refs).map(([k,v])=>[k,v.value])));wrap.innerHTML='';wrap.appendChild(el('div',{class:'empty'},[el('h3',{},'Property sent'),el('p',{},'Your deal was delivered through Better Real Estate.') ]));}catch(e){st.textContent=e.message;}}},'Submit property'));return wrap;}
+
+function openCommandPalette(){if(!state.user)return;const shade=el('div',{class:'command-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),box=el('div',{class:'command-palette'}),input=el('input',{placeholder:'Search tools and actions…'}),list=el('div',{class:'command-list'});const actions=[...quickOptionCatalog(),{id:'search',title:'Search properties & people',desc:'Universal search',view:'search'},{id:'messages',title:'Messages',desc:'Open conversations',view:'messages'},{id:'offers',title:'Offers',desc:'Review sent and received offers',view:'offers'},{id:'calendar',title:'Deal calendar',desc:'Deadlines and reminders',view:'dealcalendar'}];const draw=()=>{list.innerHTML='';const q=input.value.toLowerCase();actions.filter(x=>(x.title+' '+x.desc).toLowerCase().includes(q)).slice(0,12).forEach(x=>list.appendChild(el('button',{onclick:()=>{shade.remove();go(x.view);}},[el('b',{},x.title),el('span',{},x.desc)])));};input.oninput=draw;input.onkeydown=e=>{if(e.key==='Escape')shade.remove();};box.append(input,list);shade.appendChild(box);document.body.appendChild(shade);draw();setTimeout(()=>input.focus(),20);}
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openCommandPalette();}});
+
 /* ================= v27 OPERATING NETWORK ================= */
 const STATE_CODES=['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
 function miniMetric(value,label){return el('div',{class:'mini-metric'},[el('b',{},String(value)),el('span',{},label)]);}
@@ -3552,17 +3595,19 @@ function quickOptionCatalog(){
  const base=[
   {id:'compose',title:'Post a property',desc:'Create or import a listing',view:'compose'},
   {id:'dealbuilder',title:'Analyze a deal',desc:'Open AI Deal Builder',view:'dealbuilder'},
-  {id:'buyercrm',title:'Add a buyer',desc:'Open your buyer CRM',view:'buyercrm'},
+  {id:'buyercrm',title:'Buyer CRM',desc:'Manage buyers and relationships',view:'buyercrm'},
   {id:'pipeline',title:'Deal pipeline',desc:'View and manage opportunities',view:'pipeline'},
+  {id:'transactionhub',title:'Transaction hub',desc:'Contacts, tasks, intake and closing tools',view:'transactionhub'},
   {id:'buybox',title:'Buy boxes',desc:'Manage what you buy',view:'buybox'},
-  {id:'search',title:'Search',desc:'Find properties and people',view:'search'},
-  {id:'messages',title:'Messages',desc:'Open conversations',view:'messages'},
-  {id:'liked',title:'Liked properties',desc:'View watched properties',view:'liked'}
+  {id:'savedsearches',title:'Deal alerts',desc:'Saved searches and alerts',view:'savedsearches'},
+  {id:'markethubs',title:'Market Hubs',desc:'Explore active investment markets',view:'markethubs'},
+  {id:'affiliate',title:'Affiliate center',desc:'Apply, track sales and earnings',view:'affiliate'},
+  {id:'liked',title:'Liked properties',desc:'View watched properties',view:'saved'}
  ];
- if(state.access?.adminUnlimited) base.push({id:'admin',title:'Admin users',desc:'Open user activity and account controls',view:'admin'});
+ if(state.access?.adminUnlimited) base.push({id:'admin',title:'Admin users',desc:'User activity and account controls',view:'admin'});
  return base;
 }
-function selectedQuickOptions(){const allowed=new Set(quickOptionCatalog().map(x=>x.id));const saved=state.user?.settings?.quickOptions;const defaults=state.access?.adminUnlimited?['admin','compose','dealbuilder','search','messages']:['compose','dealbuilder','search','messages','liked'];return (Array.isArray(saved)?saved:defaults).filter(x=>allowed.has(x)).slice(0,6);}
+function selectedQuickOptions(){const allowed=new Set(quickOptionCatalog().map(x=>x.id));const saved=state.user?.settings?.quickOptions;const defaults=state.access?.adminUnlimited?['admin','transactionhub','compose','dealbuilder','pipeline']:['transactionhub','compose','dealbuilder','pipeline','liked'];return (Array.isArray(saved)?saved:defaults).filter(x=>allowed.has(x)).slice(0,6);}
 async function saveQuickOptions(ids){const {settings}=await api('PATCH','/api/me/settings',{quickOptions:ids});state.user.settings=settings;}
 function openQuickOptions(){
  const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card'});
@@ -3614,7 +3659,11 @@ async function renderDealRoom(){
  const offerBox=el('section',{class:'ops-card'});offerBox.appendChild(el('h3',{},'Offers'));if(!offers.length)offerBox.appendChild(el('div',{class:'hint'},'No structured offers in this room yet.'));offers.forEach(o=>offerBox.appendChild(el('div',{class:'room-offer'},[el('b',{},money(o.amount)),el('span',{},[o.financing?.replace('-',' '),o.emd?`${money(o.emd)} EMD`:null,o.closeDays?`${o.closeDays}d close`:null,o.inspectionDays!==undefined?`${o.inspectionDays}d inspection`:null].filter(Boolean).join(' · ')),el('small',{},o.status)])));
  const msgBox=el('section',{class:'ops-card room-messages'});msgBox.appendChild(el('h3',{},'Deal conversation'));const stream=el('div',{class:'room-message-stream'});(messages||[]).forEach(m=>stream.appendChild(el('div',{class:'room-message '+(m.fromUserId===state.user.id?'mine':'')},[el('b',{},m.fromUserId===state.user.id?'You':(m.fromName||'Participant')),el('span',{},m.body),el('small',{},new Date(m.at).toLocaleString())])));if(!(messages||[]).length)stream.appendChild(el('div',{class:'hint'},'Keep transaction-specific communication attached to the deal.'));const input=el('textarea',{placeholder:'Message the deal room…'}),send=el('button',{class:'btn-primary'},'Send');let recipient=null;if(canManage&&offers.length){recipient=el('select');const seen=new Set();offers.forEach(o=>{if(!seen.has(o.buyerId)){seen.add(o.buyerId);recipient.appendChild(el('option',{value:o.buyerId},o.buyerName||'Buyer'));}});msgBox.appendChild(recipient);}send.onclick=async()=>{if(!input.value.trim())return;try{await api('POST',`/api/listings/${state.detailId}/deal-room/messages`,{body:input.value.trim(),toUserId:recipient?.value||null});render();}catch(e){toast(e.message,'err');}};msgBox.append(stream,input,send);
  const vault=el('section',{class:'ops-card deal-vault'},[el('h3',{},'Document vault'),el('p',{class:'sub'},'Deal documents stay private. Team-only files are never shown to buyers.'),await renderVault(state.detailId)]);
- wrap.appendChild(el('div',{class:'dealroom-grid'},[left,offerBox,msgBox,vault]));return wrap;
+ const tools=el('section',{class:'ops-card deal-tools'},[el('h3',{},'Transaction tools'),el('p',{class:'sub'},'Keep the work attached to this deal instead of scattering it across apps.')]);
+ tools.appendChild(el('div',{class:'deal-tool-actions'},[el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add deal task',[{key:'title',label:'Task',placeholder:'Order title search'},{key:'dueAt',label:'Due date',type:'datetime-local'}],'Add task',async v=>{await api('POST','/api/deal-tasks',{...v,listingId:state.detailId});toast('Task added','ok');})},'Add task'),canManage?el('button',{class:'btn-ghost',onclick:async()=>{const r=await api('GET','/api/offers/compare/'+state.detailId);const lines=r.offers.map(o=>`${money(o.amount)} · ${o.financing||'cash'} · ${money(o.emd||0)} EMD · ${o.closeDays||'—'}d close`).join('\n')||'No offers yet.';alert(lines);}},'Compare offers'):null,el('button',{class:'btn-ghost',onclick:()=>openFormModal('Record deal outcome',[{key:'status',label:'Outcome',placeholder:'closed, assigned, sold, held or dead'},{key:'purchase',label:'Purchase price',type:'number'},{key:'rehab',label:'Rehab / work',type:'number'},{key:'holding',label:'Holding costs',type:'number'},{key:'closing',label:'Closing costs',type:'number'},{key:'resale',label:'Resale / exit price',type:'number'},{key:'assignmentFee',label:'Assignment fee',type:'number'},{key:'notes',label:'Outcome notes',type:'textarea'}],'Record outcome',async v=>{await api('POST','/api/deals/'+state.detailId+'/outcome',v);toast('Deal outcome recorded','ok');})},'Record outcome')]));
+ const comp=el('section',{class:'ops-card comp-board'},[el('h3',{},'Collaborative comp board'),el('p',{class:'sub'},'Keep the comps you actually trust attached to the deal.')]);try{const cr=await api('GET','/api/deals/'+state.detailId+'/comp-board');const list=el('div',{class:'comp-list'});(cr.board.comps||[]).forEach(c=>list.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},c.address),el('small',{},money(c.salePrice)+(c.distance?' · '+c.distance:''))]),el('span',{class:'pill'},c.included===false?'Excluded':'Included')] )));if(!(cr.board.comps||[]).length)list.appendChild(el('div',{class:'hint'},'No comps saved yet.'));comp.append(list,el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add comparable',[{key:'address',label:'Comp address',placeholder:'123 Comparable St'},{key:'salePrice',label:'Sale price',type:'number'},{key:'distance',label:'Distance / relevance',placeholder:'0.4 mi'},{key:'notes',label:'Notes',type:'textarea'}],'Add comp',async v=>{const latest=await api('GET','/api/deals/'+state.detailId+'/comp-board');const comps=[...(latest.board.comps||[]),{...v,included:true}];await api('POST','/api/deals/'+state.detailId+'/comp-board',{comps,notes:latest.board.notes||''});render();})},'+ Add comp'));}catch{}
+ const timeline=el('section',{class:'ops-card deal-timeline'},[el('h3',{},'Deal activity')]);try{const ar=await api('GET','/api/deals/'+state.detailId+'/activity');if(!ar.activity.length)timeline.appendChild(el('div',{class:'hint'},'Activity will build as tasks, documents, collaborators and outcomes move forward.'));ar.activity.slice(0,12).forEach(a=>timeline.appendChild(el('div',{class:'timeline-row'},[el('span',{class:'timeline-dot'}),el('div',{},[el('b',{},a.text),el('small',{},a.userName+' · '+new Date(a.at).toLocaleString())])])));}catch{}
+ wrap.appendChild(el('div',{class:'dealroom-grid'},[left,offerBox,msgBox,vault,tools,comp,timeline]));return wrap;
 }
 
 async function renderVault(listingId){const host=el('div');let r;try{r=await api('GET','/api/listings/'+listingId+'/documents');}catch(e){host.appendChild(el('div',{class:'errmsg'},e.message));return host;}const list=el('div',{class:'vault-list'});r.documents.forEach(d=>list.appendChild(el('div',{class:'vault-row'},[el('a',{href:d.url,target:'_blank',rel:'noopener'},d.name),el('span',{},d.visibility==='participants'?'Shared with participants':'Team only'),r.canManage?el('button',{class:'btn-ghost',onclick:async()=>{await api('DELETE',`/api/listings/${listingId}/documents/${d.id}`);render();}},'Remove'):null] )));host.appendChild(list);if(r.canManage){const file=el('input',{type:'file',accept:'.pdf,image/png,image/jpeg,image/webp'}),visibility=el('select');visibility.append(el('option',{value:'team'},'Team only'),el('option',{value:'participants'},'Share with offer participants'));const up=el('button',{class:'btn-ghost'},'Upload document');up.onclick=()=>{const f=file.files?.[0];if(!f)return toast('Choose a document first','err');if(f.size>5*1024*1024)return toast('Documents must be 5 MB or smaller','err');const reader=new FileReader();reader.onload=async()=>{try{await api('POST',`/api/listings/${listingId}/documents`,{name:f.name,dataUrl:reader.result,visibility:visibility.value});toast('Document added','ok');render();}catch(e){toast(e.message,'err');}};reader.readAsDataURL(f);};host.append(file,visibility,up);}return host;}
@@ -3752,6 +3801,7 @@ function pageTerms() {
     ['3a. No electronics or appliances', 'Users may not list any item that runs on mains power or a battery. This includes but is not limited to appliances, HVAC equipment, water heaters, power tools, light fixtures, lamps, bulbs, wiring, breakers, outlets, switches, smart-home devices, alarms, detectors, generators, batteries and consumer electronics. Listings that appear to be electrical may be rejected automatically and accounts that repeatedly attempt to evade this rule may be terminated.'],
     ['4. Transactions between users', 'Any deal you reach with another user is strictly between you and them. We do not guarantee that a listed property exists, is available, is priced accurately, or that any user will perform. You are solely responsible for your own due diligence, contracts, inspections, title work, and compliance with the laws of your jurisdiction.'],
     ['5. Payments, subscriptions, and promotions', 'Payments may be processed by Stripe or another disclosed payment provider. Promotions, unlocks, verification, subscriptions and marketplace purchases are charged when purchased. Promotions run for the stated window and are non-refundable once they begin. Subscriptions renew until cancelled and can be cancelled anytime, effective at the end of the current period. Marketplace sales are subject to the platform fee stated at listing.'],
+    ['5b. Affiliate program', 'Affiliate participation requires approval. Approved affiliates earn the commission rate shown in their accepted in-platform affiliate terms on eligible attributed membership sales. Commissions may be held, reversed for refunds, disputes, fraud or ineligible activity, and paid through the disclosed payout provider. Any future commission-term change requires affirmative in-platform acceptance before the new terms apply to future earnings. Better Credits are separate promotional credits and are not cash-withdrawable.'],
     ['5a. Address autocomplete', el('span', {}, [
       'Checkout may offer browser autofill and Google Maps address suggestions to help you enter a shipping address. Google Maps suggestions are subject to the ',
       el('a', { href: 'https://cloud.google.com/maps-platform/terms', target: '_blank', rel: 'noopener noreferrer' }, 'Google Maps Platform Terms of Service'),
@@ -3785,6 +3835,7 @@ function pagePrivacy() {
       ' and business-data information for details. AI output is not automatically published; you are expected to review it first.'
     ])],
     ['Marketing email', 'If you affirmatively opt in, we use your email address, name and limited account/activity information to send product, listing and marketplace engagement emails, including automated activity messages and occasional administrator announcements. The automated engagement sequence is limited to no more than one message every 48 hours. Our email provider receives the information needed to deliver the message. Every marketing email includes an unsubscribe link and email-preferences link. Opting out of marketing does not stop transactional/account-service messages needed for your account, purchases, security, password resets or enabled unread-message reminders.'],
+    ['Affiliate and referral data', 'If you use a referral or affiliate link, we record attribution, link activity, qualifying membership sales, commission status, Better Credit rewards and related fraud-prevention/audit information. Approved affiliates use Stripe-hosted payout onboarding; Better Real Estate does not store full bank or card credentials.'],
     ['Payments and payouts', el('span', {}, [
       'Stripe processes card payments, subscriptions and seller payout onboarding when those features are enabled. Our server does not receive or store your full card number or full bank-account number. We may receive and store limited payment metadata and processor identifiers, such as card brand, last four digits, expiration date, Stripe customer/payment identifiers, payment status and transaction amount. Stripe may also process transaction, browser, device, IP-address and fraud-prevention signals under its own ',
       el('a', { href: 'https://stripe.com/privacy', target: '_blank', rel: 'noopener noreferrer' }, 'Privacy Policy'),
@@ -4401,7 +4452,7 @@ async function renderFulfilment() {
                 toast(r.payUrl ? 'Created on CJ — use the Pay on CJ button to finish supplier payment.' : 'Created on CJ.', 'ok');
                 render();
               } catch (e) { toast(e.message, 'err'); }
-            } }, '⚡ Create on CJ')
+            } }, ' Create on CJ')
         ) : null,
         trackInput, sel,
         el('button', { onclick: async () => {
@@ -4473,7 +4524,7 @@ async function renderReports() {
 // straight on a page to buy one.
 async function renderBoostPicker() {
   const wrap = el('div', { class: 'page' });
-  wrap.appendChild(el('h2', {}, '⚡ Boost a listing'));
+  wrap.appendChild(el('h2', {}, ' Boost a listing'));
   wrap.appendChild(el('div', { class: 'sub' }, 'Pin one of your listings above organic results for a set window, or grab the one-hour Super Boost top slot.'));
 
   const { listings } = await api('GET', '/api/users/' + state.user.id + '/listings');
@@ -4494,7 +4545,7 @@ async function renderBoostPicker() {
         el('div', { class: 't' }, l.address),
         el('div', { class: 's' }, l.city + (boosted ? ' · currently promoted' : ' · not promoted right now'))
       ]),
-      el('button', { class: boosted ? '' : 'btn-primary', style: boosted ? '' : 'border:none', onclick: () => go('promote', { detailId: l.id }) }, boosted ? 'Extend' : '⚡ Boost')
+      el('button', { class: boosted ? '' : 'btn-primary', style: boosted ? '' : 'border:none', onclick: () => go('promote', { detailId: l.id }) }, boosted ? 'Extend' : ' Boost')
     ]));
   });
   wrap.appendChild(box);

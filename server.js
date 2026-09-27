@@ -60,7 +60,7 @@ const PRICING = {
   marketplaceFeeBps: 700,         // 7% platform take on shop sales
   verificationFee: 2500,          // $25 one-time seller verification
   minWithdrawal: 2000,            // $20 minimum payout
-  referralBonus: 1000,            // $10 credit each side, paid on referee's first purchase
+  referralBonus: 100,             // $1 Better Credit each side, paid once on the referee's first qualifying purchase
   signupTrialDays: 7
 };
 
@@ -243,6 +243,7 @@ function ledgerAdd(db, userId, type, amountCents, description, meta = {}) {
 function balanceOf(db, userId) {
   return db.ledger.filter(l => l.userId === userId).reduce((s, l) => s + l.amount, 0);
 }
+function withdrawableBalanceOf(db,user){ return Math.max(0,balanceOf(db,user.id)-Math.max(0,Number(user.betterCreditCents||0))); }
 function isAdminUser(user) {
   return !!user && user.role === 'admin' && policy.isAdminEmail(user.email);
 }
@@ -462,7 +463,8 @@ app.post('/api/signup', async (req, res) => {
   db.users.push(user);
   const vtok = crypto.randomBytes(24).toString('hex');
   db.tokens.push({ token: vtok, userId: user.id, kind: 'verify', expires: Date.now() + 7 * 86400000 });
-  await saveDB(db);
+  const affCode=String(req.body?.affiliateCode||'').trim().toUpperCase(); const aff=(db.affiliateApplications||[]).find(a=>a.code===affCode&&a.status==='approved'); if(aff&&aff.userId!==user.id) user.affiliateReferrerId=aff.userId;
+    await saveDB(db);
   let verificationEmailSent = false;
   try {
     if (!mailer.configured()) throw new Error('RESEND_API_KEY is not configured for this deployment.');
@@ -1056,6 +1058,8 @@ app.delete('/api/wallet/payment-methods/:id', requireAuth, async (req, res) => {
 app.get('/api/wallet', requireAuth, async (req, res) => {
   res.json({
     balance: balanceOf(req.db, req.user.id),
+    betterCredit: Math.max(0,Number(req.user.betterCreditCents||0)),
+    withdrawableBalance: withdrawableBalanceOf(req.db,req.user),
     ledger: req.db.ledger.filter(l => l.userId === req.user.id).sort((a,b) => new Date(b.at) - new Date(a.at)).slice(0, 100),
     paymentMethods: req.user.paymentMethods,
     payoutMethod: req.user.payoutMethod,
@@ -1098,7 +1102,7 @@ app.get('/api/wallet/payout-status', requireAuth, async (req, res) => {
 });
 app.post('/api/wallet/withdraw', requireAuth, async (req, res) => {
   const amount = Math.round(Number(req.body?.amount) || 0);
-  const bal = balanceOf(req.db, req.user.id);
+  const bal = withdrawableBalanceOf(req.db, req.user);
   if (amount < PRICING.minWithdrawal) return res.status(400).json({ error: `Minimum withdrawal is ${money(PRICING.minWithdrawal)}.` });
   if (amount > bal) return res.status(400).json({ error: 'Withdrawal exceeds your balance.' });
 
@@ -1143,8 +1147,10 @@ function maybePayReferral(db, user) {
   if (user.referredBy && !user.referralPaid) {
     const referrer = db.users.find(u => u.id === user.referredBy);
     if (referrer) {
-      ledgerAdd(db, referrer.id, 'referral', PRICING.referralBonus, 'Referral bonus — ' + user.name);
-      ledgerAdd(db, user.id, 'referral', PRICING.referralBonus, 'Welcome referral credit');
+      ledgerAdd(db, referrer.id, 'referral', PRICING.referralBonus, 'Better Credit — referral · ' + user.name, { nonWithdrawable:true, referredUserId:user.id });
+      ledgerAdd(db, user.id, 'referral', PRICING.referralBonus, 'Better Credit — referred signup', { nonWithdrawable:true, referrerId:referrer.id });
+      referrer.betterCreditCents = Number(referrer.betterCreditCents||0) + PRICING.referralBonus;
+      user.betterCreditCents = Number(user.betterCreditCents||0) + PRICING.referralBonus;
       user.referralPaid = true;
     }
   }
@@ -1180,7 +1186,7 @@ app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
     const amount = period === 'annual' ? tierConfig.annual : tierConfig.monthly;
     const session = await payments.createSubscriptionCheckout(
       req.user,
-      { amountCents: amount, interval: period === 'annual' ? 'year' : 'month', label: tierConfig.label + ' — ' + (period === 'annual' ? 'Annual' : 'Monthly'), tier },
+      { amountCents: amount, interval: period === 'annual' ? 'year' : 'month', label: tierConfig.label + ' — ' + (period === 'annual' ? 'Annual' : 'Monthly'), tier, betterCreditCents: Math.min(amount, Number(req.user.betterCreditCents||0)) },
       appUrl
     );
     await saveDB(req.db); // persists stripeCustomerId if it was just created
@@ -1651,6 +1657,8 @@ function destinationWithRef(pathname, referral) {
 
 app.get('/s/join', async (req, res) => {
   const referral = sanitizedReferral(req.query.ref);
+  const affiliateCode = String(req.query.aff||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g,'').slice(0,24);
+  if (affiliateCode) { try { const db=await loadDB(); const a=(db.affiliateApplications||[]).find(a=>a.code===affiliateCode&&a.status==='approved'); if(a){db.affiliateClicks=db.affiliateClicks||[];db.affiliateClicks.push({id:crypto.randomUUID(),affiliateUserId:a.userId,code:a.code,at:new Date().toISOString()});await saveDB(db);} } catch(e){console.error('[affiliate-click]',e.message);} }
   if (referral) {
     try {
       const db = await loadDB();
@@ -1663,7 +1671,7 @@ app.get('/s/join', async (req, res) => {
       }
     } catch (e) { console.error('[referral-click]', e.message); }
   }
-  const destination = destinationWithRef('/?view=auth', referral);
+  let destination = destinationWithRef('/?view=auth', referral); if(affiliateCode) destination += (destination.includes('?')?'&':'?')+'aff='+encodeURIComponent(affiliateCode);
   res.type('html').send(shareLandingHtml({
     title: 'Join Better Real Estate',
     description: 'A real-estate-only network for investors, wholesalers, buyers, properties and deal distribution.',
@@ -1738,6 +1746,9 @@ app.get('/s/buyer/:id', async (req, res) => {
     destination
   }));
 });
+
+
+app.get('/api/affiliate/track/:code', async(req,res)=>{const a=(req.db.affiliateApplications||[]).find(a=>a.code===String(req.params.code||'').toUpperCase()&&a.status==='approved');if(!a)return res.status(404).json({error:'Affiliate link not found.'});req.db.affiliateClicks=req.db.affiliateClicks||[];req.db.affiliateClicks.push({id:crypto.randomUUID(),affiliateUserId:a.userId,code:a.code,at:new Date().toISOString()});await saveDB(req.db);res.json({ok:true,affiliateUserId:a.userId});});
 
 app.get('/api/referrals/me', requireAuth, async (req, res) => {
   const referrals = (req.db.users || []).filter(u => u.referredBy === req.user.id);
@@ -2129,6 +2140,64 @@ app.delete('/api/deal-calendar/:id', requireAuth, async (req,res)=>{req.db.dealC
 app.get('/api/market-hubs', requireAuth, async (req,res)=>{ const states={}; for(const l of req.db.listings.filter(x=>listingFreshness(x).availabilityStatus!=='archived')){const m=String(l.city||'').match(/,\s*([A-Z]{2})(?:\s|$)/);if(!m)continue;states[m[1]]=states[m[1]]||{state:m[1],listings:0,buyers:0,investors:0};states[m[1]].listings++;} for(const u of req.db.users)for(const st of (u.investmentMarkets||[])){states[st]=states[st]||{state:st,listings:0,buyers:0,investors:0};states[st].investors++;} for(const u of req.db.users)for(const bb of getBuyBoxes(u))for(const c of (bb.cities||[])){const m=String(c).match(/\b([A-Z]{2})\b/);if(m){states[m[1]]=states[m[1]]||{state:m[1],listings:0,buyers:0,investors:0};states[m[1]].buyers++;}} res.json({markets:Object.values(states).sort((a,b)=>(b.listings+b.buyers+b.investors)-(a.listings+a.buyers+a.investors))}); });
 app.get('/api/dashboard', requireAuth, async (req,res)=>{ const markets=req.user.investmentMarkets||[]; const matched=req.db.listings.filter(l=>listingFreshness(l).availabilityStatus!=='archived'&&markets.some(m=>String(l.city||'').includes(m))).length; const mine=req.db.listings.filter(l=>l.ownerId===req.user.id); const buyerMatches=mine.reduce((n,l)=>n+buyerMatchesForListing(req.db,l).length,0); const pendingOffers=req.db.offers.filter(o=>(o.sellerId===req.user.id||o.buyerId===req.user.id)&&o.status==='pending').length; const upcoming=(req.db.dealCalendarEvents||[]).filter(e=>e.userId===req.user.id&&new Date(e.at)>new Date()).sort((a,b)=>new Date(a.at)-new Date(b.at))[0]||null; const seen=new Set(),recentViewed=[];for(const v of req.db.views.filter(v=>v.userId===req.user.id).sort((a,b)=>new Date(b.at)-new Date(a.at))){if(seen.has(v.listingId))continue;const l=req.db.listings.find(x=>x.id===v.listingId);if(l){seen.add(v.listingId);recentViewed.push({id:l.id,address:l.address,city:l.city,asking:l.asking,photo:l.photos?.[0]||null});if(recentViewed.length>=5)break;}} res.json({matched,buyerMatches,pendingOffers,upcoming,recentViewed}); });
 app.get('/api/team-operations', requireAuth, async (req,res)=>{ if(!req.user.companyId)return res.status(403).json({error:'Join a Team workspace to use shared operations.'}); const members=req.db.users.filter(u=>u.companyId===req.user.companyId).map(u=>({id:u.id,name:u.name,username:u.username})); const deals=(req.db.pipelineDeals||[]).filter(x=>x.companyId===req.user.companyId); const crm=(req.db.buyerCrm||[]).filter(x=>x.companyId===req.user.companyId); const listings=req.db.listings.filter(l=>l.companyId===req.user.companyId); const activity=[...deals.map(d=>({at:d.updatedAt||d.createdAt,text:`Pipeline · ${d.title} · ${d.stage}`})),...crm.map(c=>({at:c.updatedAt||c.createdAt,text:`Buyer CRM · ${c.name} · ${c.status}`})),...listings.map(l=>({at:l.createdAt,text:`Listing posted · ${l.address}`}))].filter(x=>x.at).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,30); res.json({members,deals,activity,analytics:{pipeline:deals.length,buyers:crm.length,listings:listings.length}}); });
+
+
+/* ================= v29 TRANSACTION OS + AFFILIATES ================= */
+const AFFILIATE_RATE_BPS = 3000; // 30.00% — versioned terms below
+const AFFILIATE_HOLD_DAYS = 14;
+function safeText(v,n=500){ return String(v||'').trim().slice(0,n); }
+function canAccessDeal(db,user,listingId){
+  const l=db.listings.find(x=>x.id===listingId); if(!l)return false;
+  return canManageListing(db,user,l) || db.offers.some(o=>o.listingId===listingId&&(o.buyerId===user.id||o.sellerId===user.id)) || (db.dealCollaborators||[]).some(c=>c.listingId===listingId&&c.userId===user.id&&c.status==='active');
+}
+function logDealActivity(db, listingId, user, kind, text, meta={}){ db.dealActivity=db.dealActivity||[]; db.dealActivity.push({id:crypto.randomUUID(),listingId,userId:user?.id||null,userName:user?.name||'System',kind,text:safeText(text,500),meta,at:new Date().toISOString()}); }
+function affiliateTerms(){ return {version:'2026-09-27-v1',rateBps:AFFILIATE_RATE_BPS,ratePct:30,holdDays:AFFILIATE_HOLD_DAYS,summary:'30% of eligible Better Real Estate membership revenue. Commissions are held before withdrawal and may be reversed for refunds, disputes, fraud or ineligible sales.'}; }
+function affiliateForUser(db,userId){return (db.affiliateApplications||[]).find(a=>a.userId===userId&&a.status==='approved')||null;}
+function affiliateCommission(db,user,amountCents,sourceId,tier){
+  if(!user?.affiliateReferrerId||!amountCents||amountCents<1)return null;
+  const app=affiliateForUser(db,user.affiliateReferrerId); const currentTerms=affiliateTerms(); if(!app||app.userId===user.id||!app.termsAcceptedAt||app.termsVersion!==currentTerms.version||Number(app.rateBps)!==currentTerms.rateBps)return null;
+  db.affiliateCommissions=db.affiliateCommissions||[];
+  if(db.affiliateCommissions.some(c=>c.sourceId===sourceId))return null;
+  const amount=Math.floor(Number(amountCents)*Number(app.rateBps||AFFILIATE_RATE_BPS)/10000), now=new Date();
+  const row={id:crypto.randomUUID(),affiliateUserId:app.userId,customerUserId:user.id,sourceId,tier:tier||user.plan||'pro',grossCents:Number(amountCents),rateBps:Number(app.rateBps||AFFILIATE_RATE_BPS),amountCents:amount,status:'pending',createdAt:now.toISOString(),availableAt:new Date(now.getTime()+AFFILIATE_HOLD_DAYS*86400000).toISOString(),termsVersion:app.termsVersion||affiliateTerms().version};
+  db.affiliateCommissions.push(row); return row;
+}
+function affiliateBalances(db,userId){const rows=(db.affiliateCommissions||[]).filter(c=>c.affiliateUserId===userId);const now=Date.now();for(const c of rows)if(c.status==='pending'&&new Date(c.availableAt).getTime()<=now)c.status='available';const sum=st=>rows.filter(c=>c.status===st).reduce((n,c)=>n+Number(c.amountCents||0),0);return {pending:sum('pending'),available:sum('available'),paid:sum('paid'),reversed:sum('reversed'),rows};}
+
+app.get('/api/transaction-hub', requireAuth, async (req,res)=>{
+ const uid=req.user.id,companyId=req.user.companyId||null,scope=x=>x.userId===uid||(companyId&&x.companyId===companyId);
+ res.json({contacts:(req.db.relationshipContacts||[]).filter(scope),tasks:(req.db.dealTasks||[]).filter(x=>scope(x)&&x.status!=='done'),fileRequests:(req.db.fileRequests||[]).filter(x=>x.requestedBy===uid||x.requestedFrom===uid),credentials:(req.db.buyerCredentials||[]).filter(x=>x.userId===uid),intake:(req.db.intakeSubmissions||[]).filter(x=>x.ownerId===uid),outcomes:(req.db.dealOutcomes||[]).filter(x=>x.userId===uid||(companyId&&x.companyId===companyId))});
+});
+app.post('/api/contacts', requireAuth, async(req,res)=>{req.db.relationshipContacts=req.db.relationshipContacts||[];const b=req.body||{},row={id:crypto.randomUUID(),userId:req.user.id,companyId:b.shared&&req.user.companyId?req.user.companyId:null,name:safeText(b.name,100),email:safeText(b.email,160),phone:safeText(b.phone,50),tags:(Array.isArray(b.tags)?b.tags:[]).map(x=>safeText(x,40)).slice(0,12),markets:(Array.isArray(b.markets)?b.markets:[]).map(x=>safeText(x,40)).slice(0,12),notes:safeText(b.notes,1500),nextFollowUp:b.nextFollowUp&&Number.isFinite(new Date(b.nextFollowUp).getTime())?new Date(b.nextFollowUp).toISOString():null,lastContactAt:new Date().toISOString(),createdAt:new Date().toISOString()};if(!row.name)return res.status(400).json({error:'Contact name is required.'});req.db.relationshipContacts.push(row);await saveDB(req.db);res.json({contact:row});});
+app.patch('/api/contacts/:id', requireAuth, async(req,res)=>{const x=(req.db.relationshipContacts||[]).find(x=>x.id===req.params.id&&(x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId)));if(!x)return res.status(404).json({error:'Contact not found.'});for(const k of ['name','email','phone','notes'])if(k in req.body)x[k]=safeText(req.body[k],k==='notes'?1500:160);if('nextFollowUp'in req.body)x.nextFollowUp=req.body.nextFollowUp?new Date(req.body.nextFollowUp).toISOString():null;x.updatedAt=new Date().toISOString();await saveDB(req.db);res.json({contact:x});});
+app.post('/api/deal-tasks', requireAuth, async(req,res)=>{req.db.dealTasks=req.db.dealTasks||[];const b=req.body||{},listingId=safeText(b.listingId,80);if(listingId&&!canAccessDeal(req.db,req.user,listingId))return res.status(403).json({error:'You do not have access to that deal.'});const row={id:crypto.randomUUID(),userId:req.user.id,companyId:req.user.companyId||null,listingId,title:safeText(b.title,140),assignedTo:safeText(b.assignedTo,80)||req.user.id,dueAt:b.dueAt?new Date(b.dueAt).toISOString():null,status:'open',createdAt:new Date().toISOString()};if(!row.title)return res.status(400).json({error:'Task title is required.'});req.db.dealTasks.push(row);if(listingId)logDealActivity(req.db,listingId,req.user,'task',`Task created · ${row.title}`);await saveDB(req.db);res.json({task:row});});
+app.patch('/api/deal-tasks/:id', requireAuth, async(req,res)=>{const x=(req.db.dealTasks||[]).find(x=>x.id===req.params.id&&(x.userId===req.user.id||x.assignedTo===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId)));if(!x)return res.status(404).json({error:'Task not found.'});if(req.body.status)x.status=['open','done'].includes(req.body.status)?req.body.status:x.status;if(req.body.title)x.title=safeText(req.body.title,140);x.updatedAt=new Date().toISOString();if(x.listingId)logDealActivity(req.db,x.listingId,req.user,'task',`${x.status==='done'?'Completed':'Updated'} · ${x.title}`);await saveDB(req.db);res.json({task:x});});
+app.get('/api/deals/:listingId/activity', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});res.json({activity:(req.db.dealActivity||[]).filter(x=>x.listingId===req.params.listingId).sort((a,b)=>String(b.at).localeCompare(String(a.at)))});});
+app.post('/api/deals/:listingId/file-requests', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});req.db.fileRequests=req.db.fileRequests||[];const b=req.body||{},row={id:crypto.randomUUID(),listingId:req.params.listingId,requestedBy:req.user.id,requestedFrom:safeText(b.requestedFrom,80),label:safeText(b.label,120)||'Requested document',status:'open',createdAt:new Date().toISOString()};if(!row.requestedFrom)return res.status(400).json({error:'Choose who should provide the document.'});req.db.fileRequests.push(row);logDealActivity(req.db,row.listingId,req.user,'file-request',`Requested document · ${row.label}`);await saveDB(req.db);res.json({request:row});});
+app.post('/api/credentials', requireAuth, async(req,res)=>{req.db.buyerCredentials=req.db.buyerCredentials||[];const b=req.body||{},row={id:crypto.randomUUID(),userId:req.user.id,type:['proof-of-funds','preapproval','entity','other'].includes(b.type)?b.type:'proof-of-funds',label:safeText(b.label,120)||'Buyer credential',note:safeText(b.note,600),verified:false,createdAt:new Date().toISOString()};req.db.buyerCredentials.push(row);await saveDB(req.db);res.json({credential:row});});
+app.post('/api/deals/:listingId/collaborators', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the deal owner/team can add collaborators.'});const target=req.db.users.find(u=>u.id===req.body?.userId);if(!target)return res.status(404).json({error:'User not found.'});req.db.dealCollaborators=req.db.dealCollaborators||[];let row=req.db.dealCollaborators.find(c=>c.listingId===l.id&&c.userId===target.id);if(!row){row={id:crypto.randomUUID(),listingId:l.id,userId:target.id,role:safeText(req.body?.role,60)||'Collaborator',status:'active',addedBy:req.user.id,createdAt:new Date().toISOString()};req.db.dealCollaborators.push(row);}logDealActivity(req.db,l.id,req.user,'collaborator',`${target.name} added as ${row.role}`);await saveDB(req.db);res.json({collaborator:row});});
+app.post('/api/deals/:listingId/outcome', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});req.db.dealOutcomes=req.db.dealOutcomes||[];const b=req.body||{},row={id:crypto.randomUUID(),listingId:req.params.listingId,userId:req.user.id,companyId:req.user.companyId||null,status:['closed','dead','assigned','sold','held'].includes(b.status)?b.status:'closed',purchase:Number(b.purchase)||0,rehab:Number(b.rehab)||0,holding:Number(b.holding)||0,closing:Number(b.closing)||0,resale:Number(b.resale)||0,assignmentFee:Number(b.assignmentFee)||0,notes:safeText(b.notes,1200),createdAt:new Date().toISOString()};row.profit=row.resale+row.assignmentFee-row.purchase-row.rehab-row.holding-row.closing;req.db.dealOutcomes.push(row);logDealActivity(req.db,row.listingId,req.user,'outcome',`Deal marked ${row.status}`);await saveDB(req.db);res.json({outcome:row});});
+
+app.get('/api/deals/:listingId/comp-board', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});const board=(req.db.compBoards||[]).find(x=>x.listingId===req.params.listingId)||{listingId:req.params.listingId,comps:[],notes:''};res.json({board});});
+app.post('/api/deals/:listingId/comp-board', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});req.db.compBoards=req.db.compBoards||[];let board=req.db.compBoards.find(x=>x.listingId===req.params.listingId);if(!board){board={id:crypto.randomUUID(),listingId:req.params.listingId,comps:[],notes:'',createdAt:new Date().toISOString()};req.db.compBoards.push(board);}if(Array.isArray(req.body?.comps))board.comps=req.body.comps.slice(0,30).map(c=>({address:safeText(c.address,180),salePrice:Number(c.salePrice)||0,distance:safeText(c.distance,40),notes:safeText(c.notes,300),included:c.included!==false}));if('notes'in(req.body||{}))board.notes=safeText(req.body.notes,2000);board.updatedAt=new Date().toISOString();logDealActivity(req.db,req.params.listingId,req.user,'comps','Collaborative comp board updated');await saveDB(req.db);res.json({board});});
+app.get('/api/service-providers', requireAuth, async(req,res)=>{const q=safeText(req.query.q,80).toLowerCase(),market=safeText(req.query.market,40).toUpperCase();const rows=req.db.users.filter(u=>u.id!==req.user.id&&u.settings?.serviceProvider===true).filter(u=>!q||[u.name,u.bio,...(u.settings?.serviceTypes||[])].join(' ').toLowerCase().includes(q)).filter(u=>!market||(u.investmentMarkets||[]).includes(market)).slice(0,100).map(publicUser);res.json({providers:rows});});
+
+app.get('/api/offers/compare/:listingId', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the seller/team can compare offers.'});res.json({listing:{id:l.id,address:l.address},offers:req.db.offers.filter(o=>o.listingId===l.id).sort((a,b)=>Number(b.amount)-Number(a.amount))});});
+app.get('/api/buyer-matches/:listingId', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the listing owner/team can view buyer matches.'});const rows=buyerMatchesForListing(req.db,l).map(x=>{const u=req.db.users.find(u=>u.id===(x.userId||x.id));const reasons=[];if(u?.investmentMarkets?.some(m=>String(l.city||'').includes(m)))reasons.push('Works in this market');if(getBuyBoxes(u||{}).some(bb=>(bb.cities||[]).some(c=>String(l.city||'').toLowerCase().includes(String(c).toLowerCase()))))reasons.push('Buy box location match');if((req.db.saves||[]).some(s=>s.userId===u?.id))reasons.push('Active property saver');return {...x,reasons:reasons.length?reasons:['Matches stated buying criteria']};});res.json({matches:rows});});
+
+app.get('/api/intake-link', requireAuth, async(req,res)=>{if(!req.user.intakeCode)req.user.intakeCode=crypto.randomBytes(8).toString('hex');await saveDB(req.db);res.json({code:req.user.intakeCode,url:`${appBaseUrl()}/?view=intake&code=${req.user.intakeCode}`});});
+app.get('/api/intake/:code', async(req,res)=>{const owner=req.db.users.find(u=>u.intakeCode===req.params.code);if(!owner)return res.status(404).json({error:'Intake link not found.'});res.json({owner:{name:owner.name,username:owner.username||null,avatarUrl:owner.avatarUrl||null}});});
+app.post('/api/intake/:code', async(req,res)=>{const owner=req.db.users.find(u=>u.intakeCode===req.params.code);if(!owner)return res.status(404).json({error:'Intake link not found.'});req.db.intakeSubmissions=req.db.intakeSubmissions||[];const b=req.body||{},row={id:crypto.randomUUID(),ownerId:owner.id,name:safeText(b.name,100),email:safeText(b.email,160),phone:safeText(b.phone,50),address:safeText(b.address,180),asking:Number(b.asking)||0,notes:safeText(b.notes,1500),status:'new',createdAt:new Date().toISOString()};if(!row.name||!row.address)return res.status(400).json({error:'Name and property address are required.'});req.db.intakeSubmissions.push(row);await saveDB(req.db);res.json({ok:true});});
+
+app.get('/api/export/:kind', requireAuth, async(req,res)=>{let rows=[];if(req.params.kind==='contacts')rows=(req.db.relationshipContacts||[]).filter(x=>x.userId===req.user.id);else if(req.params.kind==='pipeline')rows=(req.db.pipelineDeals||[]).filter(x=>x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId));else if(req.params.kind==='outcomes')rows=(req.db.dealOutcomes||[]).filter(x=>x.userId===req.user.id);else return res.status(400).json({error:'Unknown export.'});const keys=[...new Set(rows.flatMap(x=>Object.keys(x).filter(k=>!['notes'].includes(k))))];const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';res.type('text/csv').setHeader('Content-Disposition',`attachment; filename="better-${req.params.kind}.csv"`);res.send([keys.map(esc).join(','),...rows.map(r=>keys.map(k=>esc(r[k])).join(','))].join('\n'));});
+
+app.get('/api/affiliate/me', requireAuth, async(req,res)=>{const appRow=(req.db.affiliateApplications||[]).find(a=>a.userId===req.user.id)||null,bal=affiliateBalances(req.db,req.user.id),clicks=(req.db.affiliateClicks||[]).filter(x=>x.affiliateUserId===req.user.id).length,sales=bal.rows.length;res.json({application:appRow,terms:affiliateTerms(),metrics:{clicks,sales,pending:bal.pending,available:bal.available,paid:bal.paid,reversed:bal.reversed},commissions:bal.rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,100),link:appRow?.status==='approved'?`${appBaseUrl()}/s/join?aff=${encodeURIComponent(appRow.code)}`:null,payoutConfigured:!!req.user.stripeAccountId});});
+app.post('/api/affiliate/apply', requireAuth, async(req,res)=>{req.db.affiliateApplications=req.db.affiliateApplications||[];let row=req.db.affiliateApplications.find(a=>a.userId===req.user.id);if(row&&['pending','approved'].includes(row.status))return res.status(409).json({error:`Affiliate application is already ${row.status}.`});const b=req.body||{};row={id:crypto.randomUUID(),userId:req.user.id,name:req.user.name,email:req.user.email,status:'pending',audience:safeText(b.audience,800),channels:safeText(b.channels,500),why:safeText(b.why,1000),code:(req.user.username||req.user.referralCode||crypto.randomBytes(5).toString('hex')).replace(/[^a-z0-9_-]/gi,'').toUpperCase().slice(0,24),rateBps:AFFILIATE_RATE_BPS,termsVersion:affiliateTerms().version,termsAcceptedAt:null,createdAt:new Date().toISOString()};req.db.affiliateApplications.push(row);await saveDB(req.db);res.json({application:row});});
+app.post('/api/affiliate/accept-terms', requireAuth, async(req,res)=>{const a=(req.db.affiliateApplications||[]).find(a=>a.userId===req.user.id&&a.status==='approved');if(!a)return res.status(403).json({error:'Approved affiliate access required.'});const t=affiliateTerms();if(req.body?.version!==t.version)return res.status(409).json({error:'Affiliate terms changed. Review the latest terms.'});a.termsVersion=t.version;a.rateBps=t.rateBps;a.termsAcceptedAt=new Date().toISOString();req.db.affiliateTerms=req.db.affiliateTerms||[];req.db.affiliateTerms.push({id:crypto.randomUUID(),userId:req.user.id,version:t.version,rateBps:t.rateBps,acceptedAt:a.termsAcceptedAt});await saveDB(req.db);res.json({ok:true,application:a});});
+app.post('/api/affiliate/payout-onboarding', requireAuth, async(req,res)=>{const a=affiliateForUser(req.db,req.user.id);if(!a||!a.termsAcceptedAt)return res.status(403).json({error:'Approve and accept affiliate terms first.'});const out=await payments.createConnectAccount(req.user,appBaseUrl());await saveDB(req.db);res.json(out);});
+app.post('/api/affiliate/withdraw', requireAuth, async(req,res)=>{const a=affiliateForUser(req.db,req.user.id);if(!a||!a.termsAcceptedAt)return res.status(403).json({error:'Approved affiliate access required.'});const bal=affiliateBalances(req.db,req.user.id),amount=Math.floor(Number(req.body?.amountCents||bal.available));if(amount<100)return res.status(400).json({error:'Minimum affiliate withdrawal is $1.00.'});if(amount>bal.available)return res.status(400).json({error:'Withdrawal exceeds available affiliate earnings.'});if(!req.user.stripeAccountId)return res.status(400).json({error:'Connect a payout account first.'});const status=await payments.connectAccountStatus(req.user.stripeAccountId);if(!status?.payoutsEnabled)return res.status(400).json({error:'Finish payout verification before withdrawing.'});const transfer=await payments.payout(req.user.stripeAccountId,amount);let left=amount;for(const c of bal.rows.filter(c=>c.status==='available').sort((a,b)=>String(a.availableAt).localeCompare(String(b.availableAt)))){if(left<=0)break;const take=Math.min(left,c.amountCents);if(take===c.amountCents)c.status='paid';else{c.amountCents-=take;req.db.affiliateCommissions.push({...c,id:crypto.randomUUID(),amountCents:take,status:'paid',sourceId:c.sourceId+':partial:'+Date.now()});}c.paidAt=new Date().toISOString();c.transferId=transfer.id;left-=take;}await saveDB(req.db);res.json({ok:true,transferId:transfer.id,amountCents:amount});});
+app.get('/api/admin/affiliates', requireAuth, requireAdmin, async(req,res)=>{const apps=(req.db.affiliateApplications||[]).map(a=>{const b=affiliateBalances(req.db,a.userId);return {...a,metrics:{pending:b.pending,available:b.available,paid:b.paid,reversed:b.reversed,sales:b.rows.length}}});res.json({applications:apps,terms:affiliateTerms(),totals:{clicks:(req.db.affiliateClicks||[]).length,commissions:(req.db.affiliateCommissions||[]).length,pending:(req.db.affiliateCommissions||[]).filter(x=>x.status==='pending').reduce((n,x)=>n+x.amountCents,0),paid:(req.db.affiliateCommissions||[]).filter(x=>x.status==='paid').reduce((n,x)=>n+x.amountCents,0)}});});
+app.post('/api/admin/affiliates/:id/status', requireAuth, requireAdmin, async(req,res)=>{const a=(req.db.affiliateApplications||[]).find(a=>a.id===req.params.id);if(!a)return res.status(404).json({error:'Application not found.'});const status=req.body?.status;if(!['approved','denied','suspended','revoked'].includes(status))return res.status(400).json({error:'Invalid status.'});a.status=status;a.reviewedAt=new Date().toISOString();a.reviewedBy=req.user.id;if(status==='approved'){a.rateBps=AFFILIATE_RATE_BPS;a.termsVersion=affiliateTerms().version;a.termsAcceptedAt=null;}await saveDB(req.db);res.json({application:a});});
 
 /* ============================ SELLER ANALYTICS ============================ */
 app.get('/api/listings/:id/analytics', requireAuth, async (req, res) => {
@@ -3362,6 +3431,7 @@ app.post('/api/payments/webhook',
           user.plan = tier;
           user.planPeriod = period;
           user.stripeSubscriptionId = sess.subscription;
+          const creditUsed=Math.max(0,Number(sess.metadata?.betterCreditCents||0)); if(creditUsed && !db.ledger.some(l=>l.meta?.betterCreditSession===sess.id)){ user.betterCreditCents=Math.max(0,Number(user.betterCreditCents||0)-creditUsed); ledgerAdd(db,user.id,'purchase',-creditUsed,'Better Credit applied to membership',{nonWithdrawable:true,betterCreditSession:sess.id}); }
           // Approximate for right now — the invoice.payment_succeeded event
           // below fires moments later with Stripe's exact period end and
           // corrects this. Good enough as a starting value in the meantime.
@@ -3390,6 +3460,7 @@ app.post('/api/payments/webhook',
           const planLabel = user.plan === 'wholesale' ? PRICING.wholesale.label : user.plan === 'platinum' ? PRICING.platinum.label : PRICING.pro.label;
           const isRenewal = db.ledger.some(l => l.userId === user.id && l.description?.startsWith(planLabel));
           ledgerAdd(db, user.id, 'purchase', 0, isRenewal ? `${planLabel} — renewed automatically` : `${planLabel} — subscribed`, { invoiceId: inv.id, charged: inv.amount_paid });
+          affiliateCommission(db,user,Number(inv.amount_paid||0),inv.id,user.plan);
           await saveDB(db);
         }
       }
@@ -3400,8 +3471,10 @@ app.post('/api/payments/webhook',
         if (user) { user.plan = 'free'; user.planUntil = null; user.stripeSubscriptionId = null; syncCompanyMemberEntitlements(db, user); await saveDB(db); }
       }
 
-      if (event.type === 'charge.dispute.created') {
-        console.error('[stripe] CHARGEBACK opened:', event.data.object.id, event.data.object.amount);
+      if (event.type === 'charge.refunded' || event.type === 'charge.dispute.created') {
+        const ch=event.data.object; const customerId=ch.customer || ch?.payment_intent?.customer; const customer=db.users.find(u=>u.stripeCustomerId===customerId);
+        if(customer){ for(const c of (db.affiliateCommissions||[]).filter(c=>c.customerUserId===customer.id&&['pending','available'].includes(c.status))){ c.status='reversed'; c.reversedAt=new Date().toISOString(); c.reversalReason=event.type==='charge.refunded'?'Refund':'Chargeback'; } await saveDB(db); }
+        if(event.type==='charge.dispute.created') console.error('[stripe] CHARGEBACK opened:', ch.id, ch.amount);
       }
     } catch (e) {
       console.error('[stripe] handler error:', e.message);

@@ -1,0 +1,16 @@
+const assert=require('assert'),fs=require('fs');
+const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),store=fs.readFileSync('store.js','utf8'),payments=fs.readFileSync('payments.js','utf8');
+assert(server.includes('referralBonus: 100,'),'Referral reward must be $1');
+assert(server.includes('betterCreditCents')&&server.includes('withdrawableBalanceOf'),'Better Credits must be tracked and non-withdrawable');
+assert(payments.includes("name: 'Better Credit'")&&payments.includes('duration: \'once\''),'Better Credit must be usable on membership checkout');
+for(const t of ['relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateCommissions','affiliateTerms'])assert(store.includes(t),t);
+for(const t of ['/api/transaction-hub','/api/contacts','/api/deal-tasks','/api/deals/:listingId/activity','/api/deals/:listingId/file-requests','/api/credentials','/api/deals/:listingId/collaborators','/api/deals/:listingId/outcome','/api/deals/:listingId/comp-board','/api/offers/compare/:listingId','/api/buyer-matches/:listingId','/api/intake-link','/api/export/:kind','/api/service-providers'])assert(server.includes(t),t);
+for(const t of ['/api/affiliate/apply','/api/affiliate/accept-terms','/api/affiliate/payout-onboarding','/api/affiliate/withdraw','/api/admin/affiliates','AFFILIATE_RATE_BPS = 3000','AFFILIATE_HOLD_DAYS = 14','charge.refunded'])assert(server.includes(t),t);
+assert(server.includes('app.termsVersion!==currentTerms.version'),'Changed affiliate terms must pause earning until accepted');
+assert(app.includes('const TUTORIAL_VERSION = 33;')&&app.includes("release:33,title:'Transaction hub'")&&app.includes("release:33,title:'Affiliate program'"),'Tutorial v33 coverage missing');
+assert(!app.includes("id:'search',title:'Search',desc:'Find properties and people',view:'search'"),'Quick Options must not duplicate Search');
+const qc=app.slice(app.indexOf('function quickOptionCatalog(){'),app.indexOf('function selectedQuickOptions()')); assert(!qc.includes("view:'messages'"),'Quick Options must not duplicate Messages'); assert(!qc.includes("view:'search'"),'Quick Options must not duplicate Search');
+for(const t of ['renderTransactionHub','renderAffiliateCenter','openCommandPalette','Professional services profile','Notification center','Collaborative comp board','Compare offers','Copy public profile'])assert(app.includes(t),t);
+assert(!app.includes('⚡'),'Boost lightning emoji must be removed');
+for(const t of ['.hub-grid','.affiliate-center','.command-palette','.deal-tool-actions'])assert(css.includes(t),t);
+console.log('✓ v29 transaction OS + affiliate acceptance tests passed');

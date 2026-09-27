@@ -80,9 +80,14 @@ async function detachPaymentMethod(pmId) {
 /* ---------------- subscriptions (Better Pro) ----------------
    Builds the price inline instead of requiring a Product/Price to be
    pre-created in the Stripe dashboard — one less manual setup step. */
-async function createSubscriptionCheckout(user, { amountCents, interval, label, tier }, appUrl) {
+async function createSubscriptionCheckout(user, { amountCents, interval, label, tier, betterCreditCents = 0 }, appUrl) {
   if (!stripe) throw new Error('Stripe is not configured.');
   const customerId = await ensureCustomer(user);
+  let discounts;
+  if (betterCreditCents > 0) {
+    const coupon = await stripe.coupons.create({ amount_off: Math.min(amountCents, betterCreditCents), currency: 'usd', duration: 'once', name: 'Better Credit' });
+    discounts = [{ coupon: coupon.id }];
+  }
   return stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
@@ -97,7 +102,8 @@ async function createSubscriptionCheckout(user, { amountCents, interval, label, 
     }],
     success_url: `${appUrl}/?view=upgrade&checkout=success`,
     cancel_url: `${appUrl}/?view=upgrade&checkout=cancelled`,
-    metadata: { userId: user.id, purpose: 'pro_subscription', period: interval === 'year' ? 'annual' : 'monthly', tier: tier || 'pro' }
+    ...(discounts ? { discounts } : {}),
+    metadata: { userId: user.id, purpose: 'pro_subscription', period: interval === 'year' ? 'annual' : 'monthly', tier: tier || 'pro', betterCreditCents: String(Math.min(amountCents, betterCreditCents || 0)) }
   });
 }
 async function cancelSubscription(subscriptionId) {
