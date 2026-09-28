@@ -281,3 +281,12 @@ The Admin Demo Center must remain an obvious complete journey: Create Demo Accou
 - Closed/sold evidence drives ARV; active/pending evidence is market context only. Deduplicate across feeds and surface disagreement rather than blindly averaging.
 - When no live source is configured or a source fails, say so clearly. Never imply that MLS/Zillow was searched when it was not.
 - Tutorial version is 40. Preserve these requirements recursively.
+
+## v29.11 — live property + web intelligence (permanent)
+- Deal Intelligence is evidence-first: query configured Regrid parcel records, every configured authorized RESO/MLS feed, and public web research before AI synthesis.
+- `REGRID_API_TOKEN` is server-only. Never expose it to `public/` or client responses.
+- Public web research uses the existing OpenAI Responses API `web_search` tool. Do not replace this with direct scraping of Zillow/MLS sites or bypass access restrictions.
+- Preserve source URLs/names, retrieval timestamps, source conflicts and errors. Missing facts remain missing.
+- Closed/sold comps drive ARV; active/pending listings are context only. Deduplicate and score comps by recency, distance, size, type, beds/baths and age; discount/reject outliers.
+- If at least two credible researched sold comps survive the deterministic comp engine, its ARV is the working ARV. Otherwise label the AI ARV preliminary and lower confidence.
+- Beds/baths/sqft/year/type should auto-populate from live evidence when present. A known public record returning those fields but displaying blanks is a release-blocking regression.

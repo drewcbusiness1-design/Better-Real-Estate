@@ -1,0 +1,13 @@
+const fs=require('fs'),assert=require('assert');
+const ds=fs.readFileSync('dealSources.js','utf8'),srv=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),env=fs.readFileSync('.env.example','utf8');
+assert(ds.includes('REGRID_API_TOKEN'),'Regrid token must be supported');
+assert(ds.includes('/api/v2/parcels/address'),'Regrid address lookup must be live');
+assert(ds.includes("'x-regrid-token'"),'Regrid credential must stay server-side');
+assert(ds.includes("type:'web_search'"),'Deal intelligence must perform public web research');
+assert(ds.includes('num_bedrooms')&&ds.includes('num_bath'),'Regrid beds/baths must normalize');
+assert(ds.includes('soldComps')&&ds.includes('marketContext'),'Web research must separate sold comps from market context');
+assert(ds.includes('conflicts'),'Cross-source conflicts must be preserved');
+assert(srv.includes('compAnalysis.selected.length>=2'),'Researched comps must drive ARV when enough evidence exists');
+assert(app.includes('Researching property records, authorized MLS sources, the public web and sold comps'),'UI must disclose live research');
+assert(env.includes('REGRID_API_TOKEN='),'Deployment template must document Regrid');
+console.log('v29.11 Regrid + web intelligence tests passed');

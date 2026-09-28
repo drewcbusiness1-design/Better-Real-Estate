@@ -163,3 +163,6 @@ MARKETING_POSTAL_ADDRESS=Your valid business mailing address
 ## Admin unlimited access
 
 Any account whose email is present in `ADMIN_EMAILS` is treated as a permanent admin super-account. Admin access does not expire and does not require Pro or Platinum billing. Admins receive all Pro/Platinum feature gates, unlimited AI listing assistance, unlimited buy boxes, unlimited included listing promotions, and unlimited listing unlock access. This bypass is enforced on the server and remains active as long as the email stays in `ADMIN_EMAILS`. Normal marketplace purchases and other real-world transaction charges are not made free by admin status.
+
+## v29.11 Deal Intelligence
+Set `REGRID_API_TOKEN` in Netlify environment variables for live Regrid parcel/property facts. Keep it server-only. Deal Builder also uses the existing `OPENAI_API_KEY` for public web research through the Responses API web-search tool. Authorized MLS/RESO feeds remain optional via the existing `MLS_RESO_*` variables.

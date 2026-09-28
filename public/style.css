@@ -981,3 +981,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 @media(max-width:430px){.inspector-row>.inspector-actions{grid-template-columns:1fr}}
 /* v29.10 multi-source property evidence */
 .source-evidence-card{display:grid;gap:12px}.sourcechips{display:flex;gap:8px;flex-wrap:wrap}.sourcechip{display:inline-flex;align-items:center;min-height:32px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--soft);font-size:12px;font-weight:700}.evidencefacts{display:grid;gap:4px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
+
+/* v29.11 evidence provenance */
+.evidence-conflicts,.web-evidence-links{margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#2b2b2b);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.web-evidence-links a{font-size:12px;text-decoration:none;padding:7px 10px;border:1px solid var(--border,#333);border-radius:999px;color:inherit;background:var(--card,#171717)}
+.web-evidence-links a:hover{border-color:var(--accent,#e58a2b)}
