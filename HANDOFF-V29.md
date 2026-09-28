@@ -272,3 +272,12 @@ The Admin Demo Center must remain an obvious complete journey: Create Demo Accou
 - Demo Admin must support Enter, Reset Password, Reset State, Convert, and Delete; action rows must never overflow.
 - Dark mode is a full-site release-blocking presentation requirement; no browser-default white/blue controls.
 - Deal Builder must never present address-only AI as verified property intelligence. Verified sold comps use deterministic similarity scoring/outlier handling. Missing facts remain missing. No external property-data provider may be silently introduced; get user approval first.
+
+## v29.10 — AUTHORIZED MLS / MULTI-SOURCE DEAL INTELLIGENCE
+- Deal Intelligence must research configured authorized listing/property evidence before AI reasoning. Evidence collection precedes AI; AI must not fabricate the evidence.
+- `dealSources.js` is the provider-neutral MLS evidence layer. It currently supports Admin-configured RESO Web API feeds through `MLS_RESO_NAME`, `MLS_RESO_BASE_URL`, `MLS_RESO_TOKEN`, or multiple feeds through `MLS_RESO_SOURCES_JSON`.
+- Never scrape Zillow or MLS websites. Zillow/Bridge, MLS Grid, local MLS feeds, ATTOM, Regrid or another paid/external source may be added only after explicit user approval and appropriate access/licensing.
+- When an authorized feed is configured, use sourced subject facts to fill missing beds/baths/living area/year/property type and automatically load closed-sale candidates into the deterministic comp engine. Preserve source, timestamps, listing status and conflicts.
+- Closed/sold evidence drives ARV; active/pending evidence is market context only. Deduplicate across feeds and surface disagreement rather than blindly averaging.
+- When no live source is configured or a source fails, say so clearly. Never imply that MLS/Zillow was searched when it was not.
+- Tutorial version is 40. Preserve these requirements recursively.

@@ -158,16 +158,16 @@ const addressDealSchema = {
   }
 };
 
-async function generateAddressDealAnalysis(address) {
+async function generateAddressDealAnalysis(address, evidence = null) {
   if (!configured()) throw new Error('AI Deal Builder is not configured. Add OPENAI_API_KEY in Netlify.');
   const clean = String(address || '').trim().slice(0, 300);
   if (clean.length < 8) throw new Error('Enter a complete property address.');
   const body = {
     model: OPENAI_MODEL,
     instructions: [
-      'You are the Better Real Estate investor Deal Builder. The user supplies only a property address.',
+      'You are the Better Real Estate investor Deal Builder. Use the supplied property evidence when present; otherwise treat the input as address-only.',
       'Create a preliminary investor analysis: normalized address/property details when reasonably known, an estimated after-repair value range, three rehab planning scenarios, and a concise professional property/deal description.',
-      'This is decision-support, not an appraisal, inspection, MLS record, or verified property report. Never claim that you looked up a public record, MLS record, comparable sale, or live market source unless such data was actually supplied; none is supplied here.',
+      'This is decision-support, not an appraisal or inspection. Never claim a source was checked unless it appears in supplied evidence. Preserve uncertainty and source conflicts.',
       'When an exact property fact is not reliably known from the address/context, use null or an empty string rather than inventing it.',
       'ARV and rehab ARE requested estimates. They may be reasoned estimates, but must be conservative, internally consistent, and accompanied by assumptions/warnings. Do not fabricate named comparable properties or exact sale records.',
       'Rehab scenarios must be light, moderate, and heavy. If square footage is unknown, estimate total rehab conservatively without pretending a precise per-square-foot basis is verified.',
@@ -175,7 +175,7 @@ async function generateAddressDealAnalysis(address) {
       'confidence must be one of: Low, Moderate, High. With address-only input, use High only in exceptional cases.',
       'Return only the requested structured fields.'
     ].join('\n'),
-    input: [{ role:'user', content:[{type:'input_text', text:`Property address: ${clean}`}]}],
+    input: [{ role:'user', content:[{type:'input_text', text:`Property address: ${clean}\nAuthorized evidence (may be empty): ${JSON.stringify(evidence||{}).slice(0,12000)}`}]}],
     text:{format:{type:'json_schema',name:'better_real_estate_address_deal_analysis',schema:addressDealSchema,strict:true}},
     max_output_tokens:1800
   };

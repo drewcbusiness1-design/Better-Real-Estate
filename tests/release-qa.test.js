@@ -22,7 +22,7 @@ for(const route of ["app.get('/api/deal-builder/usage', requireAuth", "app.post(
 assert(server.includes('if (isAdminUser(user) || isPlatinum(user) || isWholesale(user)) return { unlimited:true'),'unlimited tiers mismatch');
 assert(server.includes('limit:5') && server.includes('5-used'),'Pro daily limit mismatch');
 assert(server.includes('dealBuilderTrialUses'),'free trial usage missing');
-const analyzePos=server.indexOf('const analysis=await ai.generateAddressDealAnalysis(address)');
+const analyzePos=server.indexOf('const analysis=await ai.generateAddressDealAnalysis(address,evidence)');
 const chargePos=server.indexOf('req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1');
 assert(analyzePos>=0 && chargePos>analyzePos,'usage must only increment after successful property analysis');
 // Leaderboard copy must match server scoring and tolerate legacy users with no points field.

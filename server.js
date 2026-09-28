@@ -1520,13 +1520,15 @@ app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
   const allowance=dealBuilderAllowance(req.user);
   if(!allowance.unlimited && allowance.remaining<=0) return res.status(403).json({error:isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Plus includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Plus includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.'),code:'DEAL_BUILDER_LIMIT',usage:allowance});
   try {
-    const analysis=await ai.generateAddressDealAnalysis(address); const aiDraft=analysis.description ? { description: analysis.description } : null;
+    const dealSources=require('./dealSources'); const evidence=await dealSources.research(address); const analysis=await ai.generateAddressDealAnalysis(address,evidence); const aiDraft=analysis.description ? { description: analysis.description } : null;
     req.db.dealAnalyses=req.db.dealAnalyses||[]; req.db.dealAnalyses.push({id:crypto.randomUUID(),userId:req.user.id,address,createdAt:new Date().toISOString()});
     const day=new Date().toISOString().slice(0,10);
     if(!allowance.unlimited){ if(isPro(req.user)){ if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;} req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1; } else { req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1; } await saveDB(req.db); }
-    res.json({analysis,aiDraft,usage:dealBuilderAllowance(req.user)});
+    res.json({analysis,aiDraft,evidence,usage:dealBuilderAllowance(req.user)});
   } catch(e){ console.error('[deal builder ai]',e.message); res.status(502).json({error:String(e.message).slice(0,300)}); }
 });
+
+app.get('/api/deal-builder/sources', requireAuth, (req,res)=>{ const ds=require('./dealSources'); res.json({sources:ds.configuredSources()}); });
 
 app.post('/api/deal-builder/comp-analysis', requireAuth, async (req,res)=>{
   try{

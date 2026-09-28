@@ -17,7 +17,7 @@ assert(server.includes("if (mode === 'extend')")&&server.includes("revokeReason 
 assert(app.includes('openAdminAccessModal')&&app.includes('Extend ${adminPlanLabel(u.grant.grantPlan)}')&&app.includes('Replace grant')&&app.includes('Revoke grant'),'Admin access manager must expose grant/replace/extend/revoke');
 assert(app.includes('Founder #${u.founderAward.position}')&&app.includes('First 100 Founders'),'Admin must show Founder positions');
 assert(app.includes('showFounderWelcome')&&app.includes('Copy invite')&&app.includes('Share founder invite'),'Founder share experience missing');
-assert(app.includes('const TUTORIAL_VERSION = 39;')&&app.includes("release:36,title:'Membership access controls'")&&app.includes("release:36,when:()=>!!state.user?.founderLaunchPosition"),'Tutorial v36 must cover the update by access');
+assert(app.includes('const TUTORIAL_VERSION = 40;')&&app.includes("release:36,title:'Membership access controls'")&&app.includes("release:36,when:()=>!!state.user?.founderLaunchPosition"),'Tutorial v36 must cover the update by access');
 assert(css.includes('.admin-access-actions')&&css.includes('align-items:stretch')&&css.includes('.founder-welcome-actions'),'Admin and founder actions need dedicated aligned presentation styles');
 assert(css.includes('.membershiprowactions')&&css.includes('white-space:nowrap'),'Membership action buttons must remain level and non-wrapping');
 assert(social.includes('founderLaunchPosition'),'Founder position must carry into public profiles');

@@ -979,3 +979,5 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 :root[data-theme="dark"] .quick-card,:root[data-theme="dark"] .tutorialcard,:root[data-theme="dark"] .card,:root[data-theme="dark"] .panel,:root[data-theme="dark"] .empty{background:var(--surface);color:var(--ink);border-color:var(--line)}
 @media(max-width:700px){.inspector-row{grid-template-columns:1fr}.inspector-row>.inspector-actions{display:grid;grid-template-columns:1fr 1fr;justify-content:stretch}.inspector-actions .compactbtn{width:100%}.verified-comp-row{align-items:flex-start;flex-direction:column}.verified-comp-row button{width:100%}}
 @media(max-width:430px){.inspector-row>.inspector-actions{grid-template-columns:1fr}}
+/* v29.10 multi-source property evidence */
+.source-evidence-card{display:grid;gap:12px}.sourcechips{display:flex;gap:8px;flex-wrap:wrap}.sourcechip{display:inline-flex;align-items:center;min-height:32px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--soft);font-size:12px;font-weight:700}.evidencefacts{display:grid;gap:4px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
