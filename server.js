@@ -1515,18 +1515,54 @@ function dealBuilderAllowance(user) {
 app.get('/api/deal-builder/usage', requireAuth, (req,res) => res.json({ usage:dealBuilderAllowance(req.user) }));
 app.get('/api/tools/usage', requireAuth, (req,res)=>res.json({ dealBuilder:dealBuilderAllowance(req.user), listingAi:plusToolAllowance(req.user,'listingAi',2), dispoAi:plusToolAllowance(req.user,'dispoAi',3) }));
 function dealBuilderLimitError(req,allowance){return isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Plus includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Plus includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.');}
+const DEAL_RESEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const DEAL_RESEARCH_MIN_REFRESH_MS = 10 * 60 * 1000;
 app.post('/api/deal-builder/research', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
   const allowance=dealBuilderAllowance(req.user); if(!allowance.unlimited&&allowance.remaining<=0)return res.status(403).json({error:dealBuilderLimitError(req,allowance),code:'DEAL_BUILDER_LIMIT',usage:allowance});
-  try{const dealSources=require('./dealSources'),intelligence=require('./dealIntelligence'),evidence=await dealSources.research(address);evidence.compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]);res.json({address,evidence,usage:allowance});}catch(e){console.error('[deal builder research]',e.message);res.status(502).json({error:`Property research failed: ${String(e.message).slice(0,240)}`});}
+  try{
+    const dealSources=require('./dealSources'),intelligence=require('./dealIntelligence'),key=dealSources.cacheKey(address),now=Date.now(),forceRefresh=req.body?.forceRefresh===true;
+    req.db.dealResearchCache=req.db.dealResearchCache||[];
+    let cached=req.db.dealResearchCache.find(x=>x.key===key),age=cached?now-new Date(cached.retrievedAt||0).getTime():Infinity;
+    if(cached && age<DEAL_RESEARCH_CACHE_TTL_MS && (!forceRefresh || age<DEAL_RESEARCH_MIN_REFRESH_MS)){
+      const evidence=JSON.parse(JSON.stringify(cached.evidence||{})); evidence.cache={hit:true,retrievedAt:cached.retrievedAt,ageMs:age,refreshProtected:forceRefresh&&age<DEAL_RESEARCH_MIN_REFRESH_MS};
+      return res.json({address,evidence,usage:allowance});
+    }
+    const evidence=await dealSources.research(address);evidence.compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]);evidence.cache={hit:false,retrievedAt:evidence.retrievedAt||new Date().toISOString(),ageMs:0};
+    const row={id:cached?.id||crypto.randomUUID(),key,address,retrievedAt:evidence.retrievedAt||new Date().toISOString(),evidence:JSON.parse(JSON.stringify(evidence))};
+    if(cached)Object.assign(cached,row);else req.db.dealResearchCache.push(row);
+    const cutoff=Date.now()-7*24*60*60*1000;req.db.dealResearchCache=req.db.dealResearchCache.filter(x=>new Date(x.retrievedAt||0).getTime()>=cutoff).sort((a,b)=>String(b.retrievedAt).localeCompare(String(a.retrievedAt))).slice(0,500);
+    await saveDB(req.db);
+    res.json({address,evidence,usage:allowance});
+  }catch(e){console.error('[deal builder research]',e.message);res.status(502).json({error:`Property research failed: ${String(e.message).slice(0,240)}`});}
 });
 app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
-  if(!ai.configured()) return res.status(503).json({error:'AI Deal Builder is not configured. Add OPENAI_API_KEY in Netlify.'});
   const allowance=dealBuilderAllowance(req.user); if(!allowance.unlimited&&allowance.remaining<=0)return res.status(403).json({error:dealBuilderLimitError(req,allowance),code:'DEAL_BUILDER_LIMIT',usage:allowance});
   try {
-    const evidence=(req.body?.evidence&&typeof req.body.evidence==='object')?req.body.evidence:{}; const intelligence=require('./dealIntelligence'); const compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]); evidence.compAnalysis=compAnalysis; const analysis=await ai.generateAddressDealAnalysis(address,evidence); if(compAnalysis.estimate && compAnalysis.selected.length>=2){ analysis.arv={estimate:compAnalysis.estimate,low:compAnalysis.low,high:compAnalysis.high}; analysis.confidence=compAnalysis.confidence; analysis.arvMethod='Similarity-weighted researched sold comps'; } else { analysis.arvMethod='AI preliminary estimate — insufficient researched sold comps'; } const aiDraft=analysis.description ? { description: analysis.description } : null;
-    req.db.dealAnalyses=req.db.dealAnalyses||[]; req.db.dealAnalyses.push({id:crypto.randomUUID(),userId:req.user.id,address,createdAt:new Date().toISOString()}); const day=new Date().toISOString().slice(0,10); if(!allowance.unlimited){if(isPro(req.user)){if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;}req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1;}else req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1;await saveDB(req.db);} res.json({analysis,aiDraft,evidence,usage:dealBuilderAllowance(req.user)});
+    const evidence=(req.body?.evidence&&typeof req.body.evidence==='object')?req.body.evidence:{}; const intelligence=require('./dealIntelligence'); const compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]); evidence.compAnalysis=compAnalysis;
+    const verified=evidence.subject||{},coreFields=['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType'];
+    const enoughIdentity=Boolean(evidence.identity?.sufficientForValuation);
+    const readyForAnalysis=Boolean(enoughIdentity && compAnalysis.estimate && compAnalysis.selected.length>=2);
+    // Property truth and comp evidence are gates, not suggestions. If Better cannot
+    // corroborate the subject AND two credible sold comps, do not spend another AI call
+    // producing an analysis that would look authoritative but must later be withheld.
+    let analysis;
+    if(!readyForAnalysis){
+      analysis={provider:'Better Real Estate Evidence Engine',generatedAt:new Date().toISOString(),subject:{formattedAddress:verified.address||address,addressLine1:verified.address||address,city:verified.city||'',state:verified.state||'',propertyType:null,bedrooms:null,bathrooms:null,squareFootage:null,yearBuilt:null},arv:{estimate:null,low:null,high:null},rehab:[],description:'Better could not corroborate enough basic subject-property facts and credible sold comps to produce a responsible full deal analysis yet. Review the Property evidence panel or refresh research later.',confidence:'Low',assumptions:[],warnings:['Property facts or sold comps were missing, single-source only, conflicting, or otherwise insufficient for a defensible analysis.'],comparables:[],rent:null};
+    }else{
+      if(!ai.configured()) return res.status(503).json({error:'AI Deal Builder is not configured. Add OPENAI_API_KEY in Netlify.'});
+      analysis=await ai.generateAddressDealAnalysis(address,evidence);
+    }
+    analysis.subject=analysis.subject||{};for(const field of coreFields)analysis.subject[field]=verified[field]??null;
+    if(verified.address)analysis.subject.formattedAddress=verified.address;if(verified.city)analysis.subject.city=verified.city;if(verified.state)analysis.subject.state=verified.state;
+    // A precise ARV is only allowed when BOTH the subject property is sufficiently
+    // corroborated and at least two researched sold comps survive the comp engine.
+    if(readyForAnalysis){ analysis.arv={estimate:compAnalysis.estimate,low:compAnalysis.low,high:compAnalysis.high}; analysis.confidence=compAnalysis.confidence; analysis.arvMethod='Similarity-weighted researched sold comps'; }
+    else { analysis.arv={estimate:null,low:null,high:null}; analysis.confidence='Low'; analysis.arvMethod='ARV withheld — insufficient verified subject facts and researched sold comps'; analysis.warnings=[...(analysis.warnings||[]),'Better withheld a precise ARV because the subject property and at least two credible sold comps were not corroborated strongly enough.']; }
+    if(evidence.conflicts?.length)analysis.warnings=[...(analysis.warnings||[]),...evidence.conflicts.map(x=>`${x.field} has conflicting source evidence and was not accepted as a verified fact.`)].slice(0,8);
+    const aiDraft=analysis.description ? { description: analysis.description } : null;
+    req.db.dealAnalyses=req.db.dealAnalyses||[]; req.db.dealAnalyses.push({id:crypto.randomUUID(),userId:req.user.id,address,createdAt:new Date().toISOString(),qualified:readyForAnalysis}); const day=new Date().toISOString().slice(0,10); if(readyForAnalysis&&!allowance.unlimited){if(isPro(req.user)){if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;}req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1;}else req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1;await saveDB(req.db);} res.json({analysis,aiDraft,evidence,usage:dealBuilderAllowance(req.user),qualified:readyForAnalysis});
   } catch(e){ console.error('[deal builder ai]',e.message); res.status(502).json({error:`AI synthesis failed after research completed: ${String(e.message).slice(0,240)}`}); }
 });
 

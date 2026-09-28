@@ -7,6 +7,11 @@ A social feed for off-market property, with a marketplace, wallet, promotions an
 Checkout shipping forms support browser saved-address autofill by default. Optional typed address suggestions use Google Places API (New) through the server; set `GOOGLE_MAPS_API_KEY` to enable them. The API key is never sent to the browser.
 
 
+
+## v29.13 — Property Truth Gate
+
+Deal Intelligence now treats subject-property facts as evidence that must be corroborated, not as values to trust because one source returned them. Bedrooms, bathrooms, living area, year built and property type require independent agreement before they appear as verified facts. Conflicts remain visible in Property evidence. A precise ARV is withheld unless the subject is sufficiently verified and at least two credible sold comps survive the comp engine. Research is cached to reduce Netlify/API usage, and insufficient analyses do not burn a successful Free/Plus analysis allowance. Tutorial v42 covers the change.
+
 ## v29.4 — First 100 Founders + Membership Access
 
 The first 100 qualifying non-admin/non-demo accounts receive Founding Member recognition plus 14 days of complimentary Platinum. Admin membership management now supports grant/replace/extend/revoke with paid billing, manual grants and Founder Platinum kept separate. Tutorial v36 covers the update by access. No new environment variable or manual migration is required; the existing store layer creates the `founderAwards` collection automatically.

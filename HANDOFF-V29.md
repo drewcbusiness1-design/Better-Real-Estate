@@ -293,3 +293,17 @@ The Admin Demo Center must remain an obvious complete journey: Create Demo Accou
 
 ## v29.12 reliability rule
 Deal Intelligence must not put live source research plus final AI synthesis into one long serverless request. Keep the two-stage research -> synthesis flow, run independent evidence sources concurrently, bound external-source waits, and degrade individual source failures visibly rather than collapsing the entire analysis. Preserve the user's requirement that analysis cross-reference Regrid, authorized MLS feeds when configured, public web evidence, and credible sold comps before AI synthesis.
+
+
+## v29.13 — PROPERTY TRUTH + RESOURCE-EFFICIENCY RULES (AUTHORITATIVE)
+- Current protected baseline is v29.13, built directly over v29.12. Preserve all prior functionality/rules.
+- Property truth precedes valuation. For bedrooms, bathrooms, living area, year built and property type, a single source is evidence only — including a single exact MLS row. Do not promote it as verified until an independent source corroborates it.
+- Wrong-property/wrong-parcel matches are release blockers. Exact-address match scoring must run before Regrid/MLS records can become the subject.
+- If credible sources disagree (for example 4/4 vs 3/2), preserve every source/value in the evidence panel and withhold the disputed field unless a stronger independent consensus exists. AI must NEVER pick a disputed raw value itself. Blank / Needs confirmation / Conflicting is better than wrong.
+- Server-side verified subject facts overwrite any model-supplied core property facts. Missing/disputed facts remain null.
+- A precise ARV requires BOTH sufficient verified subject identity and at least two credible researched SOLD comps surviving deterministic comp selection. Active/pending listings remain context only. If the gate fails, ARV is withheld rather than displaying fake precision.
+- If the property-truth + comp gate is not satisfied, skip final AI synthesis instead of spending another OpenAI/Netlify call on an analysis that cannot responsibly ship. Withheld/insufficient analyses do not consume the user’s successful Free/Plus Deal Builder allowance.
+- Research caching is mandatory for cost control: normalized-address cache TTL is 24 hours, forced-refresh protection is 10 minutes, in-flight duplicate requests must coalesce, and UI must show the last researched timestamp/cache reuse. Expensive external research must never rerun on ordinary page refresh/navigation while still fresh.
+- Cost/resource efficiency is a permanent pre-build/release criterion. Review Netlify compute/invocations/bandwidth and third-party/API usage before implementing AI, external data, polling, background work, scheduled jobs or other expensive features. Obvious avoidable credit/API consumption is a release-blocking bug. No hidden paid dependency or materially expensive architecture without explicit user approval.
+- Current tutorial version is 42 and explains verified property facts/source disagreement. Every later user-facing Deal Intelligence change must update tutorial/What's New in the same release.
+- Preserve these rules recursively in every future handoff.

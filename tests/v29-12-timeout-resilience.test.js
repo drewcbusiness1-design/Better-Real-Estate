@@ -1,6 +1,6 @@
 const fs=require('fs'),assert=require('assert');
 const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ds=fs.readFileSync('dealSources.js','utf8'),pkg=require('../package.json');
-assert.equal(pkg.version,'2.9.12');
+assert.equal(pkg.version,'2.9.13');
 assert(server.includes("/api/deal-builder/research"),'research must have its own serverless request');
 assert(app.includes("/api/deal-builder/research"),'client must run research separately');
 assert(app.includes('Step 1 of 2')&&app.includes('Step 2 of 2'),'client must show actual progress');
