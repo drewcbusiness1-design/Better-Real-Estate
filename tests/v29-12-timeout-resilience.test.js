@@ -1,0 +1,10 @@
+const fs=require('fs'),assert=require('assert');
+const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ds=fs.readFileSync('dealSources.js','utf8'),pkg=require('../package.json');
+assert.equal(pkg.version,'2.9.12');
+assert(server.includes("/api/deal-builder/research"),'research must have its own serverless request');
+assert(app.includes("/api/deal-builder/research"),'client must run research separately');
+assert(app.includes('Step 1 of 2')&&app.includes('Step 2 of 2'),'client must show actual progress');
+assert(ds.includes('Promise.all([regridJob,webJob,Promise.all(mlsJobs)])'),'independent sources must run concurrently');
+assert(ds.includes('AbortSignal.timeout(8000)')&&ds.includes('AbortSignal.timeout(10000)')&&ds.includes('AbortSignal.timeout(20000)'),'external sources need bounded timeouts');
+assert(server.includes('AI synthesis failed after research completed'),'failure must identify which stage failed');
+console.log('v29.12 timeout resilience regression passed');

@@ -290,3 +290,6 @@ The Admin Demo Center must remain an obvious complete journey: Create Demo Accou
 - Closed/sold comps drive ARV; active/pending listings are context only. Deduplicate and score comps by recency, distance, size, type, beds/baths and age; discount/reject outliers.
 - If at least two credible researched sold comps survive the deterministic comp engine, its ARV is the working ARV. Otherwise label the AI ARV preliminary and lower confidence.
 - Beds/baths/sqft/year/type should auto-populate from live evidence when present. A known public record returning those fields but displaying blanks is a release-blocking regression.
+
+## v29.12 reliability rule
+Deal Intelligence must not put live source research plus final AI synthesis into one long serverless request. Keep the two-stage research -> synthesis flow, run independent evidence sources concurrently, bound external-source waits, and degrade individual source failures visibly rather than collapsing the entire analysis. Preserve the user's requirement that analysis cross-reference Regrid, authorized MLS feeds when configured, public web evidence, and credible sold comps before AI synthesis.
