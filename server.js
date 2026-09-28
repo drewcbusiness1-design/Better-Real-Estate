@@ -1528,6 +1528,14 @@ app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
   } catch(e){ console.error('[deal builder ai]',e.message); res.status(502).json({error:String(e.message).slice(0,300)}); }
 });
 
+app.post('/api/deal-builder/comp-analysis', requireAuth, async (req,res)=>{
+  try{
+    const intelligence=require('./dealIntelligence');
+    const subject=req.body?.subject||{}; const comps=Array.isArray(req.body?.comps)?req.body.comps:[];
+    res.json({compAnalysis:intelligence.analyzeComps(subject,comps)});
+  }catch(e){res.status(400).json({error:String(e.message||e).slice(0,300)});}
+});
+
 app.get('/api/buyer-crm', requireAuth, async (req,res)=>{
   req.db.buyerCrm=req.db.buyerCrm||[]; const rows=req.db.buyerCrm.filter(x=>x.ownerId===req.user.id || (req.user.companyId&&x.companyId===req.user.companyId)).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
   res.json({contacts:rows});
@@ -3365,6 +3373,19 @@ app.post('/api/admin/demo-accounts/:id/reset', requireAuth, requireAdmin, async 
   Object.assign(user,{bio:'',phone:'',location:'',investmentMarkets:[],avatarUrl:null,points:0,buyBoxes:[defaultBuyBox()],settings:defaultSettings(),plan:'free',planUntil:null,trialUntil:null,unlockCredits:PRICING.freeUnlocks,verified:false,paymentMethods:[],payoutMethod:null,marketingOptIn:false,referredBy:null,referralPaid:false,demoResetAt:new Date().toISOString()});
   for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','offers','reviews','views','alerts','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms']) req.db[c]=(req.db[c]||[]).filter(x=>x.userId!==user.id&&x.fromUserId!==user.id&&x.toUserId!==user.id&&x.ownerId!==user.id&&x.buyerId!==user.id&&x.sellerId!==user.id&&x.referrerId!==user.id&&x.affiliateUserId!==user.id);
   req.db.listings=(req.db.listings||[]).filter(x=>x.ownerId!==user.id); req.db.membershipGrants=(req.db.membershipGrants||[]).filter(x=>x.userId!==user.id); await saveDB(req.db); res.json({ok:true});
+});
+app.post('/api/admin/demo-accounts/:id/password', requireAuth, requireAdmin, async (req,res)=>{
+  const user=req.db.users.find(u=>u.id===req.params.id&&isDemoUser(u)); if(!user)return res.status(404).json({error:'Demo account not found.'});
+  const password=String(req.body?.password||''); if(password.length<6)return res.status(400).json({error:'Demo password must be at least 6 characters.'});
+  user.passwordHash=bcrypt.hashSync(password,10); user.demoPasswordResetAt=new Date().toISOString(); user.demoPasswordResetBy=req.user.id; await saveDB(req.db); res.json({ok:true});
+});
+app.delete('/api/admin/demo-accounts/:id', requireAuth, requireAdmin, async (req,res)=>{
+  const idx=req.db.users.findIndex(u=>u.id===req.params.id&&isDemoUser(u)); if(idx<0)return res.status(404).json({error:'Demo account not found.'});
+  const user=req.db.users[idx]; if(String(req.body?.confirmation||'').trim().toUpperCase()!=='DELETE DEMO')return res.status(400).json({error:'Type DELETE DEMO to confirm.'});
+  if(req.session?.userId===user.id)return res.status(409).json({error:'Return to Admin before deleting the demo account.'});
+  const id=user.id;
+  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','offers','reviews','views','alerts','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms']) req.db[c]=(req.db[c]||[]).filter(x=>x.userId!==id&&x.fromUserId!==id&&x.toUserId!==id&&x.ownerId!==id&&x.buyerId!==id&&x.sellerId!==id&&x.referrerId!==id&&x.affiliateUserId!==id);
+  req.db.listings=(req.db.listings||[]).filter(x=>x.ownerId!==id); req.db.membershipGrants=(req.db.membershipGrants||[]).filter(x=>x.userId!==id); req.db.users.splice(idx,1); await saveDB(req.db); res.json({ok:true});
 });
 app.post('/api/admin/demo-accounts/:id/convert', requireAuth, requireAdmin, async (req,res)=>{
   const user=req.db.users.find(u=>u.id===req.params.id&&isDemoUser(u)); if(!user)return res.status(404).json({error:'Demo account not found.'});

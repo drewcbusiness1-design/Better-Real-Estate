@@ -266,3 +266,9 @@ The Admin Demo Center must remain an obvious complete journey: Create Demo Accou
 - Demo Founder welcome Close preview MUST dismiss the current preview instance and MUST NOT reopen on the render immediately following close.
 - Dismissal is browser-session scoped to that exact preview instance; a newly started Founder preview may display again.
 - Preserve real Founder acknowledgement separately from Demo preview dismissal.
+
+
+## v29.9 rules / state
+- Demo Admin must support Enter, Reset Password, Reset State, Convert, and Delete; action rows must never overflow.
+- Dark mode is a full-site release-blocking presentation requirement; no browser-default white/blue controls.
+- Deal Builder must never present address-only AI as verified property intelligence. Verified sold comps use deterministic similarity scoring/outlier handling. Missing facts remain missing. No external property-data provider may be silently introduced; get user approval first.
