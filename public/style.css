@@ -998,3 +998,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 :root[data-theme="dark"] .evidence-field{background:var(--soft);border-color:var(--line)}
 @media(max-width:1000px){.evidence-field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.evidence-field-grid{grid-template-columns:1fr}.evidence-actions{align-items:stretch;flex-direction:column}.evidence-actions .btn-ghost{width:100%}}
+.research-diagnostics{margin-top:4px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
+.research-diagnostics summary{cursor:pointer;font-weight:800;list-style:none}.research-diagnostics summary::-webkit-details-marker{display:none}
+.diagnostic-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.diagnostic-row:first-of-type{margin-top:8px}.diagnostic-row strong{text-transform:capitalize}.diagnostic-row small{opacity:.72;min-width:64px;text-align:right}
+@media(max-width:620px){.diagnostic-row{grid-template-columns:minmax(0,1fr) auto}.diagnostic-row small{grid-column:1/-1;text-align:left}}

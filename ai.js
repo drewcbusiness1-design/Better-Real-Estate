@@ -160,26 +160,34 @@ const addressDealSchema = {
 
 async function generateAddressDealAnalysis(address, evidence = null) {
   if (!configured()) throw new Error('AI Deal Builder is not configured. Add OPENAI_API_KEY in Netlify.');
-  const clean = String(address || '').trim().slice(0, 300);
-  if (clean.length < 8) throw new Error('Enter a complete property address.');
+  const cleanAddress = String(address || '').trim().slice(0, 300);
+  if (cleanAddress.length < 8) throw new Error('Enter a complete property address.');
+  const compAnalysis=evidence?.compAnalysis||{};
+  const evidencePacket={
+    subject:evidence?.subject||{},
+    identity:evidence?.identity||{},
+    fieldEvidence:evidence?.fieldEvidence||{},
+    conflicts:evidence?.conflicts||[],
+    selectedClosedComps:(compAnalysis.selected||[]).slice(0,8).map(c=>({address:c.address,salePrice:c.salePrice,adjustedSalePrice:c.adjustedSalePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,squareFootage:c.squareFootage,bedrooms:c.bedrooms,bathrooms:c.bathrooms,yearBuilt:c.yearBuilt,propertyType:c.propertyType,similarity:c.similarity,source:c.source,reasons:c.reasons})),
+    compResult:{estimate:compAnalysis.estimate,low:compAnalysis.low,high:compAnalysis.high,confidence:compAnalysis.confidence,valuationReady:compAnalysis.valuationReady,method:compAnalysis.method,warnings:compAnalysis.warnings||[]}
+  };
   const body = {
     model: OPENAI_MODEL,
     instructions: [
-      'You are the Better Real Estate investor Deal Builder. Treat only resolved evidence.subject fields as verified subject-property facts. Raw source records and fieldEvidence are audit/conflict context only; never choose a disputed raw value on your own. If evidence.subject leaves a field null, keep it null.',
-      'Create a rigorous investor analysis from the supplied evidence: normalized property facts, comp-supported ARV when credible sold comps exist, three rehab planning scenarios, and a concise professional property/deal description.',
-      'This is decision-support, not an appraisal or inspection. Never claim a source was checked unless it appears in supplied evidence. Preserve uncertainty and source conflicts.',
-      'When an exact property fact is not present in resolved evidence.subject, use null or an empty string rather than inventing it. Never infer bed/bath count, living area, year built, or property type from the address alone.',
-      'ARV and rehab ARE requested estimates. Do not produce false precision when subject identity is weak. For ARV, prioritize credible recent nearby SOLD comps in supplied evidence. Active/pending listings are market context only. Do not fabricate named comparable properties or exact sale records. When comp evidence is thin or conflicting, widen the range and lower confidence. Rehab is a planning estimate and must remain separate from comp-derived ARV.',
-      'Rehab scenarios must be light, moderate, and heavy. If square footage is unknown, estimate total rehab conservatively without pretending a precise per-square-foot basis is verified.',
-      'The description must avoid protected-class/demographic language and must distinguish estimated condition/value statements from known facts.',
-      'confidence must be one of: Low, Moderate, High. With address-only input, use High only in exceptional cases.',
+      'You are Better Real Estate’s final investor-analysis synthesis layer. The evidence engine has already completed source retrieval, property truth resolution, conflict handling, and closed-sale comp selection. Do not redo or override those steps.',
+      'Treat ONLY evidencePacket.subject fields as verified subject-property facts. fieldEvidence/conflicts are audit context. Never select a disputed raw value yourself and never fill a null subject field from memory, assumptions, or general web knowledge.',
+      'The selectedClosedComps list is the complete allowed comparable-sale set for this analysis. Never invent another comp, address, sale price, sale date, distance, source, or citation.',
+      'Use evidencePacket.compResult as the valuation result. Do not independently change the ARV. Explain it in plain investor language and preserve its uncertainty.',
+      'Create three rehab planning scenarios: light, moderate, heavy. They are scenario estimates, not inspection findings. Base ranges conservatively on verified living area/year/type when available and explicitly state that actual condition can materially change repair cost.',
+      'Write a concise professional property/deal description separating verified facts from estimates. Avoid protected-class/demographic language and unsupported neighborhood claims.',
+      'confidence must be Low, Moderate, or High and should not exceed the compResult confidence.',
       'Return only the requested structured fields.'
     ].join('\n'),
-    input: [{ role:'user', content:[{type:'input_text', text:`Property address: ${clean}\nAuthorized evidence (may be empty): ${JSON.stringify(evidence||{}).slice(0,12000)}`}]}],
+    input: [{ role:'user', content:[{type:'input_text', text:`Property address: ${cleanAddress}\nServer-verified evidence packet: ${JSON.stringify(evidencePacket).slice(0,18000)}`}]}],
     text:{format:{type:'json_schema',name:'better_real_estate_address_deal_analysis',schema:addressDealSchema,strict:true}},
-    max_output_tokens:1800
+    max_output_tokens:1500
   };
-  const res=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Authorization':`Bearer ${OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const res=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Authorization':`Bearer ${OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
   const payload=await res.json().catch(()=>({}));
   if(!res.ok) throw new Error((payload?.error?.message||`OpenAI request failed (${res.status}).`).slice(0,300));
   const text=extractOutputText(payload); if(!text) throw new Error('AI returned no property analysis.');

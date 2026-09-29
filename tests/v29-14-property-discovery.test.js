@@ -2,7 +2,7 @@ const assert=require('assert');
 const fs=require('fs');
 const ds=require('../dealSources');
 const pkg=require('../package.json');
-assert.equal(pkg.version,'2.9.14');
+assert.equal(pkg.version,'2.9.15');
 
 // Regrid's documented response commonly stores the display address in properties.headline,
 // outside properties.fields. v29.13 dropped it, causing valid parcels to fail identity matching.
@@ -18,7 +18,7 @@ assert.ok(pick.matchScore>=65);
 // One source is evidence, not verified truth.
 let r=ds._resolveSubjectEvidence({address:'503 W Grand Prairie St, Palestine, IL 62451',regridSubject:{...pick.subject,addressMatchScore:pick.matchScore},web:{factEvidence:[]}});
 assert.equal(r.subject.bedrooms,null);
-assert.equal(r.fieldEvidence.bedrooms.status,'single_source');
+assert.equal(r.fieldEvidence.bedrooms.status,'recorded');
 
 // Independent exact-address corroboration verifies matching facts.
 const web={factEvidence:[
@@ -32,8 +32,8 @@ assert.equal(r.subject.bathrooms,1);
 assert.equal(r.subject.squareFootage,1132);
 
 const src=fs.readFileSync('dealSources.js','utf8');
-assert(src.includes("search_context_size:'medium'"),'web research must use bounded context for Netlify reliability');
-assert(src.includes('AbortSignal.timeout(15000)'),'web research timeout must be bounded');
-assert(src.includes('Zillow automated access requires authorized API/licensing'),'must not pretend to scrape Zillow');
-assert(src.includes('do NOT scrape, crawl, bypass access controls'),'restricted sites must not be scraped');
+assert(src.includes("search_context_size:'low'"),'web research must use bounded context for Netlify reliability');
+assert(src.includes('WEB_TIMEOUT_MS = 12000'),'web research timeout must be bounded');
+assert(src.includes('You may search for the exact address with source names such as Zillow'),'must not pretend to scrape Zillow');
+assert(src.includes('Do not bypass access controls'),'restricted sites must not be scraped');
 console.log('v29.14 property discovery reliability tests passed');

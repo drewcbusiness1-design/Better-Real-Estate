@@ -222,4 +222,7 @@ The v27 release adds activity analytics, investment-market personalization, For 
 
 
 ## Current release
-Better Real Estate v28 — Growth Engine. See `V28-CHANGES.md` and `HANDOFF-V28.md`.
+Better Real Estate v29.15 — Production Deal Intelligence. See `V29.15-CHANGES.md` and `HANDOFF-V29.md`.
+
+### Deal Intelligence production workflow (v29.15)
+Deal Builder uses an evidence-first pipeline: one ranked Regrid full-address parcel lookup by default, configured authorized MLS/RESO evidence when available, field-level corroboration through bounded public web search only where needed, deterministic closed-sale comp screening, then AI synthesis. Regrid Typeahead is optional Enterprise rescue only, not a default extra call. One-source property facts are marked Recorded/Needs confirmation and remain visible only as source evidence; they are not promoted into the verified subject facts or valuation. The server—not the browser—owns valuation evidence. Research and final synthesis are cached; synthesis failures degrade to verified deterministic evidence instead of failing the whole analysis or consuming quota; and Zillow/restricted sites are never directly scraped.

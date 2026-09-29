@@ -166,3 +166,11 @@ Any account whose email is present in `ADMIN_EMAILS` is treated as a permanent a
 
 ## v29.11 Deal Intelligence
 Set `REGRID_API_TOKEN` in Netlify environment variables for live Regrid parcel/property facts. Keep it server-only. Deal Builder also uses the existing `OPENAI_API_KEY` for public web research through the Responses API web-search tool. Authorized MLS/RESO feeds remain optional via the existing `MLS_RESO_*` variables.
+
+### v29.15 Deal Intelligence runtime notes
+- `REGRID_API_TOKEN` remains server-only. Normal submitted-address identity uses one ranked `/parcels/address` request.
+- `REGRID_USE_TYPEAHEAD=true` is optional and should be enabled only if your Regrid account includes the Enterprise Typeahead product. Leave it unset/false otherwise; Better will not waste an unauthorized Typeahead request per property.
+- `OPENAI_API_KEY` remains the existing AI/web-search credential. Web research defaults to `gpt-5.6-luna` with reasoning effort `none` for cost/latency control; `OPENAI_RESEARCH_MODEL` can override that model without a second key. The main synthesis model remains controlled separately by the existing AI configuration.
+- `MLS_RESO_*` variables remain optional and only represent an authorized feed you control/license. Empty variables do not imply MLS access.
+- Never expose tokens in `public/`, client JavaScript, screenshots, diagnostics, or Git.
+- Property evidence is cached for 24 hours, forced refresh is protected for 30 minutes, and final AI synthesis is reused while its evidence fingerprint is unchanged. A failed synthesis enters a 30-minute retry cooldown while still returning verified deterministic evidence/comp results. When both web fact corroboration and web comps are needed, Better uses one combined web-search request.

@@ -1,119 +1,256 @@
 /* Better Real Estate property evidence adapters.
-   v29.14: reliable property discovery, evidence-first identity, exact-match checks,
-   authorized RESO MLS, Regrid parcel facts and OpenAI web research.
-   No direct website scraping. Weak/conflicting facts are preserved as evidence
-   but are NOT promoted to verified subject facts. */
+   v29.15: production evidence-first property intelligence.
+   Approved live sources only: Regrid, configured authorized RESO/MLS feeds,
+   and the existing OpenAI Responses web-search tool. No direct website scraping.
+*/
 
 const inFlightResearch = new Map();
 
+const REGRID_TIMEOUT_MS = 6500;
+const MLS_TIMEOUT_MS = 8000;
+const WEB_TIMEOUT_MS = 12000;
+const REGRID_NEARBY_RADIUS_METERS = 3219; // ~2 miles
+const REGRID_NEARBY_LIMIT = 100;
+
 function clean(v,n=500){return String(v??'').trim().slice(0,n)}
-function num(v){const n=Number(v);return Number.isFinite(n)?n:null}
+function num(v){if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
 function esc(v){return String(v).replace(/'/g,"''")}
 function first(...v){return v.find(x=>x!==undefined&&x!==null&&x!=='')??null}
+function nowIso(){return new Date().toISOString()}
+function elapsed(start){return Date.now()-start}
 function hav(a,b,c,d){if([a,b,c,d].some(x=>!Number.isFinite(Number(x))))return null;const R=3958.8,rad=x=>Number(x)*Math.PI/180,dLat=rad(c-a),dLon=rad(d-b),q=Math.sin(dLat/2)**2+Math.cos(rad(a))*Math.cos(rad(c))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(q))}
 
-const STREET_SUFFIX = new Map(Object.entries({street:'st',st:'st',avenue:'ave',ave:'ave',road:'rd',rd:'rd',drive:'dr',dr:'dr',lane:'ln',ln:'ln',court:'ct',ct:'ct',boulevard:'blvd',blvd:'blvd',place:'pl',pl:'pl',terrace:'ter',ter:'ter',parkway:'pkwy',pkwy:'pkwy',highway:'hwy',hwy:'hwy',circle:'cir',cir:'cir',trail:'trl',trl:'trl',way:'way'}));
-function normText(v){return clean(v,400).toLowerCase().normalize('NFKD').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim()}
-function streetTokens(v){return normText(v).split(' ').filter(Boolean).map(x=>STREET_SUFFIX.get(x)||x).filter(x=>!['unit','apt','apartment','#'].includes(x))}
+const STREET_SUFFIX = new Map(Object.entries({
+  street:'st',st:'st',avenue:'ave',ave:'ave',road:'rd',rd:'rd',drive:'dr',dr:'dr',lane:'ln',ln:'ln',court:'ct',ct:'ct',
+  boulevard:'blvd',blvd:'blvd',place:'pl',pl:'pl',terrace:'ter',ter:'ter',parkway:'pkwy',pkwy:'pkwy',highway:'hwy',hwy:'hwy',
+  circle:'cir',cir:'cir',trail:'trl',trl:'trl',way:'way',route:'rte',rte:'rte',turnpike:'tpke',tpke:'tpke',square:'sq',sq:'sq',
+  expressway:'expy',expy:'expy',freeway:'fwy',fwy:'fwy',crossing:'xing',xing:'xing',crescent:'cres',cres:'cres'
+}));
+const DIRECTIONS = new Map(Object.entries({north:'n',n:'n',south:'s',s:'s',east:'e',e:'e',west:'w',w:'w',northeast:'ne',ne:'ne',northwest:'nw',nw:'nw',southeast:'se',se:'se',southwest:'sw',sw:'sw'}));
+const ORDINALS = new Map(Object.entries({first:'1st',second:'2nd',third:'3rd',fourth:'4th',fifth:'5th',sixth:'6th',seventh:'7th',eighth:'8th',ninth:'9th',tenth:'10th'}));
+function normText(v){return clean(v,500).toLowerCase().normalize('NFKD').replace(/[’']/g,'').replace(/[^a-z0-9\s#-]/g,' ').replace(/\s+/g,' ').trim()}
+function stripUnit(v){return clean(v,350).replace(/(?:\s|,)+(?:apt|apartment|unit|suite|ste|#)\s*[a-z0-9-]+.*$/i,'').trim()}
+function tokenNorm(x){return DIRECTIONS.get(x)||STREET_SUFFIX.get(x)||ORDINALS.get(x)||x}
+function streetTokens(v){return normText(stripUnit(v)).split(' ').filter(Boolean).map(tokenNorm).filter(x=>!['unit','apt','apartment','suite','ste','#'].includes(x))}
 function parseAddress(address){
-  const raw=clean(address,300),parts=raw.split(',').map(x=>x.trim()).filter(Boolean),street=parts[0]||raw;
+  const raw=clean(address,350),parts=raw.split(',').map(x=>x.trim()).filter(Boolean);
   const zip=(raw.match(/\b\d{5}(?:-\d{4})?\b/)||[])[0]||'';
-  const state=((raw.match(/(?:,|\s)\s*([A-Za-z]{2})(?=\s*(?:,|\d{5}|$))/)||[])[1]||'').toUpperCase();
-  let city='';
-  if(parts.length>=2){const stateIx=parts.findIndex(x=>new RegExp(`^${state || '[A-Za-z]{2}'}(?:\\s+\\d{5})?$`,'i').test(x));city=stateIx>0?parts[stateIx-1]:parts[1]}
-  const toks=streetTokens(street),houseNumber=(toks.find(x=>/^\d+[a-z]?$/.test(x))||'').toLowerCase();
+  let state='',stateIx=-1;
+  for(let i=parts.length-1;i>=1;i--){const m=parts[i].match(/^([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/);if(m){state=m[1].toUpperCase();stateIx=i;break}}
+  if(!state){const m=raw.match(/,\s*([A-Za-z]{2})\s+(?:\d{5}(?:-\d{4})?)\b/);if(m)state=m[1].toUpperCase()}
+  // Users often paste a full address without commas. Resolve the trailing state/ZIP and, when
+  // possible, stop the street at a recognized suffix so city tokens do not poison street matching/cache keys.
+  if(!state){const m=raw.match(/\b([A-Za-z]{2})\s+\d{5}(?:-\d{4})?\s*$/);if(m)state=m[1].toUpperCase()}
+  let street=stripUnit(parts[0]||raw),city='';
+  if(parts.length>=2)city=stateIx>0?parts[stateIx-1]:parts[1];
+  if(parts.length===1&&state&&zip){
+    const tail=new RegExp(`\\s+${state}\\s+${zip.replace('-', '\\-')}\\s*$`,'i'),prefix=stripUnit(raw.replace(tail,'').trim()),words=prefix.split(/\s+/);
+    const suffixIx=words.findIndex((w,i)=>i>0&&STREET_SUFFIX.has(normText(w)));
+    if(suffixIx>=1)street=words.slice(0,suffixIx+1).join(' ');else street=prefix;
+  }
+  const toks=streetTokens(street),houseNumber=(toks.find(x=>/^\d+[a-z]?(?:-\d+)?$/.test(x))||'').toLowerCase();
   return {raw,street,city,state,zip,houseNumber,streetTokens:toks.filter(x=>x!==houseNumber)};
 }
-function cacheKey(address){return normText(address).replace(/\b(street|avenue|road|drive|lane|court|boulevard|place|terrace|parkway|highway|circle|trail)\b/g,m=>STREET_SUFFIX.get(m)||m)}
-function recordAddress(rec={}){return [rec.address,rec.city,rec.state,rec.postalCode].filter(Boolean).join(', ')}
-function addressMatchScore(inputAddress,record={}){
+function cacheKey(address){const p=parseAddress(address);return [p.houseNumber,...p.streetTokens,normText(p.city),p.state,p.zip.slice(0,5)].filter(Boolean).join('|')}
+function recordAddress(rec={}){const base=clean(rec.address,300);const hasLocality=base.includes(',');return hasLocality?base:[base,rec.city,rec.state,rec.postalCode].filter(Boolean).join(', ')}
+function addressMatchDetails(inputAddress,record={}){
   const a=typeof inputAddress==='string'?parseAddress(inputAddress):inputAddress;
   const b=parseAddress(recordAddress(record));
-  let score=0;
-  if(a.houseNumber){if(b.houseNumber===a.houseNumber)score+=35;else if(b.houseNumber)return -100}
-  if(a.streetTokens.length){const A=new Set(a.streetTokens),B=new Set(b.streetTokens),hit=[...A].filter(x=>B.has(x)).length,ratio=hit/Math.max(1,A.size);score+=ratio>=.8?30:ratio>=.5?20:ratio>=.3?8:-20}
-  if(a.city&&b.city)score+=normText(a.city)===normText(b.city)?15:-12;
-  if(a.state&&b.state)score+=a.state===b.state?10:-25;
-  if(a.zip&&b.zip)score+=a.zip.slice(0,5)===b.zip.slice(0,5)?10:-20;
-  return score;
+  if(a.houseNumber&&b.houseNumber&&a.houseNumber!==b.houseNumber)return {score:-100,houseExact:false,streetRatio:0,hardMismatch:'house_number'};
+  const A=new Set(a.streetTokens),B=new Set(b.streetTokens),hit=[...A].filter(x=>B.has(x)).length,streetRatio=A.size&&B.size?hit/Math.max(1,Math.min(A.size,B.size)):0;
+  const houseExact=!!a.houseNumber&&b.houseNumber===a.houseNumber;
+  let score=houseExact?40:0;
+  if(A.size)score+=streetRatio>=.95?35:streetRatio>=.8?30:streetRatio>=.6?20:streetRatio>=.4?8:-25;
+  const cityA=normText(a.city),cityB=normText(b.city);if(cityA&&cityB)score+=cityA===cityB?10:-14;
+  if(a.state&&b.state)score+=a.state===b.state?8:-30;
+  if(a.zip&&b.zip)score+=a.zip.slice(0,5)===b.zip.slice(0,5)?7:-25;
+  const hardMismatch=(a.state&&b.state&&a.state!==b.state)||(a.zip&&b.zip&&a.zip.slice(0,5)!==b.zip.slice(0,5));
+  return {score:hardMismatch?-90:score,houseExact,streetRatio,hardMismatch:hardMismatch?'locality':null,parsedInput:a,parsedRecord:b};
+}
+function addressMatchScore(inputAddress,record={}){return addressMatchDetails(inputAddress,record).score}
+
+function configs(){
+  const out=[];
+  if(process.env.MLS_RESO_BASE_URL&&process.env.MLS_RESO_TOKEN)out.push({name:clean(process.env.MLS_RESO_NAME||'Authorized MLS',80),base:clean(process.env.MLS_RESO_BASE_URL,600),token:clean(process.env.MLS_RESO_TOKEN,2000)});
+  if(process.env.MLS_RESO_SOURCES_JSON){try{for(const x of JSON.parse(process.env.MLS_RESO_SOURCES_JSON)||[]){if(x?.name&&x?.baseUrl&&x?.token)out.push({name:clean(x.name,80),base:clean(x.baseUrl,600),token:clean(x.token,2000)})}}catch{}}
+  return out.filter((x,i,a)=>a.findIndex(y=>y.base===x.base)===i);
+}
+function normMls(r,source){return {source,sourceKey:`mls:${normText(source)}`,sourceType:'MLS / RESO',sourceKind:'authorized_mls',verification:'authorized-listing-feed',listingKey:clean(r.ListingKey||r.ListingId||'',120)||null,address:clean(r.UnparsedAddress||[r.StreetNumber,r.StreetDirPrefix,r.StreetName,r.StreetSuffix,r.StreetDirSuffix].filter(Boolean).join(' '),250)||null,city:clean(r.City,100)||null,state:clean(r.StateOrProvince,40)||null,postalCode:clean(r.PostalCode,20)||null,status:clean(r.StandardStatus||r.MlsStatus,60)||null,listPrice:num(r.ListPrice),salePrice:num(r.ClosePrice),saleDate:r.CloseDate||null,bedrooms:num(r.BedroomsTotal),bathrooms:num(r.BathroomsTotalInteger??r.BathroomsFull),squareFootage:num(r.LivingArea),lotSize:num(r.LotSizeSquareFeet),yearBuilt:num(r.YearBuilt),propertyType:clean(r.PropertyType||r.PropertySubType,100)||null,daysOnMarket:num(r.DaysOnMarket),remarks:clean(r.PublicRemarks,1200)||null,latitude:num(r.Latitude),longitude:num(r.Longitude),sourceUpdatedAt:r.ModificationTimestamp||null,retrievedAt:nowIso()}}
+async function queryMls(cfg,filter,top=100){
+  const base=cfg.base.replace(/\/$/,''),fields=['ListingKey','ListingId','UnparsedAddress','StreetNumber','StreetDirPrefix','StreetName','StreetSuffix','StreetDirSuffix','City','StateOrProvince','PostalCode','StandardStatus','MlsStatus','ListPrice','ClosePrice','CloseDate','BedroomsTotal','BathroomsTotalInteger','BathroomsFull','LivingArea','LotSizeSquareFeet','YearBuilt','PropertyType','PropertySubType','DaysOnMarket','PublicRemarks','Latitude','Longitude','ModificationTimestamp'].join(','),u=new URL(base+'/Property');
+  u.searchParams.set('$filter',filter);u.searchParams.set('$select',fields);u.searchParams.set('$top',String(top));
+  const r=await fetch(u,{headers:{Authorization:`Bearer ${cfg.token}`,Accept:'application/json'},signal:AbortSignal.timeout(MLS_TIMEOUT_MS)});if(!r.ok)throw new Error(`${cfg.name} returned ${r.status}`);const j=await r.json();return (Array.isArray(j.value)?j.value:[]).map(x=>normMls(x,cfg.name));
+}
+function bestSubject(rows,address){const scored=(rows||[]).map(x=>{const m=addressMatchDetails(address,x);return {...x,addressMatchScore:m.score,_match:m}}).sort((a,b)=>b.addressMatchScore-a.addressMatchScore);const best=scored[0]||null;return best&&best._match.houseExact&&best._match.streetRatio>=.8&&best.addressMatchScore>=60?best:null}
+
+function contextParts(context){
+  const headline=clean(context?.headline||'',180),parts=headline.split(',').map(x=>x.trim()).filter(Boolean);let city=null,state=null;
+  if(parts.length>=2){city=parts[0]||null;const st=(parts[1].match(/\b[A-Z]{2}\b/i)||[])[0];state=st?st.toUpperCase():null}
+  return {city,state,path:clean(context?.path||'',240)||null};
+}
+function regridFields(feature){const p=feature?.properties||{},f=p.fields||p,c=contextParts(p.context);return {...f,headline:first(f.headline,p.headline),address:first(f.address,p.address,p.headline),ll_uuid:first(f.ll_uuid,p.ll_uuid),path:first(f.path,p.path,c.path),score:num(first(f.score,p.score)),_contextCity:c.city,_contextState:c.state}}
+function normRegrid(feature){
+  const f=regridFields(feature);return {source:'Regrid',sourceKey:'regrid',sourceType:'County / parcel records',sourceKind:'public_record',verification:'public-record-aggregator',parcelId:first(f.parcelnumb,f.state_parcelnumb,f.ll_uuid),llUuid:first(f.ll_uuid),path:first(f.path),regridScore:num(f.score),address:first(f.address,f.situs_address,f.headline),city:first(f.scity,f.city,f._contextCity),state:first(f.state2,f.state,f._contextState),postalCode:first(f.szip,f.zip,f.postcode),bedrooms:num(first(f.num_bedrooms,f.bedrooms,f.beds)),bathrooms:num(first(f.num_bath,f.bathrooms,f.baths,f.total_baths)),squareFootage:num(first(f.recrdareano,f.area_building,f.building_sqft,f.living_area)),lotSize:num(first(f.sqft,f.ll_gissqft,f.lot_sqft)),yearBuilt:num(first(f.yearbuilt,f.year_built)),propertyType:first(f.usedesc,f.usecode,f.structstyle,f.property_type),salePrice:num(first(f.saleprice,f.sale_price,f.last_sale_price)),saleDate:first(f.saledate,f.sale_date,f.last_sale_date),assessedValue:num(first(f.parval,f.assessedval,f.assessed_value)),landValue:num(first(f.landval,f.land_value)),improvementValue:num(first(f.improvval,f.improvement_value)),taxAmount:num(first(f.taxamt,f.tax_amount)),zoning:first(f.zoning_description,f.zoning),owner:first(f.owner),latitude:num(first(f.lat,f.latitude)),longitude:num(first(f.lon,f.longitude)),sourceRecordUrl:first(f.sourceurl,f.source_url),sourceUpdatedAt:first(f.ll_last_refresh,f.ll_updated_at),retrievedAt:nowIso(),rawFieldCount:Object.keys(f).length};
+}
+function selectRegridFeature(features,address){
+  const ranked=(features||[]).map((feature,index)=>{const subject=normRegrid(feature),match=addressMatchDetails(address,subject),providerScore=num(feature?.properties?.score??subject.regridScore),combined=match.score+(providerScore!=null?Math.max(0,Math.min(10,(providerScore-70)/3)):0);return {feature,subject,match,providerScore,combined,index}}).sort((a,b)=>b.combined-a.combined||a.index-b.index);
+  const best=ranked[0]||null;
+  const acceptable=!!best&&best.match.houseExact&&best.match.streetRatio>=.8&&!best.match.hardMismatch&&(best.match.score>=60||(best.index===0&&best.match.score>=55)||(best.providerScore>=85&&best.match.score>=50));
+  return {subject:acceptable?{...best.subject,addressMatchScore:best.match.score,regridScore:best.providerScore,regridRank:best.index+1}:null,matchScore:best?.match.score??null,providerScore:best?.providerScore??null,candidates:ranked.slice(0,5).map(x=>({address:recordAddress(x.subject),parcelId:x.subject.parcelId||null,llUuid:x.subject.llUuid||null,localScore:x.match.score,regridScore:x.providerScore,rank:x.index+1,houseExact:x.match.houseExact,streetRatio:Number(x.match.streetRatio.toFixed(2))}))};
+}
+function regridToken(){return clean(process.env.REGRID_API_TOKEN||process.env.REGRID_TOKEN,3000)}
+async function regridFetch(url,token){const r=await fetch(url,{headers:{Accept:'application/json','x-regrid-token':token},signal:AbortSignal.timeout(REGRID_TIMEOUT_MS)});if(!r.ok)throw new Error(`Regrid returned ${r.status}`);return r.json()}
+async function researchRegrid(address){
+  const token=regridToken();if(!token)return {configured:false,subject:null,error:null,candidates:[],diagnostic:{status:'not_configured'}};
+  const started=Date.now(),u=new URL('https://app.regrid.com/api/v2/parcels/address');u.searchParams.set('query',address);u.searchParams.set('limit','5');u.searchParams.set('return_custom','false');u.searchParams.set('return_field_labels','false');u.searchParams.set('return_geometry','false');u.searchParams.set('return_matched_buildings','false');u.searchParams.set('return_matched_addresses','false');u.searchParams.set('return_enhanced_ownership','false');u.searchParams.set('return_zoning','false');
+  const j=await regridFetch(u,token),features=j?.parcels?.features||j?.features||[],picked=selectRegridFeature(features,address);
+  if(picked.subject)return {configured:true,subject:picked.subject,error:null,count:features.length,matchScore:picked.matchScore,providerScore:picked.providerScore,candidates:picked.candidates,diagnostic:{status:'matched',durationMs:elapsed(started),count:features.length,matchScore:picked.matchScore,regridScore:picked.providerScore,rank:picked.subject.regridRank||null}};
+  // Typeahead is an Enterprise product. It is an optional rescue path only.
+  if(String(process.env.REGRID_USE_TYPEAHEAD||'').toLowerCase()==='true'){
+    try{
+      const t=new URL('https://app.regrid.com/api/v2/parcels/typeahead');t.searchParams.set('query',address);const tj=await regridFetch(t,token),centroids=tj?.parcel_centroids?.features||tj?.features||[];
+      const tr=centroids.map((x,i)=>({x,i,score:num(x?.properties?.score),address:x?.properties?.address,llUuid:x?.properties?.ll_uuid})).filter(x=>x.llUuid).sort((a,b)=>(b.score??0)-(a.score??0));
+      const cand=tr.find(x=>{const m=addressMatchDetails(address,{address:x.address});return m.houseExact&&m.streetRatio>=.8&&!m.hardMismatch&&(x.score==null||x.score>=75)});
+      if(cand){const d=new URL(`https://app.regrid.com/api/v2/parcels/${encodeURIComponent(cand.llUuid)}`);d.searchParams.set('return_custom','false');d.searchParams.set('return_geometry','false');d.searchParams.set('return_matched_buildings','false');d.searchParams.set('return_matched_addresses','false');d.searchParams.set('return_enhanced_ownership','false');d.searchParams.set('return_zoning','false');const dj=await regridFetch(d,token),df=(dj?.parcels?.features||dj?.features||[])[0];if(df){const subject=normRegrid(df),m=addressMatchDetails(address,subject);if(m.houseExact&&m.streetRatio>=.8&&!m.hardMismatch)return {configured:true,subject:{...subject,addressMatchScore:m.score,regridScore:cand.score,regridRank:1},error:null,count:features.length,matchScore:m.score,providerScore:cand.score,candidates:picked.candidates,diagnostic:{status:'matched_typeahead_rescue',durationMs:elapsed(started),matchScore:m.score,regridScore:cand.score}};}}
+    }catch(e){return {configured:true,subject:null,error:`Regrid address results did not pass exact-property checks; optional Typeahead rescue also failed: ${clean(e.message,140)}`,count:features.length,matchScore:picked.matchScore,providerScore:picked.providerScore,candidates:picked.candidates,diagnostic:{status:'no_safe_match',durationMs:elapsed(started),count:features.length,matchScore:picked.matchScore,regridScore:picked.providerScore,typeaheadError:clean(e.message,120)}}}
+  }
+  return {configured:true,subject:null,error:features.length?'Regrid returned parcels, but none passed Better’s exact house/street and locality checks.':'No Regrid parcel matched this address.',count:features.length,matchScore:picked.matchScore,providerScore:picked.providerScore,candidates:picked.candidates,diagnostic:{status:'no_safe_match',durationMs:elapsed(started),count:features.length,matchScore:picked.matchScore,regridScore:picked.providerScore}};
+}
+async function researchRegridNearby(subject){
+  const token=regridToken();if(!token||!Number.isFinite(Number(subject?.latitude))||!Number.isFinite(Number(subject?.longitude)))return {configured:!!token,comps:[],diagnostic:{status:token?'no_coordinates':'not_configured'}};
+  const started=Date.now(),u=new URL('https://app.regrid.com/api/v2/parcels/point');u.searchParams.set('lat',String(subject.latitude));u.searchParams.set('lon',String(subject.longitude));u.searchParams.set('radius',String(REGRID_NEARBY_RADIUS_METERS));u.searchParams.set('limit',String(REGRID_NEARBY_LIMIT));u.searchParams.set('return_geometry','false');u.searchParams.set('return_custom','false');u.searchParams.set('return_matched_buildings','false');u.searchParams.set('return_matched_addresses','false');u.searchParams.set('return_enhanced_ownership','false');u.searchParams.set('return_zoning','false');
+  const j=await regridFetch(u,token),features=j?.parcels?.features||j?.features||[],seen=new Set(),comps=[];
+  for(const f of features){const r=normRegrid(f);if(!r.salePrice||!r.saleDate||!r.address)continue;if(subject.llUuid&&r.llUuid===subject.llUuid)continue;const key=`${normText(r.address)}|${r.salePrice}|${String(r.saleDate).slice(0,10)}`;if(seen.has(key))continue;seen.add(key);r.distanceMiles=hav(subject.latitude,subject.longitude,r.latitude,r.longitude);r.source='Regrid recorded sale';r.sourceKey='regrid';r.sourceType='County / parcel records';r.verification='recorded-sale';comps.push(r)}
+  return {configured:true,comps:comps.sort((a,b)=>(a.distanceMiles??99)-(b.distanceMiles??99)).slice(0,40),diagnostic:{status:'complete',durationMs:elapsed(started),returned:features.length,recordedSales:comps.length,radiusMiles:Number((REGRID_NEARBY_RADIUS_METERS/1609.344).toFixed(1))}};
 }
 
-function configs(){const out=[];if(process.env.MLS_RESO_BASE_URL&&process.env.MLS_RESO_TOKEN)out.push({name:clean(process.env.MLS_RESO_NAME||'Authorized MLS',80),base:clean(process.env.MLS_RESO_BASE_URL,600),token:clean(process.env.MLS_RESO_TOKEN,2000)});if(process.env.MLS_RESO_SOURCES_JSON){try{for(const x of JSON.parse(process.env.MLS_RESO_SOURCES_JSON)||[]){if(x?.name&&x?.baseUrl&&x?.token)out.push({name:clean(x.name,80),base:clean(x.baseUrl,600),token:clean(x.token,2000)})}}catch{}}return out.filter((x,i,a)=>a.findIndex(y=>y.base===x.base)===i)}
-function normMls(r,source){return {source,sourceKey:`mls:${normText(source)}`,sourceType:'MLS / RESO',verification:'authorized-listing-feed',listingKey:clean(r.ListingKey||r.ListingId||'',120)||null,address:clean(r.UnparsedAddress||[r.StreetNumber,r.StreetName,r.StreetSuffix].filter(Boolean).join(' '),250)||null,city:clean(r.City,100)||null,state:clean(r.StateOrProvince,40)||null,postalCode:clean(r.PostalCode,20)||null,status:clean(r.StandardStatus||r.MlsStatus,60)||null,listPrice:num(r.ListPrice),salePrice:num(r.ClosePrice),saleDate:r.CloseDate||null,bedrooms:num(r.BedroomsTotal),bathrooms:num(r.BathroomsTotalInteger??r.BathroomsFull),squareFootage:num(r.LivingArea),lotSize:num(r.LotSizeSquareFeet),yearBuilt:num(r.YearBuilt),propertyType:clean(r.PropertyType||r.PropertySubType,100)||null,daysOnMarket:num(r.DaysOnMarket),remarks:clean(r.PublicRemarks,1200)||null,latitude:num(r.Latitude),longitude:num(r.Longitude),sourceUpdatedAt:r.ModificationTimestamp||null,retrievedAt:new Date().toISOString()}}
-async function queryMls(cfg,filter,top=100){const base=cfg.base.replace(/\/$/,''),fields=['ListingKey','ListingId','UnparsedAddress','StreetNumber','StreetName','StreetSuffix','City','StateOrProvince','PostalCode','StandardStatus','MlsStatus','ListPrice','ClosePrice','CloseDate','BedroomsTotal','BathroomsTotalInteger','BathroomsFull','LivingArea','LotSizeSquareFeet','YearBuilt','PropertyType','PropertySubType','DaysOnMarket','PublicRemarks','Latitude','Longitude','ModificationTimestamp'].join(','),u=new URL(base+'/Property');u.searchParams.set('$filter',filter);u.searchParams.set('$select',fields);u.searchParams.set('$top',String(top));const r=await fetch(u,{headers:{Authorization:`Bearer ${cfg.token}`,Accept:'application/json'},signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error(`${cfg.name} returned ${r.status}`);const j=await r.json();return (Array.isArray(j.value)?j.value:[]).map(x=>normMls(x,cfg.name))}
-function bestSubject(rows,address){const scored=(rows||[]).map(x=>({...x,addressMatchScore:addressMatchScore(address,x)})).sort((a,b)=>b.addressMatchScore-a.addressMatchScore);return scored[0]?.addressMatchScore>=65?scored[0]:null}
-
-function regridFields(feature){const p=feature?.properties||{},f=p.fields||p;return {...f,headline:first(f.headline,p.headline),address:first(f.address,p.address,p.headline),ll_uuid:first(f.ll_uuid,p.ll_uuid),path:first(f.path,p.path)}}
-function normRegrid(feature){const f=regridFields(feature);return {source:'Regrid',sourceKey:'regrid',sourceType:'County / parcel records',verification:'public-record-aggregator',parcelId:first(f.parcelnumb,f.state_parcelnumb,f.ll_uuid),address:first(f.address,f.situs_address,f.headline),city:first(f.scity,f.city),state:first(f.state2,f.state),postalCode:first(f.szip,f.zip),bedrooms:num(first(f.num_bedrooms,f.bedrooms)),bathrooms:num(first(f.num_bath,f.bathrooms)),squareFootage:num(first(f.recrdareano,f.area_building)),lotSize:num(first(f.sqft,f.ll_gissqft,f.lot_sqft)),yearBuilt:num(f.yearbuilt),propertyType:first(f.usedesc,f.usecode,f.structstyle),salePrice:num(f.saleprice),saleDate:first(f.saledate,f.sale_date),assessedValue:num(first(f.parval,f.assessedval,f.assessed_value)),landValue:num(f.landval),improvementValue:num(f.improvval),taxAmount:num(first(f.taxamt,f.tax_amount)),zoning:first(f.zoning_description,f.zoning),owner:first(f.owner),latitude:num(first(f.lat,f.latitude)),longitude:num(first(f.lon,f.longitude)),sourceRecordUrl:first(f.sourceurl,f.source_url),sourceUpdatedAt:first(f.ll_last_refresh,f.ll_updated_at),retrievedAt:new Date().toISOString(),rawFieldCount:Object.keys(f).length}}
-function selectRegridFeature(features,address){const ranked=(features||[]).map((feature,index)=>{const subject=normRegrid(feature),score=addressMatchScore(address,subject);return {feature,subject,score,index}}).sort((a,b)=>b.score-a.score||a.index-b.index);const best=ranked[0]||null;return {subject:best&&best.score>=65?{...best.subject,addressMatchScore:best.score}:null,matchScore:best?.score??null,candidates:ranked.slice(0,5).map(x=>({address:recordAddress(x.subject),parcelId:x.subject.parcelId||null,score:x.score}))}}
-async function researchRegrid(address){const token=clean(process.env.REGRID_API_TOKEN||process.env.REGRID_TOKEN,3000);if(!token)return {configured:false,subject:null,error:null,candidates:[]};const u=new URL('https://app.regrid.com/api/v2/parcels/address');u.searchParams.set('query',address);u.searchParams.set('limit','5');u.searchParams.set('return_custom','false');u.searchParams.set('return_geometry','false');u.searchParams.set('return_matched_buildings','false');u.searchParams.set('return_enhanced_ownership','false');u.searchParams.set('return_zoning','false');const r=await fetch(u,{headers:{Accept:'application/json','x-regrid-token':token},signal:AbortSignal.timeout(8000)});if(!r.ok)throw new Error(`Regrid returned ${r.status}`);const j=await r.json(),features=j?.parcels?.features||j?.features||[],picked=selectRegridFeature(features,address);return {configured:true,subject:picked.subject,error:picked.subject?null:(features.length?'Regrid returned parcels, but none matched the entered address strongly enough.':'No Regrid parcel matched this address.'),count:features.length,matchScore:picked.matchScore,candidates:picked.candidates}}
-
 function extractText(payload){for(const item of payload?.output||[])for(const c of item?.content||[])if(c?.type==='output_text'&&c.text)return c.text;return ''}
-function webSources(payload){const urls=[];for(const item of payload?.output||[]){if(item?.type==='web_search_call')for(const s of item?.action?.sources||[])if(s?.url)urls.push(s.url);for(const c of item?.content||[])for(const a of c?.annotations||[])if(a?.url)urls.push(a.url)}return [...new Set(urls)].slice(0,40)}
+function webSources(payload){const urls=[];for(const item of payload?.output||[]){if(item?.type==='web_search_call')for(const s of item?.action?.sources||[])if(s?.url)urls.push(s.url);for(const c of item?.content||[])for(const a of c?.annotations||[])if(a?.url)urls.push(a.url)}return [...new Set(urls)].slice(0,50)}
 function canonicalUrl(v){try{const u=new URL(v);return `${u.protocol}//${u.hostname.toLowerCase()}${u.pathname.replace(/\/$/,'')}`}catch{return ''}}
 function urlWasActuallySearched(url,sources){const c=canonicalUrl(url);return !!c&&(sources||[]).some(s=>{const x=canonicalUrl(s);return x===c||x.startsWith(c)||c.startsWith(x)})}
-function webReliability(kind){return ({county_assessor:90,public_record:86,broker_listing:80,real_estate_portal:70,other:55})[kind]||55}
-async function researchWeb(address){
-  const key=clean(process.env.OPENAI_API_KEY,3000);if(!key)return {configured:false,facts:null,factEvidence:[],comps:[],sources:[],error:null};
-  const schema={type:'object',additionalProperties:false,required:['factEvidence','soldComps','marketContext','notes'],properties:{factEvidence:{type:'array',maxItems:28,items:{type:'object',additionalProperties:false,required:['field','numberValue','textValue','subjectAddress','sourceUrl','sourceName','sourceKind'],properties:{field:{type:'string',enum:['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType','lastSalePrice','lastSaleDate']},numberValue:{anyOf:[{type:'number'},{type:'null'}]},textValue:{anyOf:[{type:'string'},{type:'null'}]},subjectAddress:{type:'string'},sourceUrl:{type:'string'},sourceName:{type:'string'},sourceKind:{type:'string',enum:['county_assessor','public_record','broker_listing','real_estate_portal','other']}}}},soldComps:{type:'array',maxItems:12,items:{type:'object',additionalProperties:false,required:['address','salePrice','saleDate','bedrooms','bathrooms','squareFootage','yearBuilt','propertyType','sourceUrl'],properties:{address:{type:'string'},salePrice:{type:'number'},saleDate:{type:'string'},bedrooms:{anyOf:[{type:'number'},{type:'null'}]},bathrooms:{anyOf:[{type:'number'},{type:'null'}]},squareFootage:{anyOf:[{type:'number'},{type:'null'}]},yearBuilt:{anyOf:[{type:'number'},{type:'null'}]},propertyType:{anyOf:[{type:'string'},{type:'null'}]},sourceUrl:{type:'string'}}}},marketContext:{type:'array',maxItems:10,items:{type:'object',additionalProperties:false,required:['address','status','price','sourceUrl'],properties:{address:{type:'string'},status:{type:'string'},price:{anyOf:[{type:'number'},{type:'null'}]},sourceUrl:{type:'string'}}}},notes:{type:'array',maxItems:8,items:{type:'string'}}}};
-  const body={model:process.env.OPENAI_MODEL||'gpt-5.6-luna',tools:[{type:'web_search',search_context_size:'medium'}],tool_choice:'required',instructions:[
-    'Research ONLY the exact residential property address supplied. First establish exact-address identity; do not return facts from a nearby or similarly named property.',
-    'Use targeted source discovery for the subject address. Search for county assessor/tax/public-record pages, broker or MLS-syndicated listing pages, Realtor.com, Redfin, Homes.com and other reputable property portals. Zillow may be identified as a navigation/source-discovery URL when surfaced by web search, but do NOT scrape, crawl, bypass access controls, or claim Zillow was directly queried; Zillow automated access requires authorized API/licensing.',
-    'For bedrooms, bathrooms, living square footage and year built, seek at least TWO independent sources when possible. Prefer county/assessor/public records and authorized/broker-published listing pages over portal summaries.',
-    'Keep this lookup focused and fast: basic subject facts and a small set of recent nearby sold comps are higher priority than commentary.',
-    'Return one factEvidence item PER source PER field. Do not merge conflicting values. Do not infer bedrooms from room count, bathrooms from fixture counts, living area from lot size/building footprint, or year built from renovation dates.',
-    'Every factEvidence subjectAddress must be the exact property the source describes. Every sourceUrl must be a URL actually surfaced by web search. Return null/omit evidence rather than guessing.',
-    'Search recent nearby SOLD comparable properties after subject identity. Active/pending listings are market context only, never sold comps. A sold comp needs exact address, closed sale price, sale date and a source URL. Do not invent a close price/date from an asking-price page.',
-    'Do not bypass paywalls, authentication, robots controls or access restrictions.'
-  ].join('\n'),input:`Subject property: ${address}`,text:{format:{type:'json_schema',name:'better_property_web_research',schema,strict:true}},max_output_tokens:1500};
-  const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(15000)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`Web research failed (${r.status}): ${clean(j?.error?.message||'unknown error',180)}`);let parsed=null;try{parsed=JSON.parse(extractText(j))}catch{};const sources=webSources(j);if(!parsed)return {configured:true,facts:null,factEvidence:[],comps:[],sources,error:'Web research returned no structured evidence.'};
-  const factEvidence=(parsed.factEvidence||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)&&addressMatchScore(address,{address:x.subjectAddress})>=55).map(x=>{const value=x.field==='propertyType'||x.field==='lastSaleDate'?clean(x.textValue,120):num(x.numberValue);return {field:x.field,value,subjectAddress:clean(x.subjectAddress,250),source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return clean(x.sourceName,80).toLowerCase()}})()}`,sourceType:'Public web',sourceKind:x.sourceKind,reliability:webReliability(x.sourceKind),sourceUrl:x.sourceUrl,verification:'web-source-specific',retrievedAt:new Date().toISOString()}}).filter(x=>x.value!==null&&x.value!==undefined&&x.value!=='');
+function webReliability(kind){return ({county_assessor:98,public_record:92,broker_listing:86,real_estate_portal:72,other:55})[kind]||55}
+function sourceTier(kind){return ({authorized_mls:4,county_assessor:4,public_record:3,broker_listing:3,real_estate_portal:2,other:1})[kind]||1}
+async function researchWeb(address,{needFacts=true,needComps=true}={}){
+  const key=clean(process.env.OPENAI_API_KEY,3000);if(!key||(!needFacts&&!needComps))return {configured:!!key,skipped:true,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:key?'not_needed':'not_configured'}};
+  const started=Date.now();
+  const schema={type:'object',additionalProperties:false,required:['factEvidence','soldComps','marketContext','notes'],properties:{factEvidence:{type:'array',maxItems:30,items:{type:'object',additionalProperties:false,required:['field','numberValue','textValue','subjectAddress','sourceUrl','sourceName','sourceKind'],properties:{field:{type:'string',enum:['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType','lastSalePrice','lastSaleDate']},numberValue:{anyOf:[{type:'number'},{type:'null'}]},textValue:{anyOf:[{type:'string'},{type:'null'}]},subjectAddress:{type:'string'},sourceUrl:{type:'string'},sourceName:{type:'string'},sourceKind:{type:'string',enum:['county_assessor','public_record','broker_listing','real_estate_portal','other']}}}},soldComps:{type:'array',maxItems:12,items:{type:'object',additionalProperties:false,required:['address','salePrice','saleDate','bedrooms','bathrooms','squareFootage','yearBuilt','propertyType','sourceUrl','sourceName','sourceKind'],properties:{address:{type:'string'},salePrice:{type:'number'},saleDate:{type:'string'},bedrooms:{anyOf:[{type:'number'},{type:'null'}]},bathrooms:{anyOf:[{type:'number'},{type:'null'}]},squareFootage:{anyOf:[{type:'number'},{type:'null'}]},yearBuilt:{anyOf:[{type:'number'},{type:'null'}]},propertyType:{anyOf:[{type:'string'},{type:'null'}]},sourceUrl:{type:'string'},sourceName:{type:'string'},sourceKind:{type:'string',enum:['county_assessor','public_record','broker_listing','real_estate_portal','other']}}}},marketContext:{type:'array',maxItems:8,items:{type:'object',additionalProperties:false,required:['address','status','price','sourceUrl'],properties:{address:{type:'string'},status:{type:'string'},price:{anyOf:[{type:'number'},{type:'null'}]},sourceUrl:{type:'string'}}}},notes:{type:'array',maxItems:8,items:{type:'string'}}}};
+  const requested=[];if(needFacts)requested.push('Verify subject bedrooms, bathrooms, living area, year built, property type');if(needComps)requested.push('Find recent nearby CLOSED/SOLD comparable sales');
+  const body={model:process.env.OPENAI_RESEARCH_MODEL||'gpt-5.6-luna',tools:[{type:'web_search',search_context_size:'low'}],tool_choice:'required',reasoning:{effort:'none'},include:['web_search_call.action.sources'],instructions:[
+    'You are a property-evidence researcher for Better Real Estate. Research ONLY the exact full address supplied. Accuracy and provenance matter more than completeness.',
+    'Use public web search, not direct scraping. Prioritize county assessor/tax/public records, broker/listing pages and reputable real-estate portals. You may search for the exact address with source names such as Zillow, Realtor.com, Redfin or Homes.com, but never claim a site was directly queried unless its URL is actually surfaced by the hosted web-search tool. Do not bypass access controls.',
+    'Exact-property guard: every subject fact must clearly describe the exact house number + street and compatible city/state/ZIP. Never borrow facts from a neighbor or similarly named street.',
+    needFacts?'For subject facts, return one evidence row per source per field. Seek independent corroboration. Do not merge conflicting values. Do not infer beds, baths, living area, year built, or property type.':'Subject facts are already sufficiently corroborated; do not spend search effort collecting them.',
+    needComps?'For sold comps, return only CLOSED sales with an exact comp address, closed price, closed date and source URL. Prefer recent nearby properties similar in type/size/bed-bath. Asking/list prices and active/pending listings are market context only.':'Deterministic closed-sale evidence is already sufficient; do not spend search effort collecting additional sold comps.',
+    'Every sourceUrl must be a URL actually surfaced by the web-search tool. If a fact or sold sale cannot be tied to a surfaced source, omit it.',
+    'Do not invent coordinates, distances, close prices, close dates, source URLs or citations. Return fewer results rather than uncertain results.'
+  ].filter(Boolean).join('\n'),input:`Subject property: ${address}\nNeeded: ${requested.join('; ')}`,text:{format:{type:'json_schema',name:'better_property_web_research',schema,strict:true}},max_output_tokens:1100};
+  const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(WEB_TIMEOUT_MS)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`Web research failed (${r.status}): ${clean(j?.error?.message||'unknown error',180)}`);let parsed=null;try{parsed=JSON.parse(extractText(j))}catch{};const sources=webSources(j);if(!parsed)return {configured:true,facts:null,factEvidence:[],comps:[],sources,error:'Web research returned no structured evidence.',diagnostic:{status:'no_structured_output',durationMs:elapsed(started),sourceCount:sources.length}};
+  const factEvidence=(parsed.factEvidence||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)).map(x=>{const match=addressMatchDetails(address,{address:x.subjectAddress});const value=x.field==='propertyType'||x.field==='lastSaleDate'?clean(x.textValue,120):num(x.numberValue);return {field:x.field,value,subjectAddress:clean(x.subjectAddress,250),source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return clean(x.sourceName,80).toLowerCase()}})()}`,sourceType:'Public web',sourceKind:x.sourceKind,reliability:webReliability(x.sourceKind),tier:sourceTier(x.sourceKind),sourceUrl:x.sourceUrl,verification:'web-source-specific',addressMatchScore:match.score,retrievedAt:nowIso()}}).filter(x=>x.value!==null&&x.value!==undefined&&x.value!==''&&x.addressMatchScore>=60);
   const facts={};for(const f of factEvidence){if(facts[f.field]===undefined)facts[f.field]=f.value}
-  const comps=(parsed.soldComps||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)).map(x=>({...x,source:'Public web research',sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return 'unknown'}})()}`,sourceType:'Public web',verification:'web-corroborated',retrievedAt:new Date().toISOString()}));
+  const comps=(parsed.soldComps||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)).map(x=>({...x,source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return 'unknown'}})()}`,sourceType:'Public web',sourceKind:x.sourceKind,reliability:webReliability(x.sourceKind),verification:'web-corroborated',distanceMiles:null,retrievedAt:nowIso()}));
   const marketContext=(parsed.marketContext||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources));
-  return {configured:true,facts,factEvidence,comps,marketContext,notes:parsed.notes||[],sources,error:null};
+  return {configured:true,facts,factEvidence,comps,marketContext,notes:parsed.notes||[],sources,error:null,diagnostic:{status:'complete',durationMs:elapsed(started),sourceCount:sources.length,factRows:factEvidence.length,soldComps:comps.length,mode:{needFacts,needComps}}};
 }
 
 function validFieldValue(field,value){if(value===null||value===undefined||value==='')return false;if(field==='bedrooms')return Number.isFinite(Number(value))&&Number(value)>=0&&Number(value)<=20;if(field==='bathrooms')return Number.isFinite(Number(value))&&Number(value)>=0&&Number(value)<=20;if(field==='squareFootage')return Number.isFinite(Number(value))&&Number(value)>=200&&Number(value)<=50000;if(field==='yearBuilt')return Number.isFinite(Number(value))&&Number(value)>=1700&&Number(value)<=new Date().getFullYear()+1;if(field==='propertyType')return clean(value,100).length>1;return true}
 function normPropertyType(v){const s=normText(v);if(/single.*family|detached|sfr/.test(s))return 'single family';if(/multi.*family|duplex|triplex|fourplex/.test(s))return 'multi family';if(/condo/.test(s))return 'condo';if(/town/.test(s))return 'townhouse';if(/mobile|manufactured/.test(s))return 'mobile home';if(/land|vacant/.test(s))return 'land';if(/commercial/.test(s))return 'commercial';return s}
-function sameValue(field,a,b){if(field==='squareFootage'){const x=Number(a),y=Number(b);return Math.abs(x-y)<=Math.max(75,Math.max(x,y)*.05)}if(field==='bathrooms')return Math.abs(Number(a)-Number(b))<.26;if(field==='bedrooms'||field==='yearBuilt')return Number(a)===Number(b);if(field==='propertyType')return normPropertyType(a)===normPropertyType(b);return String(a)===String(b)}
-function evidenceLabel(e){return {source:e.source,sourceType:e.sourceType,sourceUrl:e.sourceUrl||e.sourceRecordUrl||null,value:e.value,reliability:e.reliability}}
+function sameValue(field,a,b){if(field==='squareFootage'){const x=Number(a),y=Number(b);return Math.abs(x-y)<=Math.max(60,Math.max(x,y)*.04)}if(field==='bathrooms')return Math.abs(Number(a)-Number(b))<.26;if(field==='bedrooms'||field==='yearBuilt')return Number(a)===Number(b);if(field==='propertyType')return normPropertyType(a)===normPropertyType(b);return String(a)===String(b)}
+function evidenceTier(e){if(Number(e?.tier)>0)return Number(e.tier);if(e?.sourceKind)return sourceTier(e.sourceKind);const r=Number(e?.reliability||0);return r>=95?4:r>=85?3:r>=70?2:1}
+function evidenceLabel(e){return {source:e.source,sourceType:e.sourceType,sourceKind:e.sourceKind||null,sourceUrl:e.sourceUrl||e.sourceRecordUrl||null,value:e.value,reliability:e.reliability,tier:evidenceTier(e)}}
 function resolveField(field,evidence){
-  const items=evidence.filter(e=>validFieldValue(field,e.value));if(!items.length)return {field,value:null,status:'missing',confidence:'Low',sources:[],alternatives:[]};
-  const groups=[];for(const item of items){let g=groups.find(x=>sameValue(field,x.value,item.value));if(!g){g={value:item.value,items:[],weight:0,sourceKeys:new Set()};groups.push(g)}g.items.push(item);g.weight+=item.reliability||50;g.sourceKeys.add(item.sourceKey||item.source)}
-  groups.sort((a,b)=>b.weight-a.weight||b.sourceKeys.size-a.sourceKeys.size);const win=groups[0],runner=groups[1];
-  const independent=win.sourceKeys.size;
-  // v29.13 truth rule: core subject facts are never promoted from one source alone,
-  // even an authorized MLS record. A single source remains useful evidence, but the
-  // user explicitly prefers a blank/needs-confirmation state over a confidently wrong fact.
-  const strongConsensus=independent>=2&&( !runner || win.weight>=runner.weight*1.35 || win.sourceKeys.size>runner.sourceKeys.size );
-  const value=strongConsensus?win.value:null;
-  const status=value!==null?(runner?'verified_with_conflict':'verified'):(runner?'conflicting':'single_source');
-  const confidence=value!==null?(independent>=3?'High':'Moderate'):'Low';
-  return {field,value,status,confidence,sources:win.items.map(evidenceLabel),alternatives:groups.slice(1).map(g=>({value:g.value,sources:g.items.map(evidenceLabel)})),raw:items.map(evidenceLabel)};
+  const items=evidence.filter(e=>validFieldValue(field,e.value));if(!items.length)return {field,value:null,recordedValue:null,status:'missing',confidence:'Low',sources:[],alternatives:[],raw:[]};
+  const groups=[];for(const item of items){let g=groups.find(x=>sameValue(field,x.value,item.value));if(!g){g={value:item.value,items:[],weight:0,sourceKeys:new Set(),maxTier:0};groups.push(g)}g.items.push(item);g.weight+=item.reliability||50;g.sourceKeys.add(item.sourceKey||item.source);g.maxTier=Math.max(g.maxTier,evidenceTier(item))}
+  groups.sort((a,b)=>b.weight-a.weight||b.sourceKeys.size-a.sourceKeys.size||b.maxTier-a.maxTier);const win=groups[0],runner=groups[1],independent=win.sourceKeys.size;
+  let verified=false;
+  // Syndicated portal pages are useful corroboration, but several portals can repeat the same
+  // upstream listing error. A portal-only consensus therefore never becomes a verified fact.
+  // Verification needs at least one stronger independent record/feed/broker source.
+  if(!runner)verified=independent>=2&&win.maxTier>=3;
+  else if(independent>=2&&win.maxTier>=3&&win.weight>=runner.weight*1.30)verified=true;
+  else if(independent>=3&&win.maxTier>=3&&win.weight>=runner.weight*1.45)verified=true;
+  const value=verified?win.value:null,recordedValue=win.value;
+  const status=value!==null?(runner?'verified_with_conflict':'verified'):(runner?'conflicting':'recorded');
+  const confidence=value!==null?(independent>=3&&win.maxTier>=3?'High':'Moderate'):'Low';
+  return {field,value,recordedValue,status,confidence,sources:win.items.map(evidenceLabel),alternatives:groups.slice(1).map(g=>({value:g.value,sources:g.items.map(evidenceLabel)})),raw:items.map(evidenceLabel),independentSources:independent,winningTier:win.maxTier};
 }
-function sourceEvidenceForField(field,mlsSubject,regridSubject,web){const out=[];if(mlsSubject&&validFieldValue(field,mlsSubject[field]))out.push({value:mlsSubject[field],source:mlsSubject.source,sourceKey:mlsSubject.sourceKey||`mls:${mlsSubject.source}`,sourceType:'MLS / RESO',sourceUrl:null,reliability:100});if(regridSubject&&validFieldValue(field,regridSubject[field]))out.push({value:regridSubject[field],source:'Regrid',sourceKey:'regrid',sourceType:'County / parcel records',sourceUrl:regridSubject.sourceRecordUrl||null,reliability:85});for(const x of web?.factEvidence||[])if(x.field===field)out.push(x);return out}
-function resolveSubjectEvidence({mlsSubject=null,regridSubject=null,web=null,address}){
-  const fields=['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType'];const fieldEvidence={};const subject={address,source:'Cross-checked evidence',sourceType:'Verified consensus',retrievedAt:new Date().toISOString()};
-  const identitySource=mlsSubject||regridSubject||null;if(identitySource){subject.address=identitySource.address||address;subject.city=identitySource.city||null;subject.state=identitySource.state||null;subject.postalCode=identitySource.postalCode||null;subject.parcelId=identitySource.parcelId||null;subject.latitude=identitySource.latitude??null;subject.longitude=identitySource.longitude??null;subject.sourceUpdatedAt=identitySource.sourceUpdatedAt||null}
-  for(const field of fields){const resolved=resolveField(field,sourceEvidenceForField(field,mlsSubject,regridSubject,web));fieldEvidence[field]=resolved;subject[field]=resolved.value}
+function sourceEvidenceForField(field,normalizedMls,regridSubject,web){const out=[];for(const mlsSubject of normalizedMls||[])if(mlsSubject&&validFieldValue(field,mlsSubject[field]))out.push({value:mlsSubject[field],source:mlsSubject.source,sourceKey:mlsSubject.sourceKey||`mls:${mlsSubject.source}`,sourceType:'MLS / RESO',sourceKind:'authorized_mls',reliability:100,tier:4});if(regridSubject&&validFieldValue(field,regridSubject[field]))out.push({value:regridSubject[field],source:'Regrid',sourceKey:'regrid',sourceType:'County / parcel records',sourceKind:'public_record',sourceUrl:regridSubject.sourceRecordUrl||null,reliability:90,tier:3});for(const x of web?.factEvidence||[])if(x.field===field)out.push(x);return out}
+function resolveSubjectEvidence({mlsSubject=null,mlsSubjects=[],regridSubject=null,web=null,address}){
+  const normalizedMls=[...(mlsSubjects||[])];if(mlsSubject&&!normalizedMls.includes(mlsSubject))normalizedMls.unshift(mlsSubject);
+  const fields=['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType'],fieldEvidence={},identitySources=[...normalizedMls,regridSubject].filter(Boolean).sort((a,b)=>(b.addressMatchScore||0)-(a.addressMatchScore||0)),identitySource=identitySources[0]||null;
+  const subject={address,source:'Cross-checked evidence',sourceType:'Verified consensus',retrievedAt:nowIso()};
+  if(identitySource){subject.address=identitySource.address||address;subject.city=identitySource.city||null;subject.state=identitySource.state||null;subject.postalCode=identitySource.postalCode||null;subject.parcelId=identitySource.parcelId||null;subject.llUuid=identitySource.llUuid||null;subject.latitude=identitySource.latitude??null;subject.longitude=identitySource.longitude??null;subject.sourceUpdatedAt=identitySource.sourceUpdatedAt||null}
+  for(const field of fields){const resolved=resolveField(field,sourceEvidenceForField(field,normalizedMls,regridSubject,web));fieldEvidence[field]=resolved;subject[field]=resolved.value}
   const conflicts=Object.values(fieldEvidence).filter(x=>x.status==='conflicting'||x.status==='verified_with_conflict').map(x=>({field:x.field,status:x.status,selected:x.value,values:[...new Set((x.raw||[]).map(y=>y.value))],evidence:x.raw||[]}));
   const resolvedCore=fields.filter(f=>subject[f]!==null&&subject[f]!==undefined&&subject[f]!=='').length;
-  const addressScore=Math.max(mlsSubject?.addressMatchScore??-Infinity,regridSubject?.addressMatchScore??-Infinity);const matched=Number.isFinite(addressScore)&&addressScore>=65;
-  const confidence=matched&&resolvedCore>=4?'High':matched&&resolvedCore>=2?'Moderate':'Low';
-  return {subject,fieldEvidence,conflicts,identity:{addressMatched:matched,addressMatchScore:Number.isFinite(addressScore)?addressScore:null,resolvedCoreFields:resolvedCore,confidence,sufficientForValuation:matched&&resolvedCore>=2}};
+  const addressScore=Math.max(...identitySources.map(x=>Number(x.addressMatchScore)).filter(Number.isFinite),-Infinity),matched=Number.isFinite(addressScore)&&addressScore>=55&&identitySources.some(x=>addressMatchDetails(address,x).houseExact&&addressMatchDetails(address,x).streetRatio>=.8&&!addressMatchDetails(address,x).hardMismatch);
+  const valuationCore=Boolean(subject.squareFootage&&subject.propertyType&&(subject.bedrooms!==null||subject.bathrooms!==null||subject.yearBuilt!==null));
+  const confidence=matched&&resolvedCore>=4?'High':matched&&resolvedCore>=3?'Moderate':'Low';
+  return {subject,fieldEvidence,conflicts,identity:{addressMatched:matched,addressMatchScore:Number.isFinite(addressScore)?addressScore:null,resolvedCoreFields:resolvedCore,confidence,sufficientForValuation:matched&&resolvedCore>=3&&valuationCore}};
+}
+
+function dedupeComps(rows,subject){const seen=new Map();for(const x0 of rows||[]){const x={...x0};if(!x.salePrice||!x.address)continue;if(subject?.latitude&&subject?.longitude&&x.latitude&&x.longitude)x.distanceMiles=hav(subject.latitude,subject.longitude,x.latitude,x.longitude);const k=`${normText(x.address)}|${Math.round(Number(x.salePrice))}|${String(x.saleDate||'').slice(0,10)}`;if(!seen.has(k))seen.set(k,x);else{const prior=seen.get(k);prior.corroboratingSources=[...new Set([...(prior.corroboratingSources||[prior.source]),x.source].filter(Boolean))]}}return [...seen.values()]}
+async function researchMlsSource(cfg,address,parsed){
+  const started=Date.now();try{
+    const clauses=[];if(parsed.street)clauses.push(`contains(tolower(UnparsedAddress),'${esc(parsed.street.toLowerCase())}')`);if(parsed.city)clauses.push(`tolower(City) eq '${esc(parsed.city.toLowerCase())}'`);if(parsed.state)clauses.push(`StateOrProvince eq '${esc(parsed.state.toUpperCase())}'`);
+    const rows=await queryMls(cfg,clauses.join(' and '),20),subject=bestSubject(rows,address),comps=[];
+    if(subject){const c=[];if(subject.city)c.push(`tolower(City) eq '${esc(subject.city.toLowerCase())}'`);if(subject.state)c.push(`StateOrProvince eq '${esc(subject.state.toUpperCase())}'`);c.push(`StandardStatus eq 'Closed'`);for(const x of await queryMls(cfg,c.join(' and '),100)){if(x.listingKey&&x.listingKey===subject.listingKey)continue;x.distanceMiles=hav(subject.latitude,subject.longitude,x.latitude,x.longitude);if(x.salePrice)comps.push(x)}}
+    return {subject,comps,diagnostic:{status:subject?'matched':'no_subject_match',durationMs:elapsed(started),subjectRows:rows.length,closedSales:comps.length}};
+  }catch(e){return {subject:null,comps:[],error:clean(e.name==='TimeoutError'?`Timed out after ${Math.round(MLS_TIMEOUT_MS/1000)} seconds.`:e.message,180),diagnostic:{status:'error',durationMs:elapsed(started),error:clean(e.message,140)}}}
 }
 
 async function researchFresh(address){
-  const parsed=parseAddress(address),errors=[],allSubjects=[],allComps=[],sources=[];
-  const mlsJobs=configs().map(async cfg=>{sources.push({name:cfg.name,type:'Authorized MLS / RESO Web API'});try{const clauses=[];if(parsed.street)clauses.push(`contains(tolower(UnparsedAddress),'${esc(parsed.street.toLowerCase())}')`);if(parsed.city)clauses.push(`tolower(City) eq '${esc(parsed.city.toLowerCase())}'`);if(parsed.state)clauses.push(`StateOrProvince eq '${esc(parsed.state.toUpperCase())}'`);const rows=await queryMls(cfg,clauses.join(' and '),15),subject=bestSubject(rows,address),comps=[];if(subject){const c=[];if(subject.city)c.push(`tolower(City) eq '${esc(subject.city.toLowerCase())}'`);if(subject.state)c.push(`StateOrProvince eq '${esc(subject.state.toUpperCase())}'`);c.push(`StandardStatus eq 'Closed'`);for(const x of await queryMls(cfg,c.join(' and '),100)){if(x.listingKey&&x.listingKey===subject.listingKey)continue;x.distanceMiles=hav(subject.latitude,subject.longitude,x.latitude,x.longitude);if(x.salePrice&&(!x.distanceMiles||x.distanceMiles<=5))comps.push(x)}}return {subject,comps}}catch(e){errors.push({source:cfg.name,error:clean(e.name==='TimeoutError'?'Timed out after 10 seconds.':e.message,180)});return {subject:null,comps:[]}}});
-  const regridJob=(async()=>{try{const r=await researchRegrid(address);if(r.configured)sources.push({name:'Regrid',type:'County / parcel records'});if(r.error)errors.push({source:'Regrid',error:r.error});return r}catch(e){errors.push({source:'Regrid',error:clean(e.name==='TimeoutError'?'Timed out after 8 seconds.':e.message,180)});return {configured:Boolean(process.env.REGRID_API_TOKEN||process.env.REGRID_TOKEN),subject:null,candidates:[]}}})();
-  const webJob=(async()=>{try{const w=await researchWeb(address);if(w.configured)sources.push({name:'Better Web Research',type:'Public web search'});return w}catch(e){errors.push({source:'Better Web Research',error:clean(e.name==='TimeoutError'?'Timed out after 15 seconds; no web facts were accepted. Try Refresh & re-analyze later; cached property evidence prevents duplicate provider calls.':e.message,180)});return {configured:Boolean(process.env.OPENAI_API_KEY),facts:null,factEvidence:[],comps:[],sources:[],marketContext:[]}}})();
-  const [regrid,web,mlsResults]=await Promise.all([regridJob,webJob,Promise.all(mlsJobs)]);
-  if(regrid.subject)allSubjects.push(regrid.subject);for(const m of mlsResults){if(m.subject)allSubjects.unshift(m.subject);allComps.push(...m.comps)}allComps.push(...(web.comps||[]));
-  const mlsSubject=allSubjects.find(x=>x.sourceType==='MLS / RESO')||null;const resolved=resolveSubjectEvidence({mlsSubject,regridSubject:regrid.subject,web,address});const subject=resolved.subject,seen=new Set(),comps=allComps.filter(x=>{const k=x.listingKey||`${clean(x.address).toLowerCase()}|${x.salePrice}|${x.saleDate}`;if(!x.salePrice||seen.has(k))return false;seen.add(k);if(subject?.latitude&&subject?.longitude&&x.latitude&&x.longitude)x.distanceMiles=hav(subject.latitude,subject.longitude,x.latitude,x.longitude);return true}).sort((a,b)=>(a.distanceMiles??99)-(b.distanceMiles??99)).slice(0,30);
-  return {configured:sources.length>0,sourceCount:sources.length,sources,subject,fieldEvidence:resolved.fieldEvidence,identity:resolved.identity,rawSubjects:{mls:mlsSubject||null,regrid:regrid.subject||null,regridCandidates:regrid.candidates||[]},comps,marketContext:web.marketContext||[],webSources:web.sources||[],conflicts:resolved.conflicts,errors,retrievedAt:new Date().toISOString(),notice:`Research checked ${sources.map(x=>x.name).join(', ')||'no live sources'}. ${configs().length?'Authorized MLS feeds were queried.':'No authorized MLS feed is configured.'} ${regrid.configured?'Regrid parcel records were queried with exact-address match checks.':'Regrid is not configured.'} ${web.configured?'Public web research was attempted with source-specific fact evidence.':'Web research was unavailable.'}`};
+  const intelligence=require('./dealIntelligence'),parsed=parseAddress(address),errors=[],sources=[],diagnostics={startedAt:nowIso(),stages:{}};
+  const mlsCfgs=configs();for(const cfg of mlsCfgs)sources.push({name:cfg.name,type:'Authorized MLS / RESO Web API'});if(regridToken())sources.push({name:'Regrid',type:'County / parcel records'});
+  const deterministicStart=Date.now();
+  const [regrid,mlsResults]=await Promise.all([
+    (async()=>{try{return await researchRegrid(address)}catch(e){const error=clean(e.name==='TimeoutError'?`Timed out after ${Math.round(REGRID_TIMEOUT_MS/1000)} seconds.`:e.message,180);errors.push({source:'Regrid',error});return {configured:!!regridToken(),subject:null,candidates:[],error,diagnostic:{status:'error',error}}}})(),
+    Promise.all(mlsCfgs.map(cfg=>researchMlsSource(cfg,address,parsed)))
+  ]);
+  diagnostics.stages.identity={durationMs:elapsed(deterministicStart),regrid:regrid.diagnostic||{status:'unknown'},mls:mlsResults.map((x,i)=>({name:mlsCfgs[i]?.name,status:x.diagnostic?.status||'unknown',durationMs:x.diagnostic?.durationMs||null,error:x.error||null}))};
+  if(regrid.error)errors.push({source:'Regrid',error:regrid.error});for(let i=0;i<mlsResults.length;i++)if(mlsResults[i].error)errors.push({source:mlsCfgs[i].name,error:mlsResults[i].error});
+  const mlsSubjects=mlsResults.map(x=>x.subject).filter(Boolean),deterministicComps=mlsResults.flatMap(x=>x.comps||[]);
+  let nearby={configured:false,comps:[],diagnostic:{status:'not_run'}};
+  if(regrid.subject){try{nearby=await researchRegridNearby(regrid.subject)}catch(e){const error=clean(e.name==='TimeoutError'?`Timed out after ${Math.round(REGRID_TIMEOUT_MS/1000)} seconds.`:e.message,180);errors.push({source:'Regrid nearby sales',error});nearby={configured:true,comps:[],diagnostic:{status:'error',error}}}}
+  diagnostics.stages.nearbySales=nearby.diagnostic;
+  deterministicComps.push(...(nearby.comps||[]));
+  let resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:null,address}),comps=dedupeComps(deterministicComps,resolved.subject),compAnalysis=intelligence.analyzeComps(resolved.subject,comps);
+  const needFacts=Object.values(resolved.fieldEvidence).some(x=>x.status!=='verified'&&x.status!=='verified_with_conflict');
+  const needComps=!compAnalysis.valuationReady;
+  let web={configured:!!process.env.OPENAI_API_KEY,skipped:true,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:'not_needed'}};
+  if((needFacts||needComps)&&process.env.OPENAI_API_KEY){
+    sources.push({name:'Better Web Research',type:'Public web search'});
+    try{web=await researchWeb(address,{needFacts,needComps})}catch(e){const error=clean(e.name==='TimeoutError'?`Timed out after ${Math.round(WEB_TIMEOUT_MS/1000)} seconds; deterministic evidence was kept and no unsupported web facts were accepted.`:e.message,180);errors.push({source:'Better Web Research',error});web={configured:true,skipped:false,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:'error',durationMs:null,error}}}
+  }
+  diagnostics.stages.web=web.diagnostic||{status:web.skipped?'not_needed':'unknown'};
+  resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web,address});
+  comps=dedupeComps([...deterministicComps,...(web.comps||[])],resolved.subject);compAnalysis=intelligence.analyzeComps(resolved.subject,comps);
+  diagnostics.stages.compGate={status:compAnalysis.valuationReady?'ready':'withheld',reviewed:compAnalysis.reviewed,selected:compAnalysis.selected.length,distanceVerified:compAnalysis.distanceVerifiedCount||0,confidence:compAnalysis.confidence,warnings:compAnalysis.warnings};
+  diagnostics.finishedAt=nowIso();diagnostics.durationMs=new Date(diagnostics.finishedAt).getTime()-new Date(diagnostics.startedAt).getTime();
+  const notice=[
+    regrid.configured?(regrid.subject?'Regrid matched the exact property.':'Regrid was queried but no parcel passed Better’s exact-property checks.'):'Regrid is not configured.',
+    mlsCfgs.length?`${mlsCfgs.length} authorized MLS / RESO source${mlsCfgs.length===1?' was':'s were'} queried.`:'No authorized MLS feed is configured.',
+    nearby.comps?.length?`${nearby.comps.length} nearby Regrid recorded sale${nearby.comps.length===1?' was':'s were'} found.`:'No usable nearby Regrid recorded sales were found.',
+    web.skipped?'Public-web research was not needed.':web.diagnostic?.status==='complete'?'Public-web corroboration was completed once for unresolved facts/comps.':'Public-web corroboration did not complete; deterministic evidence was preserved.',
+    compAnalysis.valuationReady?'The sold-comp gate passed.':'The sold-comp gate did not pass, so Better will withhold a precise ARV.'
+  ].join(' ');
+  return {configured:sources.length>0,sourceCount:sources.length,sources,subject:resolved.subject,fieldEvidence:resolved.fieldEvidence,identity:resolved.identity,rawSubjects:{mls:mlsSubjects,regrid:regrid.subject||null,regridCandidates:regrid.candidates||[]},comps,compAnalysis,marketContext:web.marketContext||[],webSources:web.sources||[],conflicts:resolved.conflicts,errors,retrievedAt:nowIso(),notice,diagnostics};
 }
 async function research(address){const key=cacheKey(address);if(inFlightResearch.has(key))return inFlightResearch.get(key);const p=researchFresh(address).finally(()=>inFlightResearch.delete(key));inFlightResearch.set(key,p);return p}
 
-module.exports={research,configuredSources:()=>{const a=configs().map(x=>({name:x.name,type:'Authorized MLS / RESO Web API'}));if(process.env.REGRID_API_TOKEN||process.env.REGRID_TOKEN)a.push({name:'Regrid',type:'County / parcel records'});if(process.env.OPENAI_API_KEY)a.push({name:'Better Web Research',type:'Public web search'});return a},cacheKey,_norm:normMls,_parseAddress:parseAddress,_normRegrid:normRegrid,_researchRegrid:researchRegrid,_selectRegridFeature:selectRegridFeature,_addressMatchScore:addressMatchScore,_resolveField:resolveField,_resolveSubjectEvidence:resolveSubjectEvidence};
+module.exports={
+  research,
+  configuredSources:()=>{const a=configs().map(x=>({name:x.name,type:'Authorized MLS / RESO Web API'}));if(regridToken())a.push({name:'Regrid',type:'County / parcel records'});if(process.env.OPENAI_API_KEY)a.push({name:'Better Web Research',type:'Public web search'});return a},
+  cacheKey,
+  _norm:normMls,
+  _parseAddress:parseAddress,
+  _normRegrid:normRegrid,
+  _researchRegrid:researchRegrid,
+  _researchRegridNearby:researchRegridNearby,
+  _selectRegridFeature:selectRegridFeature,
+  _addressMatchScore:addressMatchScore,
+  _addressMatchDetails:addressMatchDetails,
+  _resolveField:resolveField,
+  _resolveSubjectEvidence:resolveSubjectEvidence,
+  _researchWeb:researchWeb,
+  _dedupeComps:dedupeComps
+};

@@ -1515,55 +1515,97 @@ function dealBuilderAllowance(user) {
 app.get('/api/deal-builder/usage', requireAuth, (req,res) => res.json({ usage:dealBuilderAllowance(req.user) }));
 app.get('/api/tools/usage', requireAuth, (req,res)=>res.json({ dealBuilder:dealBuilderAllowance(req.user), listingAi:plusToolAllowance(req.user,'listingAi',2), dispoAi:plusToolAllowance(req.user,'dispoAi',3) }));
 function dealBuilderLimitError(req,allowance){return isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Plus includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Plus includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.');}
+const DEAL_RESEARCH_CACHE_VERSION = 'v29.15';
 const DEAL_RESEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const DEAL_RESEARCH_MIN_REFRESH_MS = 10 * 60 * 1000;
+const DEAL_RESEARCH_MIN_REFRESH_MS = 30 * 60 * 1000;
+const DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000;
+function dealResearchKey(address){ const ds=require('./dealSources'); return `${DEAL_RESEARCH_CACHE_VERSION}:${ds.cacheKey(address)}`; }
+function priorQualifiedDealProperty(db,user,key){ return (db.dealAnalyses||[]).some(x=>x.userId===user.id&&x.qualified===true&&x.researchKey===key); }
+function addressDealAllowance(db,user,key){ const base=dealBuilderAllowance(user), prior=priorQualifiedDealProperty(db,user,key); return {...base, priorQualified:prior, allowedForAddress:prior||base.unlimited||base.remaining>0}; }
+function evidenceFingerprint(evidence){
+  const compact={subject:evidence?.subject||{},fieldEvidence:evidence?.fieldEvidence||{},identity:evidence?.identity||{},conflicts:evidence?.conflicts||[],comps:(evidence?.comps||[]).map(c=>({address:c.address,salePrice:c.salePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,squareFootage:c.squareFootage,bedrooms:c.bedrooms,bathrooms:c.bathrooms,yearBuilt:c.yearBuilt,propertyType:c.propertyType,source:c.source,sourceKey:c.sourceKey}))};
+  return crypto.createHash('sha256').update(JSON.stringify(compact)).digest('hex');
+}
+function evidenceOnlyDealAnalysis(address,evidence,compAnalysis,reason){
+  const verified=evidence?.subject||{};
+  return {provider:'Better Real Estate Evidence Engine',generatedAt:new Date().toISOString(),subject:{formattedAddress:verified.address||address,addressLine1:verified.address||address,city:verified.city||'',state:verified.state||'',propertyType:verified.propertyType??null,bedrooms:verified.bedrooms??null,bathrooms:verified.bathrooms??null,squareFootage:verified.squareFootage??null,yearBuilt:verified.yearBuilt??null},arv:{estimate:compAnalysis?.valuationReady?compAnalysis.estimate:null,low:compAnalysis?.valuationReady?compAnalysis.low:null,high:compAnalysis?.valuationReady?compAnalysis.high:null},rehab:[],description:reason?`Verified property evidence and comp analysis are available, but AI synthesis is temporarily unavailable: ${reason}`:'Better verified the available evidence but the property-truth and closed-sale comp gates are not both strong enough for a responsible full deal analysis yet. Review Property evidence and Research diagnostics; Better will not invent the missing pieces.',confidence:compAnalysis?.valuationReady?(compAnalysis.confidence||'Moderate'):'Low',assumptions:[],warnings:[reason?'The verified evidence and deterministic comp result are still shown. This AI synthesis failure did not consume an analysis allowance.':'Precise ARV and AI synthesis were withheld because subject facts or distance/recency-verified closed comps were insufficient or conflicting.'],comparables:compAnalysis?.valuationReady?(compAnalysis.selected||[]).map(c=>({address:c.address,price:c.adjustedSalePrice||c.salePrice,salePrice:c.salePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,similarity:c.similarity,source:c.source})):[],rent:null};
+}
 app.post('/api/deal-builder/research', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
-  const allowance=dealBuilderAllowance(req.user); if(!allowance.unlimited&&allowance.remaining<=0)return res.status(403).json({error:dealBuilderLimitError(req,allowance),code:'DEAL_BUILDER_LIMIT',usage:allowance});
+  const key=dealResearchKey(address),addressAllowance=addressDealAllowance(req.db,req.user,key); if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
   try{
-    const dealSources=require('./dealSources'),intelligence=require('./dealIntelligence'),key=dealSources.cacheKey(address),now=Date.now(),forceRefresh=req.body?.forceRefresh===true;
+    const dealSources=require('./dealSources'),intelligence=require('./dealIntelligence'),now=Date.now(),forceRefresh=req.body?.forceRefresh===true;
     req.db.dealResearchCache=req.db.dealResearchCache||[];
     let cached=req.db.dealResearchCache.find(x=>x.key===key),age=cached?now-new Date(cached.retrievedAt||0).getTime():Infinity;
     if(cached && age<DEAL_RESEARCH_CACHE_TTL_MS && (!forceRefresh || age<DEAL_RESEARCH_MIN_REFRESH_MS)){
-      const evidence=JSON.parse(JSON.stringify(cached.evidence||{})); evidence.cache={hit:true,retrievedAt:cached.retrievedAt,ageMs:age,refreshProtected:forceRefresh&&age<DEAL_RESEARCH_MIN_REFRESH_MS};
-      return res.json({address,evidence,usage:allowance});
+      const evidence=JSON.parse(JSON.stringify(cached.evidence||{})); evidence.cache={hit:true,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:cached.retrievedAt,ageMs:age,refreshProtected:forceRefresh&&age<DEAL_RESEARCH_MIN_REFRESH_MS}; evidence.serverOwned=true;
+      return res.json({address,evidence,usage:addressAllowance});
     }
-    const evidence=await dealSources.research(address);evidence.compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]);evidence.cache={hit:false,retrievedAt:evidence.retrievedAt||new Date().toISOString(),ageMs:0};
-    const row={id:cached?.id||crypto.randomUUID(),key,address,retrievedAt:evidence.retrievedAt||new Date().toISOString(),evidence:JSON.parse(JSON.stringify(evidence))};
+    const evidence=await dealSources.research(address);evidence.compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]);evidence.serverOwned=true;evidence.cache={hit:false,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:evidence.retrievedAt||new Date().toISOString(),ageMs:0,refreshProtected:false};
+    const row={id:cached?.id||crypto.randomUUID(),key,address,retrievedAt:evidence.retrievedAt||new Date().toISOString(),evidence:JSON.parse(JSON.stringify(evidence)),synthesis:null};
     if(cached)Object.assign(cached,row);else req.db.dealResearchCache.push(row);
     const cutoff=Date.now()-7*24*60*60*1000;req.db.dealResearchCache=req.db.dealResearchCache.filter(x=>new Date(x.retrievedAt||0).getTime()>=cutoff).sort((a,b)=>String(b.retrievedAt).localeCompare(String(a.retrievedAt))).slice(0,500);
     await saveDB(req.db);
-    res.json({address,evidence,usage:allowance});
+    res.json({address,evidence,usage:addressAllowance});
   }catch(e){console.error('[deal builder research]',e.message);res.status(502).json({error:`Property research failed: ${String(e.message).slice(0,240)}`});}
 });
 app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
-  const allowance=dealBuilderAllowance(req.user); if(!allowance.unlimited&&allowance.remaining<=0)return res.status(403).json({error:dealBuilderLimitError(req,allowance),code:'DEAL_BUILDER_LIMIT',usage:allowance});
+  const key=dealResearchKey(address),addressAllowance=addressDealAllowance(req.db,req.user,key); if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
   try {
-    const evidence=(req.body?.evidence&&typeof req.body.evidence==='object')?req.body.evidence:{}; const intelligence=require('./dealIntelligence'); const compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]); evidence.compAnalysis=compAnalysis;
+    req.db.dealResearchCache=req.db.dealResearchCache||[];const cached=req.db.dealResearchCache.find(x=>x.key===key);const age=cached?Date.now()-new Date(cached.retrievedAt||0).getTime():Infinity;
+    if(!cached||!cached.evidence||age>=DEAL_RESEARCH_CACHE_TTL_MS)return res.status(409).json({error:'Property research is missing or stale. Run property research again before analysis.',code:'DEAL_RESEARCH_REQUIRED'});
+    // SECURITY/INTEGRITY: final valuation always uses server-cached evidence. Browser-supplied evidence is intentionally ignored.
+    const evidence=JSON.parse(JSON.stringify(cached.evidence)); evidence.serverOwned=true; evidence.cache={...(evidence.cache||{}),hit:true,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:cached.retrievedAt,ageMs:age};
+    const intelligence=require('./dealIntelligence'),compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]); evidence.compAnalysis=compAnalysis;
     const verified=evidence.subject||{},coreFields=['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType'];
-    const enoughIdentity=Boolean(evidence.identity?.sufficientForValuation);
-    const readyForAnalysis=Boolean(enoughIdentity && compAnalysis.estimate && compAnalysis.selected.length>=2);
-    // Property truth and comp evidence are gates, not suggestions. If Better cannot
-    // corroborate the subject AND two credible sold comps, do not spend another AI call
-    // producing an analysis that would look authoritative but must later be withheld.
-    let analysis;
+    const enoughIdentity=Boolean(evidence.identity?.sufficientForValuation),readyForAnalysis=Boolean(enoughIdentity&&compAnalysis.valuationReady&&compAnalysis.estimate);
+    let analysis,aiDraft=null,synthesisReused=false,synthesisDeferred=false,synthesisError=null,createdSynthesis=false,synthesisFailureRecorded=false;const fp=evidenceFingerprint(evidence);
     if(!readyForAnalysis){
-      analysis={provider:'Better Real Estate Evidence Engine',generatedAt:new Date().toISOString(),subject:{formattedAddress:verified.address||address,addressLine1:verified.address||address,city:verified.city||'',state:verified.state||'',propertyType:null,bedrooms:null,bathrooms:null,squareFootage:null,yearBuilt:null},arv:{estimate:null,low:null,high:null},rehab:[],description:'Better could not corroborate enough basic subject-property facts and credible sold comps to produce a responsible full deal analysis yet. Review the Property evidence panel or refresh research later.',confidence:'Low',assumptions:[],warnings:['Property facts or sold comps were missing, single-source only, conflicting, or otherwise insufficient for a defensible analysis.'],comparables:[],rent:null};
+      analysis=evidenceOnlyDealAnalysis(address,evidence,compAnalysis,null);
+    }else if(cached.synthesis?.fingerprint===fp&&cached.synthesis?.analysis){
+      analysis=JSON.parse(JSON.stringify(cached.synthesis.analysis));aiDraft=cached.synthesis.aiDraft?JSON.parse(JSON.stringify(cached.synthesis.aiDraft)):null;synthesisReused=true;
     }else{
-      if(!ai.configured()) return res.status(503).json({error:'AI Deal Builder is not configured. Add OPENAI_API_KEY in Netlify.'});
-      analysis=await ai.generateAddressDealAnalysis(address,evidence);
+      const recentFailure=cached.synthesisFailure?.fingerprint===fp&&(Date.now()-new Date(cached.synthesisFailure.at||0).getTime())<DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS;
+      if(recentFailure){
+        synthesisDeferred=true;synthesisError=safeText(cached.synthesisFailure.error||'temporarily unavailable',220);analysis=evidenceOnlyDealAnalysis(address,evidence,compAnalysis,synthesisError);
+      }else if(!ai.configured()){
+        synthesisDeferred=true;synthesisError='OPENAI_API_KEY is not configured';analysis=evidenceOnlyDealAnalysis(address,evidence,compAnalysis,synthesisError);
+      }else{
+        try{
+          analysis=await ai.generateAddressDealAnalysis(address,evidence);aiDraft=analysis.description?{description:analysis.description}:null;
+          cached.synthesis={fingerprint:fp,analysis:JSON.parse(JSON.stringify(analysis)),aiDraft:aiDraft?JSON.parse(JSON.stringify(aiDraft)):null,generatedAt:new Date().toISOString()};delete cached.synthesisFailure;createdSynthesis=true;
+        }catch(synthesisErr){
+          synthesisDeferred=true;synthesisError=safeText(synthesisErr?.message||synthesisErr,220);cached.synthesisFailure={fingerprint:fp,error:synthesisError,at:new Date().toISOString()};synthesisFailureRecorded=true;analysis=evidenceOnlyDealAnalysis(address,evidence,compAnalysis,synthesisError);
+          console.error('[deal builder synthesis degraded]',synthesisError);
+        }
+      }
     }
     analysis.subject=analysis.subject||{};for(const field of coreFields)analysis.subject[field]=verified[field]??null;
     if(verified.address)analysis.subject.formattedAddress=verified.address;if(verified.city)analysis.subject.city=verified.city;if(verified.state)analysis.subject.state=verified.state;
-    // A precise ARV is only allowed when BOTH the subject property is sufficiently
-    // corroborated and at least two researched sold comps survive the comp engine.
-    if(readyForAnalysis){ analysis.arv={estimate:compAnalysis.estimate,low:compAnalysis.low,high:compAnalysis.high}; analysis.confidence=compAnalysis.confidence; analysis.arvMethod='Similarity-weighted researched sold comps'; }
-    else { analysis.arv={estimate:null,low:null,high:null}; analysis.confidence='Low'; analysis.arvMethod='ARV withheld — insufficient verified subject facts and researched sold comps'; analysis.warnings=[...(analysis.warnings||[]),'Better withheld a precise ARV because the subject property and at least two credible sold comps were not corroborated strongly enough.']; }
+    if(readyForAnalysis){analysis.arv={estimate:compAnalysis.estimate,low:compAnalysis.low,high:compAnalysis.high};analysis.confidence=compAnalysis.confidence;analysis.arvMethod=compAnalysis.method;analysis.comparables=compAnalysis.selected.map(c=>({address:c.address,price:c.adjustedSalePrice||c.salePrice,salePrice:c.salePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,similarity:c.similarity,source:c.source}));}
+    else{analysis.arv={estimate:null,low:null,high:null};analysis.confidence='Low';analysis.arvMethod='ARV withheld — property truth / closed-sale comp gate not satisfied';analysis.warnings=[...(analysis.warnings||[]),'Better withheld a precise ARV because verified subject facts and sufficiently recent/nearby distance-verified closed sales were not both available.'];}
     if(evidence.conflicts?.length)analysis.warnings=[...(analysis.warnings||[]),...evidence.conflicts.map(x=>`${x.field} has conflicting source evidence and was not accepted as a verified fact.`)].slice(0,8);
-    const aiDraft=analysis.description ? { description: analysis.description } : null;
-    req.db.dealAnalyses=req.db.dealAnalyses||[]; req.db.dealAnalyses.push({id:crypto.randomUUID(),userId:req.user.id,address,createdAt:new Date().toISOString(),qualified:readyForAnalysis}); const day=new Date().toISOString().slice(0,10); if(readyForAnalysis&&!allowance.unlimited){if(isPro(req.user)){if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;}req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1;}else req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1;await saveDB(req.db);} res.json({analysis,aiDraft,evidence,usage:dealBuilderAllowance(req.user),qualified:readyForAnalysis});
-  } catch(e){ console.error('[deal builder ai]',e.message); res.status(502).json({error:`AI synthesis failed after research completed: ${String(e.message).slice(0,240)}`}); }
+    const successfulAnalysis=Boolean(readyForAnalysis&&!synthesisDeferred),wasQualified=priorQualifiedDealProperty(req.db,req.user,key),newQualified=successfulAnalysis&&!wasQualified;
+    // Persist one successful-property event per user/property. Reopening or re-synthesizing the same
+    // property must not inflate analytics or later leak an unsaved duplicate through an unrelated DB write.
+    if(newQualified){
+      req.db.dealAnalyses=req.db.dealAnalyses||[];
+      req.db.dealAnalyses.push({id:crypto.randomUUID(),userId:req.user.id,address,researchKey:key,createdAt:new Date().toISOString(),qualified:true,synthesisReused});
+    }
+    if(newQualified&&!addressAllowance.unlimited){const day=new Date().toISOString().slice(0,10);if(isPro(req.user)){if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;}req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1;}else req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1;}
+    // A newly generated synthesis belongs to the server-side research cache even when the user
+    // previously qualified this same property, so persist it without creating another usage event.
+    if(newQualified||createdSynthesis||synthesisFailureRecorded)await saveDB(req.db);
+    res.json({analysis,aiDraft,evidence,usage:{...dealBuilderAllowance(req.user),priorQualified:wasQualified||successfulAnalysis},qualified:successfulAnalysis,evidenceReady:readyForAnalysis,synthesisReused,synthesisDeferred,synthesisError});
+  } catch(e){console.error('[deal builder ai]',e.message);res.status(502).json({error:`AI synthesis failed after research completed: ${String(e.message).slice(0,240)}`});}
+});
+
+app.get('/api/deal-builder/diagnostics', requireAuth, (req,res)=>{
+  if(!isAdminUser(req.user))return res.status(403).json({error:'Admin access required.'});
+  const address=String(req.query?.address||'').trim();if(address.length<8)return res.status(400).json({error:'Enter a complete property address.'});
+  const key=dealResearchKey(address),row=(req.db.dealResearchCache||[]).find(x=>x.key===key);if(!row)return res.status(404).json({error:'No cached research exists for this address. Diagnostics never trigger provider calls.'});
+  const ev=row.evidence||{};res.json({address:row.address,retrievedAt:row.retrievedAt,cacheVersion:DEAL_RESEARCH_CACHE_VERSION,diagnostics:ev.diagnostics||{},identity:ev.identity||{},fieldEvidence:ev.fieldEvidence||{},regridCandidates:ev.rawSubjects?.regridCandidates||[],errors:ev.errors||[],compGate:ev.compAnalysis||null,synthesisCached:Boolean(row.synthesis?.analysis)});
 });
 
 app.get('/api/deal-builder/sources', requireAuth, (req,res)=>{ const ds=require('./dealSources'); res.json({sources:ds.configuredSources()}); });
