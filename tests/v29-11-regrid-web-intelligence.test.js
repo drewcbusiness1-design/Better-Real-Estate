@@ -7,7 +7,7 @@ assert(ds.includes("type:'web_search'"),'Deal intelligence must perform public w
 assert(ds.includes('num_bedrooms')&&ds.includes('num_bath'),'Regrid beds/baths must normalize');
 assert(ds.includes('soldComps')&&ds.includes('marketContext'),'Web research must separate sold comps from market context');
 assert(ds.includes('conflicts'),'Cross-source conflicts must be preserved');
-assert(srv.includes('compAnalysis.valuationReady&&compAnalysis.estimate'),'Evidence-gated researched comps must drive ARV when enough evidence exists');
-assert(app.includes('cross-checks the address, records, public sources and sold comps')||app.includes('Resolves the exact property first'),'UI must disclose evidence-first research');
+assert(srv.includes('compAnalysis.valuationReady||compAnalysis.indicativeReady')&&srv.includes('compAnalysis.valuationReady&&readyForAnalysis'),'Evidence-gated researched comps must drive precise or clearly-labeled working ARV without weakening the precise gate');
+assert(app.includes('cross-checks the address, records, public sources and sold comps')||app.includes('multiple public real-estate sources')||app.includes('Multi-source investor intelligence'),'UI must disclose multi-source evidence research');
 assert(env.includes('REGRID_API_TOKEN='),'Deployment template must document Regrid');
 console.log('v29.11 Regrid + web intelligence tests passed');

@@ -34,6 +34,6 @@ assert.equal(r.subject.squareFootage,1132);
 const src=fs.readFileSync('dealSources.js','utf8');
 assert(src.includes("search_context_size:'high'"),'background research should use higher search context for evidence quality');
 assert(src.includes('WEB_FACT_TIMEOUT_MS = 90000')&&src.includes('WEB_COMP_TIMEOUT_MS = 150000'),'background web research must be bounded but long enough for source discovery');
-assert(src.includes('Zillow, Realtor.com, Redfin, Trulia, Homes.com'),'must intentionally search relevant public real-estate sources without pretending to scrape them');
+assert(src.includes("PRIMARY_PROPERTY_DOMAINS = ['zillow.com','realtor.com','redfin.com','trulia.com','homes.com'")&&src.includes('subject-major-property-sites'),'must intentionally search multiple relevant public real-estate sources without pretending to scrape them');
 assert(src.includes('do not scrape websites or bypass access controls'),'restricted sites must not be scraped');
 console.log('v29.14 property discovery reliability tests passed');

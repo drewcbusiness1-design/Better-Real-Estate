@@ -3,7 +3,7 @@ const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app
 assert(server.includes("app.post('/api/admin/demo-accounts/:id/preview'"),'demo preview API missing');
 assert(server.includes("['founder','onboarding','whatsnew','none']"),'preview allowlist missing');
 assert(server.includes("user.demoPreview={type:'founder',position"),'Founder simulation missing');
-assert(app.includes('const TUTORIAL_VERSION = 46;')&&app.includes("release:38,title:'Preview experiences'"),'tutorial v38 missing');
+assert(app.includes('const TUTORIAL_VERSION = 47;')&&app.includes("release:38,title:'Preview experiences'"),'tutorial v38 missing');
 assert(app.includes("'Preview the real user experience'")&&app.includes("'First 100 Founder welcome'")&&app.includes("'New-user onboarding'")&&app.includes("'What’s New tutorial'"),'preview admin controls missing');
 assert(app.includes("preview?'DEMO PREVIEW · FIRST 100 FOUNDING MEMBER'"),'Founder preview disclosure missing');
 assert(app.includes('Nothing is being awarded to this demo account.'),'safe Founder preview copy missing');

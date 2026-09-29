@@ -7,8 +7,8 @@ const intel=require('../dealIntelligence');
 assert(ds._evidenceTextGrounded('bedrooms',4,'503 W Grand Prairie St — 4 beds · 1 bath'));
 assert(ds._evidenceTextGrounded('squareFootage',1132,'Total interior livable area: 1,132 sqft'));
 assert(!ds._evidenceTextGrounded('squareFootage',1030,'Total interior livable area: 1,132 sqft'));
-assert(ds._compEvidenceGrounded({address:'308 S Pike St, Palestine, IL',salePrice:89500,evidenceText:'308 S Pike St sold for $89,500 on 06/18/26'}));
-assert(!ds._compEvidenceGrounded({address:'308 S Pike St, Palestine, IL',salePrice:89500,evidenceText:'Nearby property sold for $89,500'}));
+assert(ds._compEvidenceGrounded({address:'308 S Pike St, Palestine, IL',salePrice:89500,saleDate:'2026-06-18',evidenceText:'308 S Pike St sold for $89,500 on June 18, 2026'}));
+assert(!ds._compEvidenceGrounded({address:'308 S Pike St, Palestine, IL',salePrice:89500,saleDate:'2026-06-18',evidenceText:'Nearby property sold for $89,500 on June 18, 2026'}));
 
 // Three grounded exact-address portal sources may be Corroborated, but are not mislabeled Verified.
 const portal=(sourceKey)=>({value:4,source:sourceKey,sourceKey,sourceKind:'real_estate_portal',sourceType:'Public web',reliability:72,tier:2});
@@ -32,9 +32,9 @@ const rehab=intel.estimateRehab(subject,[{sourceKey:'web:zillow.com',summary:'ne
 assert.equal(rehab.recommendedKey,'heavy');assert.equal(rehab.scenarios.length,3);assert(rehab.scenarios.find(x=>x.key==='heavy').estimate>60000);assert(rehab.scenarios.find(x=>x.key==='heavy').high>rehab.scenarios.find(x=>x.key==='heavy').low);
 
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),src=fs.readFileSync('dealSources.js','utf8'),cache=fs.readFileSync('dealResearchCache.js','utf8');
-assert(app.includes('const TUTORIAL_VERSION = 46;')&&app.includes("release:46,title:'Investor-grade analysis'"));
+assert(app.includes('const TUTORIAL_VERSION = 47;')&&app.includes("release:46,title:'Investor-grade analysis'")&&app.includes("release:47,title:'Multi-source investor intelligence'"));
 for(const token of ['deal-intel-snapshot','evidence-summary-line','View source detail and provenance','Repair planning','Current ask'])assert(app.includes(token),token);
-for(const token of ['.dealbuilderpage{width:min(1180px,100%)','.evidence-field-grid{grid-template-columns:repeat(3','.rehab-scenario-grid{display:grid','.deal-intel-snapshot{display:grid'])assert(css.includes(token),token);
+for(const token of ['.dealbuilderpage{width:min(1080px,100%)','.evidence-field-grid{grid-template-columns:repeat(5','.rehab-scenario-grid{display:grid','.deal-intel-snapshot{display:grid'])assert(css.includes(token),token);
 assert(src.includes("u.searchParams.set('token',token)")&&src.includes("'x-regrid-token':token"),'Regrid auth must support documented token forms');
-assert(cache.includes("VERSION='v29.15-investor-grade-r3'"),'new cache namespace must invalidate bad prior evidence');
+assert(cache.includes("VERSION='v29.15-perfect-multisource-r4'"),'new cache namespace must invalidate bad prior evidence');
 console.log('v29.15 investor-grade analysis + presentation regression passed');

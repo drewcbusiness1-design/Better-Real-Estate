@@ -50,12 +50,12 @@ assert.ok(resolved.conflicts.some(x=>x.field==='bedrooms'));
 
 const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ai=fs.readFileSync('ai.js','utf8'),store=fs.readFileSync('store.js','utf8');
 assert(server.includes('DEAL_RESEARCH_CACHE_TTL_MS'),'research cache required');
-const cache=fs.readFileSync('dealResearchCache.js','utf8'); assert(server.includes('DEAL_RESEARCH_CACHE_VERSION = dealResearchCache.VERSION')&&cache.includes("VERSION='v29.15-investor-grade-r3'"),'cache namespace must invalidate stale research');
+const cache=fs.readFileSync('dealResearchCache.js','utf8'); assert(server.includes('DEAL_RESEARCH_CACHE_VERSION = dealResearchCache.VERSION')&&cache.includes("VERSION='v29.15-perfect-multisource-r4'"),'cache namespace must invalidate stale research');
 assert(server.includes('dealResearchCache'),'persistent research cache required');
 assert(server.includes("analysis.subject[field]=verified[field]??null"),'AI guessed facts must be overwritten by verified facts');
 assert(!server.includes("const evidence=(req.body?.evidence"),'browser evidence must not drive final valuation');
-assert(server.includes("ARV withheld — property truth / closed-sale comp gate not satisfied"),'unsupported ARV must be withheld');
-assert(server.includes('readyForAnalysis=Boolean(enoughIdentity&&compAnalysis.valuationReady&&compAnalysis.estimate)'),'full analysis must require property-truth plus production comp gate');
+assert(server.includes("ARV withheld — closed-sale evidence insufficient"),'unsupported ARV must be withheld');
+assert(server.includes('readyForAnalysis=Boolean(enoughIdentity&&(compAnalysis.valuationReady||compAnalysis.indicativeReady)'),'analysis must require property truth plus a defensible precise or clearly-labeled working comp result');
 assert(server.includes("if(!readyForAnalysis){"),'insufficient evidence must skip final AI synthesis');
 assert(server.includes('newQualified=successfulAnalysis&&!wasQualified'),'same successful property must not consume another limited-plan analysis quota');
 assert(app.includes('Verified property facts'),'tutorial must teach property truth');

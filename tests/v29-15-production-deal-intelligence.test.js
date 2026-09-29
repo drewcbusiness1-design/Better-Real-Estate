@@ -75,14 +75,15 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   assert.equal(resolved.fieldEvidence.bedrooms.status,'recorded');
   assert.equal(resolved.fieldEvidence.bedrooms.recordedValue,4);
 
-  // Multiple syndicated portals can repeat one upstream mistake; portal-only agreement is not verified truth.
+  // Multiple exact-address portals can establish Corroborated property truth, but never Verified truth by themselves.
   const portalOnly={factEvidence:[
     {field:'bedrooms',value:4,source:'Web · Portal A',sourceKey:'web:portal-a.example',sourceType:'Public web',sourceKind:'real_estate_portal',reliability:72,tier:2},
     {field:'bedrooms',value:4,source:'Web · Portal B',sourceKey:'web:portal-b.example',sourceType:'Public web',sourceKind:'real_estate_portal',reliability:72,tier:2}
   ]};
   const portalConsensus=ds._resolveSubjectEvidence({address:'503 W Grand Prairie St, Palestine, IL 62451',regridSubject:null,web:portalOnly});
-  assert.equal(portalConsensus.subject.bedrooms,null,'portal-only syndicated agreement must not become verified truth');
-  assert.equal(portalConsensus.fieldEvidence.bedrooms.status,'recorded');
+  assert.equal(portalConsensus.subject.bedrooms,4,'two independent exact-address portal sources should establish a corroborated value');
+  assert.equal(portalConsensus.fieldEvidence.bedrooms.status,'corroborated');
+  assert.equal(portalConsensus.fieldEvidence.bedrooms.verified,false);
 
   // Independent high-quality agreement verifies; a conflict is preserved/withheld unless consensus is strong enough.
   const countyWeb={factEvidence:[
@@ -130,10 +131,10 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   assert(server.includes('newQualified=successfulAnalysis&&!wasQualified'),'same successful property must not consume another quota slot');
   assert(server.includes("'/api/deal-builder/diagnostics'"),'cached admin diagnostics endpoint required');
   assert(server.includes('regridCandidates:ev.rawSubjects?.regridCandidates||[]'),'diagnostics must expose cached Regrid match candidates without another provider call');
-  assert(server.includes('if(newQualified){')&&server.includes('successfulAnalysis=Boolean(readyForAnalysis&&!synthesisDeferred)'),'reopening the same qualified property must not create duplicate analytics/quota events');
+  assert(server.includes('if(newQualified){')&&server.includes('successfulAnalysis=Boolean(compAnalysis.valuationReady&&readyForAnalysis&&!synthesisDeferred)'),'reopening the same qualified property must not create duplicate analytics/quota events');
   assert(server.includes('DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000')&&server.includes('evidenceOnlyDealAnalysis'),'AI synthesis failure must degrade to verified evidence instead of failing the whole request or burning retries');
   assert(server.includes('synthesisFailureRecorded'),'synthesis failures must be cached for a retry cooldown without consuming quota');
-  assert(app.includes('const TUTORIAL_VERSION = 46;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
+  assert(app.includes('const TUTORIAL_VERSION = 47;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
   assert(app.includes("const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()})"),'browser must not resend evidence');
   assert(app.includes("fe.status==='recorded'?['Recorded','recorded']")&&app.includes("fe.status==='corroborated'||fe.status==='corroborated_with_conflict'?['Corroborated','corroborated']"),'Recorded / Corroborated / Verified UX required');
   assert(app.includes("fe.status==='recorded'&&fe.recordedValue"),'single-source values must be visibly shown as Recorded while remaining excluded from verified valuation facts');
@@ -143,7 +144,7 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   assert(sources.includes("search_context_size:'high'"),'background property research needs high search context while remaining bounded');
   assert(sources.includes("process.env.OPENAI_RESEARCH_MODEL||'gpt-5.6-luna'"),'web extraction should default to the cost-sensitive research model independent of synthesis model');
   assert(sources.includes("reasoning:{effort:'medium'}"),'background property web research should use medium reasoning for better source discovery');
-  assert(sources.includes('let needFacts=')&&sources.includes('let needComps='),'web research must be adaptive');
+  assert(sources.includes('PRIMARY_PROPERTY_DOMAINS')&&sources.includes('subject-major-property-sites')&&sources.includes('sold-comps-major-property-sites'),'multi-source web research must deliberately target multiple property portals before expanding');
   assert(ai.includes('Server-verified evidence packet'),'AI must receive curated server evidence only');
   assert(netlify.includes('dealSources.js')&&netlify.includes('dealIntelligence.js'),'Deal Intelligence modules must ship with Netlify function');
   assert(env.includes('OPENAI_RESEARCH_MODEL=')&&env.includes('REGRID_USE_TYPEAHEAD=false'),'optional research controls must be documented');
