@@ -330,3 +330,12 @@ Regrid address-search responses may keep the canonical address in `properties.he
 - v29.15 increases the inherited forced-refresh protection from 10 minutes to 30 minutes.
 - No new paid provider/dependency was introduced. Regrid and the existing OpenAI integration are the approved live sources; authorized MLS remains optional/configured through existing `MLS_RESO_*` variables.
 - Preserve every earlier unrelated product/UI/membership/demo/affiliate/Founder rule. Before every future build, review the complete inherited rules twice, protect the latest confirmed-good baseline, perform exhaustive QA, extract and retest the exact final ZIP, and carry this rule recursively into the next handoff.
+
+
+## v29.15 retrieval correction — 2026-09-29
+- Keep the approved Regrid + authorized MLS/RESO + OpenAI hosted web-search architecture; no new provider/dependency.
+- Public-web fallback must use a small targeted, location-aware search plan (exact address, major real-estate portals/broker pages, county/public-record terms, and sold/closed evidence as needed) rather than a one-shot low-context lookup.
+- The hosted web-search tool uses medium search context and low reasoning with live external web access; timeout stays bounded at 18 seconds.
+- A valid single-source property value is visibly shown as Recorded in the evidence UI, but remains excluded from verified subject facts and cannot unlock precise valuation without corroboration.
+- Cache namespace is `v29.15-retrieval-r1` so old failed/empty evidence is invalidated on deploy.
+- Current tutorial version is 44.

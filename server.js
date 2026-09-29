@@ -1515,7 +1515,7 @@ function dealBuilderAllowance(user) {
 app.get('/api/deal-builder/usage', requireAuth, (req,res) => res.json({ usage:dealBuilderAllowance(req.user) }));
 app.get('/api/tools/usage', requireAuth, (req,res)=>res.json({ dealBuilder:dealBuilderAllowance(req.user), listingAi:plusToolAllowance(req.user,'listingAi',2), dispoAi:plusToolAllowance(req.user,'dispoAi',3) }));
 function dealBuilderLimitError(req,allowance){return isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Plus includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Plus includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.');}
-const DEAL_RESEARCH_CACHE_VERSION = 'v29.15';
+const DEAL_RESEARCH_CACHE_VERSION = 'v29.15-retrieval-r1';
 const DEAL_RESEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEAL_RESEARCH_MIN_REFRESH_MS = 30 * 60 * 1000;
 const DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000;

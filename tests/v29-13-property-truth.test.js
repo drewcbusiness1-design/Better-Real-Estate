@@ -50,7 +50,7 @@ assert.ok(resolved.conflicts.some(x=>x.field==='bedrooms'));
 
 const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ai=fs.readFileSync('ai.js','utf8'),store=fs.readFileSync('store.js','utf8');
 assert(server.includes('DEAL_RESEARCH_CACHE_TTL_MS'),'research cache required');
-assert(server.includes("DEAL_RESEARCH_CACHE_VERSION = 'v29.15'"),'cache namespace must invalidate stale research');
+assert(server.includes("DEAL_RESEARCH_CACHE_VERSION = 'v29.15-retrieval-r1'"),'cache namespace must invalidate stale research');
 assert(server.includes('dealResearchCache'),'persistent research cache required');
 assert(server.includes("analysis.subject[field]=verified[field]??null"),'AI guessed facts must be overwritten by verified facts');
 assert(!server.includes("const evidence=(req.body?.evidence"),'browser evidence must not drive final valuation');

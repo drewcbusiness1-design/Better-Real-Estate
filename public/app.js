@@ -2024,7 +2024,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 43;
+const TUTORIAL_VERSION = 44;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2064,6 +2064,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'dealbuilder',selector:'.source-evidence-card',min:1,release:41,title:'Live property + web research',copy:'Better now queries configured Regrid parcel records and performs public web research in addition to authorized MLS feeds. It cross-checks beds, baths, square footage, sale history and sold comps, flags source conflicts, and uses credible researched sold comps for the working ARV.'},
  {view:'dealbuilder',selector:'.source-evidence-card',min:1,release:42,title:'Verified property facts',copy:'Better now verifies the subject property field by field. Conflicting or single-source beds, baths, square footage, year built and property type are withheld instead of being presented as facts. Open Property evidence to see exactly what each source reported.'},
  {view:'dealbuilder',selector:'.source-evidence-card',min:1,release:43,title:'Production property intelligence',copy:'Better now resolves the exact property first, uses deterministic Regrid and authorized MLS evidence before spending on web research, checks nearby recorded closed sales, distinguishes Recorded from independently Verified facts, and withholds ARV unless the property and comp gates pass. Research is cached to reduce Netlify and API usage.'},
+  {view:'dealbuilder',selector:'.source-evidence-card',min:1,release:44,title:'Property research reliability',copy:'Better now runs a targeted, location-aware public-web research pass when deterministic sources leave facts or sold comps unresolved. Single-source values stay labeled Recorded and visible for reference, while only corroborated facts can unlock valuation.'},
  {view:'buyercrm',selector:'.buyercrmpage',min:0,title:'Buyer CRM',copy:'Keep buyer markets, buy boxes, private notes and follow-up stages in one pipeline.'},
  {view:'insights',selector:'.insightspage',min:0,title:'Demand Insights',copy:'See where published buyer demand is concentrated by market, property type and strategy.'},
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
@@ -2175,7 +2176,7 @@ async function renderDealBuilder(){
       const identity=ev.identity||{};evidenceCard.appendChild(el('div',{class:'hint'},`Property match: ${identity.addressMatched?(identity.confidence||'Matched'):'Not sufficiently verified'}${identity.addressMatchScore!==null&&identity.addressMatchScore!==undefined?' · match score '+identity.addressMatchScore:''} · ${identity.resolvedCoreFields||0}/5 core facts verified.`));
       const factGrid=el('div',{class:'evidence-field-grid'}),fieldLabels={bedrooms:'Bedrooms',bathrooms:'Bathrooms',squareFootage:'Living area',yearBuilt:'Year built',propertyType:'Property type'};
       for(const field of Object.keys(fieldLabels)){
-        const fe=ev.fieldEvidence?.[field]||{},value=fe.value!==null&&fe.value!==undefined?fmtFact(field,fe.value):(fe.status==='recorded'?'Needs confirmation':fe.status==='conflicting'?'Conflicting':'Not found');
+        const fe=ev.fieldEvidence?.[field]||{},value=fe.value!==null&&fe.value!==undefined?fmtFact(field,fe.value):(fe.status==='recorded'&&fe.recordedValue!==null&&fe.recordedValue!==undefined?fmtFact(field,fe.recordedValue):fe.status==='conflicting'?'Conflicting':'Not found');
         const raw=(fe.raw||[]).map(x=>`${x.source}: ${fmtFact(field,x.value)}`).join(' · ');const stateLabel=fe.status==='verified'?'Verified · independent agreement':fe.status==='verified_with_conflict'?'Verified consensus · conflict retained':fe.status==='conflicting'?'Withheld · credible sources disagree':fe.status==='recorded'?'Recorded · one source, not independently verified':'Not found';
         factGrid.appendChild(el('div',{class:'evidence-field'},[el('span',{},fieldLabels[field]),el('strong',{},value),el('small',{},stateLabel),raw?el('small',{class:'hint'},raw):null].filter(Boolean)));
       }

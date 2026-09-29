@@ -32,8 +32,8 @@ assert.equal(r.subject.bathrooms,1);
 assert.equal(r.subject.squareFootage,1132);
 
 const src=fs.readFileSync('dealSources.js','utf8');
-assert(src.includes("search_context_size:'low'"),'web research must use bounded context for Netlify reliability');
-assert(src.includes('WEB_TIMEOUT_MS = 12000'),'web research timeout must be bounded');
-assert(src.includes('You may search for the exact address with source names such as Zillow'),'must not pretend to scrape Zillow');
-assert(src.includes('Do not bypass access controls'),'restricted sites must not be scraped');
+assert(src.includes("search_context_size:'medium'"),'web research must use bounded context for Netlify reliability');
+assert(src.includes('WEB_TIMEOUT_MS = 18000'),'web research timeout must be bounded');
+assert(src.includes('major real-estate sources such as Zillow'),'must intentionally search relevant public real-estate sources without pretending to scrape them');
+assert(src.includes('do not scrape websites or bypass access controls'),'restricted sites must not be scraped');
 console.log('v29.14 property discovery reliability tests passed');

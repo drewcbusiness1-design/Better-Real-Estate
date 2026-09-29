@@ -6,6 +6,6 @@ assert(app.includes("/api/deal-builder/research"),'client must run research sepa
 assert(app.includes('Step 1 of 2')&&app.includes('Step 2 of 2'),'client must show actual progress');
 assert(ds.includes('Promise.all([')&&ds.includes('researchRegrid(address)')&&ds.includes('Promise.all(mlsCfgs.map'),'deterministic identity sources must run concurrently');
 assert(ds.includes('const needFacts=')&&ds.includes('const needComps=')&&ds.includes('researchWeb(address,{needFacts,needComps})'),'web research must be adaptive, not unconditional');
-assert(ds.includes('REGRID_TIMEOUT_MS = 6500')&&ds.includes('MLS_TIMEOUT_MS = 8000')&&ds.includes('WEB_TIMEOUT_MS = 12000'),'external sources need bounded timeouts');
+assert(ds.includes('REGRID_TIMEOUT_MS = 6500')&&ds.includes('MLS_TIMEOUT_MS = 8000')&&ds.includes('WEB_TIMEOUT_MS = 18000'),'external sources need bounded timeouts');
 assert(server.includes('AI synthesis failed after research completed'),'failure must identify which stage failed');
 console.log('v29.12 timeout resilience regression passed');
