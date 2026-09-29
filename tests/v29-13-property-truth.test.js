@@ -50,7 +50,7 @@ assert.ok(resolved.conflicts.some(x=>x.field==='bedrooms'));
 
 const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ai=fs.readFileSync('ai.js','utf8'),store=fs.readFileSync('store.js','utf8');
 assert(server.includes('DEAL_RESEARCH_CACHE_TTL_MS'),'research cache required');
-const cache=fs.readFileSync('dealResearchCache.js','utf8'); assert(server.includes('DEAL_RESEARCH_CACHE_VERSION = dealResearchCache.VERSION')&&cache.includes("VERSION='v29.15-async-research-r2'"),'cache namespace must invalidate stale research');
+const cache=fs.readFileSync('dealResearchCache.js','utf8'); assert(server.includes('DEAL_RESEARCH_CACHE_VERSION = dealResearchCache.VERSION')&&cache.includes("VERSION='v29.15-investor-grade-r3'"),'cache namespace must invalidate stale research');
 assert(server.includes('dealResearchCache'),'persistent research cache required');
 assert(server.includes("analysis.subject[field]=verified[field]??null"),'AI guessed facts must be overwritten by verified facts');
 assert(!server.includes("const evidence=(req.body?.evidence"),'browser evidence must not drive final valuation');
@@ -59,7 +59,7 @@ assert(server.includes('readyForAnalysis=Boolean(enoughIdentity&&compAnalysis.va
 assert(server.includes("if(!readyForAnalysis){"),'insufficient evidence must skip final AI synthesis');
 assert(server.includes('newQualified=successfulAnalysis&&!wasQualified'),'same successful property must not consume another limited-plan analysis quota');
 assert(app.includes('Verified property facts'),'tutorial must teach property truth');
-assert(app.includes('Withheld · credible sources disagree'),'UI must surface conflicts');
+assert(app.includes('Conflicts retained — disputed facts are not silently chosen'),'UI must surface conflicts');
 assert(app.includes('cached to save API/Netlify usage'),'cost-saving cache must be visible');
 assert(ai.toLowerCase().includes('never select a disputed raw value'),'AI must not choose conflicting source values itself');
 assert(store.includes("'dealResearchCache'"),'research cache collection missing');

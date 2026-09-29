@@ -169,7 +169,9 @@ async function generateAddressDealAnalysis(address, evidence = null) {
     fieldEvidence:evidence?.fieldEvidence||{},
     conflicts:evidence?.conflicts||[],
     selectedClosedComps:(compAnalysis.selected||[]).slice(0,8).map(c=>({address:c.address,salePrice:c.salePrice,adjustedSalePrice:c.adjustedSalePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,squareFootage:c.squareFootage,bedrooms:c.bedrooms,bathrooms:c.bathrooms,yearBuilt:c.yearBuilt,propertyType:c.propertyType,similarity:c.similarity,source:c.source,reasons:c.reasons})),
-    compResult:{estimate:compAnalysis.estimate,low:compAnalysis.low,high:compAnalysis.high,confidence:compAnalysis.confidence,valuationReady:compAnalysis.valuationReady,method:compAnalysis.method,warnings:compAnalysis.warnings||[]}
+    compResult:{estimate:compAnalysis.estimate,low:compAnalysis.low,high:compAnalysis.high,confidence:compAnalysis.confidence,valuationReady:compAnalysis.valuationReady,method:compAnalysis.method,warnings:compAnalysis.warnings||[]},
+    rehabPlanning:evidence?.rehabAnalysis||null,
+    conditionEvidence:(evidence?.conditionEvidence||[]).slice(0,6).map(x=>({summary:x.summary,source:x.source,sourceUrl:x.sourceUrl}))
   };
   const body = {
     model: OPENAI_MODEL,
@@ -178,7 +180,7 @@ async function generateAddressDealAnalysis(address, evidence = null) {
       'Treat ONLY evidencePacket.subject fields as verified subject-property facts. fieldEvidence/conflicts are audit context. Never select a disputed raw value yourself and never fill a null subject field from memory, assumptions, or general web knowledge.',
       'The selectedClosedComps list is the complete allowed comparable-sale set for this analysis. Never invent another comp, address, sale price, sale date, distance, source, or citation.',
       'Use evidencePacket.compResult as the valuation result. Do not independently change the ARV. Explain it in plain investor language and preserve its uncertainty.',
-      'Create three rehab planning scenarios: light, moderate, heavy. They are scenario estimates, not inspection findings. Base ranges conservatively on verified living area/year/type when available and explicitly state that actual condition can materially change repair cost.',
+      'Use evidencePacket.rehabPlanning as the authoritative repair-planning scenarios. Do not replace its estimates with invented numbers. repair scenarios remain estimates, not inspection findings. Explain the recommended scenario and its evidence basis, and clearly state that actual condition can materially change repair cost.',
       'Write a concise professional property/deal description separating verified facts from estimates. Avoid protected-class/demographic language and unsupported neighborhood claims.',
       'confidence must be Low, Moderate, or High and should not exceed the compResult confidence.',
       'Return only the requested structured fields.'

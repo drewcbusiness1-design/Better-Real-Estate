@@ -15,7 +15,7 @@ exports.handler=async(event)=>{
     const evidence=await dealSources.research(job.address,{onProgress:async(p)=>{
       await jobs.updateJob(job.id,{status:'running',phase:p.phase||'research',progress:p.progress||20,message:p.message||'Researching property evidence.',stageDetail:p.detail||null});
     }});
-    evidence.compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]);evidence.serverOwned=true;evidence.cache={hit:false,version:cache.VERSION,retrievedAt:evidence.retrievedAt||new Date().toISOString(),ageMs:0,refreshProtected:false};
+    evidence.compAnalysis=intelligence.analyzeComps(evidence.subject||{},evidence.comps||[]);evidence.rehabAnalysis=intelligence.estimateRehab(evidence.subject||{},evidence.conditionEvidence||[],evidence.fieldEvidence||{});evidence.serverOwned=true;evidence.cache={hit:false,version:cache.VERSION,retrievedAt:evidence.retrievedAt||new Date().toISOString(),ageMs:0,refreshProtected:false};
     await jobs.updateJob(job.id,{status:'running',phase:'saving',progress:94,message:'Saving verified evidence and preparing the analysis.'});
     await cache.persistEvidence(job.address,evidence);
     await jobs.updateJob(job.id,{status:'complete',phase:'complete',progress:100,message:evidence.compAnalysis?.valuationReady?'Research complete. Verified evidence and sold comps are ready.':'Research complete. Better preserved the evidence it could verify and withheld unsupported valuation.',completedAt:new Date().toISOString(),durationMs:Date.now()-started,evidence});

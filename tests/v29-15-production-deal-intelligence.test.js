@@ -49,10 +49,10 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   global.fetch=async (_url,opts)=>{
     webRequestBody=JSON.parse(opts.body);
     const structured={factEvidence:[
-      {field:'bedrooms',numberValue:3,textValue:null,subjectAddress:'503 West Grand Prairie Street, Palestine, IL 62451',sourceUrl:'https://county.example/property/503',sourceName:'County Assessor',sourceKind:'county_assessor'},
-      {field:'bathrooms',numberValue:2,textValue:null,subjectAddress:'999 Other St, Palestine, IL 62451',sourceUrl:'https://county.example/property/999',sourceName:'County Assessor',sourceKind:'county_assessor'},
-      {field:'yearBuilt',numberValue:1900,textValue:null,subjectAddress:'503 W Grand Prairie St, Palestine, IL 62451',sourceUrl:'https://invented.example/property/503',sourceName:'Invented',sourceKind:'other'}
-    ],soldComps:[],marketContext:[],notes:[]};
+      {field:'bedrooms',numberValue:3,textValue:null,subjectAddress:'503 West Grand Prairie Street, Palestine, IL 62451',sourceUrl:'https://county.example/property/503',sourceName:'County Assessor',sourceKind:'county_assessor',pageTitle:'503 W Grand Prairie St',evidenceText:'503 W Grand Prairie St — 3 bedrooms'},
+      {field:'bathrooms',numberValue:2,textValue:null,subjectAddress:'999 Other St, Palestine, IL 62451',sourceUrl:'https://county.example/property/999',sourceName:'County Assessor',sourceKind:'county_assessor',pageTitle:'999 Other St',evidenceText:'999 Other St — 2 bathrooms'},
+      {field:'yearBuilt',numberValue:1900,textValue:null,subjectAddress:'503 W Grand Prairie St, Palestine, IL 62451',sourceUrl:'https://invented.example/property/503',sourceName:'Invented',sourceKind:'other',pageTitle:'503 W Grand Prairie St',evidenceText:'Year built 1900'}
+    ],conditionEvidence:[],soldComps:[],marketContext:[],notes:[]};
     return {ok:true,status:200,json:async()=>({output:[
       {type:'web_search_call',action:{type:'search',sources:[{type:'url',url:'https://county.example/property/503'}]}},
       {type:'message',content:[{type:'output_text',text:JSON.stringify(structured)}]}
@@ -133,9 +133,9 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   assert(server.includes('if(newQualified){')&&server.includes('successfulAnalysis=Boolean(readyForAnalysis&&!synthesisDeferred)'),'reopening the same qualified property must not create duplicate analytics/quota events');
   assert(server.includes('DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000')&&server.includes('evidenceOnlyDealAnalysis'),'AI synthesis failure must degrade to verified evidence instead of failing the whole request or burning retries');
   assert(server.includes('synthesisFailureRecorded'),'synthesis failures must be cached for a retry cooldown without consuming quota');
-  assert(app.includes('const TUTORIAL_VERSION = 45;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
+  assert(app.includes('const TUTORIAL_VERSION = 46;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
   assert(app.includes("const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()})"),'browser must not resend evidence');
-  assert(app.includes('Recorded · one source, not independently verified'),'Recorded vs Verified UX required');
+  assert(app.includes("fe.status==='recorded'?['Recorded','recorded']")&&app.includes("fe.status==='corroborated'||fe.status==='corroborated_with_conflict'?['Corroborated','corroborated']"),'Recorded / Corroborated / Verified UX required');
   assert(app.includes("fe.status==='recorded'&&fe.recordedValue"),'single-source values must be visibly shown as Recorded while remaining excluded from verified valuation facts');
   assert(app.includes('AI synthesis unavailable — verified evidence/comp result preserved without consuming an analysis use'),'UI must surface graceful synthesis degradation');
   assert(app.includes("const calcArv=()=>workingArv"),'browser must not replace server ARV with naive average');
