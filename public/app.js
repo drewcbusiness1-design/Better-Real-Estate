@@ -2171,7 +2171,7 @@ async function renderDealBuilder(){
         let waitMs=started.reused?4000:2500,finished=false;
         while(!finished){
           await new Promise(resolve=>setTimeout(resolve,waitMs));
-          const sr=await fetch(`${started.statusPath}?jobId=${encodeURIComponent(started.jobId)}&token=${encodeURIComponent(started.statusToken)}`,{headers:{Accept:'application/json'},cache:'no-store'});if(!sr.ok)throw new Error('Unable to read the property research status.');
+          const sr=await fetch(`${started.statusPath}?jobId=${encodeURIComponent(started.jobId)}`,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'});if(!sr.ok){let detail='';try{detail=(await sr.json())?.error||''}catch{}throw new Error(detail||'Unable to read the property research status.');}
           const sj=await sr.json(),job=sj.job||{};status.textContent=`Researching property · ${job.progress||0}% · ${job.message||'Checking evidence…'}`;
           if(job.status==='complete'){ev0=job.evidence||{};finished=true;break}
           if(job.status==='failed')throw new Error(job.error||'Property research could not complete.');

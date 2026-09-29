@@ -2,12 +2,15 @@ const assert=require('assert'),fs=require('fs');
 (async()=>{
 const app=fs.readFileSync('public/app.js','utf8'),server=fs.readFileSync('server.js','utf8'),sources=fs.readFileSync('dealSources.js','utf8'),toml=fs.readFileSync('netlify.toml','utf8');
 assert(fs.existsSync('netlify/functions/deal-research-background.js'),'background worker missing');
-assert(fs.existsSync('netlify/functions/deal-research-status.js'),'status worker missing');
 assert(fs.existsSync('dealResearchJobs.js'),'job store missing');
 assert(fs.existsSync('dealResearchCache.js'),'shared cache helper missing');
 assert(server.includes("/api/deal-builder/research/start"),'async research start endpoint missing');
+assert(server.includes("app.get('/api/deal-builder/research/status'")&&server.includes("statusPath:'/api/deal-builder/research/status'"),'authenticated API-backed research status route missing');
+assert(server.includes("job.userId!==req.user.id"),'research status must be scoped to the signed-in user');
 assert(app.includes("/api/deal-builder/research/start")&&app.includes('deal-research-background')===false,'client should use server-provided background path rather than hardcoding it');
 assert(app.includes('Researching property · ${job.progress||0}%'),'progress UI missing');
+assert(app.includes("credentials:'same-origin'")&&!app.includes('started.statusToken'),'status polling must use the existing authenticated API session rather than a separate ephemeral status function/token');
+assert(fs.readFileSync('store.js','utf8').includes("'dealResearchJobs'"),'background job state must be stored in the existing durable Postgres data layer');
 assert(toml.includes('[functions."deal-research-background"]')&&toml.includes('background = true'),'Netlify background mode missing');
 assert(sources.includes('WEB_FACT_TIMEOUT_MS = 90000')&&sources.includes('WEB_COMP_TIMEOUT_MS = 150000'),'background-quality web budgets missing');
 assert(sources.includes("u.searchParams.set('path',`/us/${parsed.state.toLowerCase()}`)"),'Regrid state-path constrained lookup missing');

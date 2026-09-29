@@ -1542,7 +1542,15 @@ app.post('/api/deal-builder/research/start', requireAuth, async (req,res) => {
     return res.json({state:'complete',address,evidence,usage:addressAllowance});
   }
   const job=await dealResearchJobs.startOrReuse({userId:req.user.id,address,researchKey:key,cacheVersion:DEAL_RESEARCH_CACHE_VERSION,forceRefresh});
-  res.status(job.reused?200:202).json({state:job.status,jobId:job.id,statusToken:job.statusToken,runToken:job.runToken,reused:Boolean(job.reused),backgroundPath:'/.netlify/functions/deal-research-background',statusPath:'/.netlify/functions/deal-research-status',usage:addressAllowance});
+  res.status(job.reused?200:202).json({state:job.status,jobId:job.id,runToken:job.runToken,reused:Boolean(job.reused),backgroundPath:'/.netlify/functions/deal-research-background',statusPath:'/api/deal-builder/research/status',usage:addressAllowance});
+});
+
+app.get('/api/deal-builder/research/status', requireAuth, async (req,res) => {
+  try{
+    const job=await dealResearchJobs.getJob(String(req.query?.jobId||''));
+    if(!job||job.userId!==req.user.id)return res.status(404).json({error:'Research job not found.'});
+    return res.set('Cache-Control','no-store').json({job:dealResearchJobs.publicJob(job),retryAfterMs:job.status==='running'?8000:job.status==='queued'?5000:0});
+  }catch(e){console.error('[deal research status]',e?.message);return res.status(500).json({error:'Unable to read property research status.'});}
 });
 
 app.post('/api/deal-builder/research', requireAuth, async (req,res) => {

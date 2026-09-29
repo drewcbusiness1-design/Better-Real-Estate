@@ -1,22 +1,34 @@
 /* Better Real Estate Deal Intelligence background-job state.
-   Uses the already-approved @netlify/blobs dependency in production so long-running
-   research can survive beyond the originating browser request without adding a provider.
+   Production state is stored in the existing Better Real Estate Postgres data layer
+   so the API function, background worker, and polling requests share one durable source.
+   Local tests/dev use in-process memory when no database is configured.
 */
 const crypto = require('crypto');
-let getStore = null;
-try { ({ getStore } = require('@netlify/blobs')); } catch {}
+const { sql, init, tableFor, FILE_MODE } = require('./store');
 
-const STORE_NAME = 'bre-deal-research-jobs';
+const COLLECTION = 'dealResearchJobs';
 const memory = new Map();
-const isNetlify = !!(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
-function store(){
-  if(!isNetlify || !getStore) return null;
-  try { return getStore(STORE_NAME); } catch { return null; }
-}
 function jobKey(id){ return `job:${id}`; }
 function lockKey(userId,researchKey){ return `lock:${crypto.createHash('sha256').update(`${userId}|${researchKey}`).digest('hex')}`; }
-async function getJSON(key){ const s=store(); if(s){try{return await s.get(key,{type:'json',consistency:'strong'})}catch{return null}} return memory.get(key)||null; }
-async function setJSON(key,value){ const s=store(); if(s){await s.setJSON(key,value);return value} memory.set(key,JSON.parse(JSON.stringify(value)));return value; }
+
+async function getJSON(key){
+  if(sql && !FILE_MODE){
+    await init();
+    const rows = await sql(`SELECT data FROM ${tableFor(COLLECTION)} WHERE id = $1 LIMIT 1`, [key]);
+    return rows?.[0]?.data || null;
+  }
+  return memory.get(key) || null;
+}
+async function setJSON(key,value){
+  const clean = JSON.parse(JSON.stringify(value));
+  if(sql && !FILE_MODE){
+    await init();
+    await sql(`INSERT INTO ${tableFor(COLLECTION)} (id,data,updated_at) VALUES ($1,$2,now()) ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data,updated_at=now()`, [key, JSON.stringify(clean)]);
+    return clean;
+  }
+  memory.set(key, clean);
+  return clean;
+}
 async function getJob(id){ return getJSON(jobKey(id)); }
 async function saveJob(job){ job.updatedAt=new Date().toISOString(); await setJSON(jobKey(job.id),job); return job; }
 async function startOrReuse({userId,address,researchKey,cacheVersion,forceRefresh=false}){

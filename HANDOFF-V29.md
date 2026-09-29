@@ -351,3 +351,12 @@ Regrid address-search responses may keep the canonical address in `properties.he
 - Research progress is persisted and shown to the user. The browser checks lightweight status only; it never restarts paid research merely to obtain progress.
 - Server-owned evidence is written to the same 24-hour research cache. 30-minute force-refresh protection, in-flight/job deduplication, quota-on-success behavior, evidence-fingerprint synthesis caching, and no automatic page-load research remain mandatory.
 - Tutorial version is 45. Future handoffs must preserve the background quality-first architecture and must not regress Deal Intelligence into a short synchronous request.
+
+
+## v29.15 deep-background research status reliability repair — authoritative
+- The first deep-background production deploy reached the background workflow but the browser failed with `Unable to read the property research status`.
+- Do not restore the standalone `deal-research-status` Netlify function. Research progress/status now reads through the authenticated main API route `/api/deal-builder/research/status`.
+- `dealResearchJobs` is a durable collection in the existing Better Real Estate Postgres/Neon store so the API request and Netlify background worker share the same job state.
+- Status polling is read-only and must never trigger provider calls or consume a Deal Builder allowance.
+- Background research itself remains the approved long-running architecture; accuracy is prioritized over arbitrary short request deadlines.
+- Tutorial remains v45 because the visible deep-background workflow did not change. Preserve all prior source, truth-gate, comp-gate, cost, quota, UI and QA rules.
