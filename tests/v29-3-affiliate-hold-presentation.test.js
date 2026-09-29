@@ -11,6 +11,6 @@ assert(app.includes("el('strong',{},'30%')")&&app.includes("el('span',{},'one-ti
 assert(css.includes('.affiliate-rate{display:inline-flex')&&css.includes('border-radius:999px')&&css.includes('white-space:nowrap'),'affiliate rate must use compact horizontal pill styling');
 assert(app.includes('Commissions remain pending for 3 days before becoming available.'),'terms list must state 3-day hold');
 assert(app.includes('withdrawn after the 3-day hold.'),'wallet copy must state 3-day hold');
-assert(app.includes('const TUTORIAL_VERSION = 47;')&&app.includes("release:35,title:'Affiliate Wallet'"),'tutorial must be updated with the change');
+assert(app.includes('const TUTORIAL_VERSION = 48;')&&app.includes("release:35,title:'Affiliate Wallet'"),'tutorial must be updated with the change');
 assert(handoff.includes('3-day hold'),'handoff must preserve the current hold');
 console.log('v29.3 affiliate hold + presentation regression: PASS');

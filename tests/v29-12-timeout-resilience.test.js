@@ -5,7 +5,7 @@ assert(server.includes("/api/deal-builder/research/start"),'research must start 
 assert(app.includes("/api/deal-builder/research/start"),'client must start research separately');
 assert(app.includes('Researching property · ${job.progress||0}%')&&app.includes('Research complete · assembling the cross-source investor analysis'),'client must show real background progress');
 assert(ds.includes('Promise.all([')&&ds.includes('researchRegrid(address)')&&ds.includes('Promise.all(mlsCfgs.map'),'deterministic identity sources must run concurrently');
-assert(ds.includes('subject-major-property-sites')&&ds.includes('subject-public-records-brokers-and-secondary-sources')&&ds.includes('sold-comps-major-property-sites')&&ds.includes('sold-comps-local-brokers-public-records-secondary'),'web research must be adaptive, staged and multi-source');
+assert(ds.includes('subject-and-sold-comps-major-property-sites')&&ds.includes('subject-independent-property-and-public-record-sources')&&ds.includes('sold-comps-local-brokers-public-records-secondary')&&ds.includes('sold-comps-independent-corroboration'),'web research must be adaptive, staged and multi-source');
 assert(ds.includes('REGRID_TIMEOUT_MS = 6500')&&ds.includes('MLS_TIMEOUT_MS = 8000')&&ds.includes('WEB_FACT_TIMEOUT_MS = 90000')&&ds.includes('WEB_COMP_TIMEOUT_MS = 150000'),'provider calls must stay bounded while background research gets adequate time');
 assert(server.includes('AI synthesis failed after research completed'),'failure must identify which stage failed');
 console.log('v29.12 timeout/background resilience regression passed');

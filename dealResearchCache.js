@@ -2,11 +2,11 @@
 const crypto=require('crypto');
 const {sql,tableFor,FILE_MODE,loadDB,saveDB}=require('./store');
 const ds=require('./dealSources');
-const VERSION='v29.15-perfect-multisource-r4';
+const VERSION='v29.15-complete-intelligence-r5';
 const TTL_MS=24*60*60*1000;
 const MIN_REFRESH_MS=30*60*1000;
 function key(address){return `${VERSION}:${ds.cacheKey(address)}`}
-function fingerprint(evidence){const compact={subject:evidence?.subject||{},fieldEvidence:evidence?.fieldEvidence||{},auxiliaryFacts:evidence?.auxiliaryFacts||{},identity:evidence?.identity||{},conflicts:evidence?.conflicts||[],conditionEvidence:evidence?.conditionEvidence||[],rehabAnalysis:evidence?.rehabAnalysis||null,comps:(evidence?.comps||[]).map(c=>({address:c.address,salePrice:c.salePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,squareFootage:c.squareFootage,bedrooms:c.bedrooms,bathrooms:c.bathrooms,yearBuilt:c.yearBuilt,propertyType:c.propertyType,source:c.source,sourceKey:c.sourceKey}))};return crypto.createHash('sha256').update(JSON.stringify(compact)).digest('hex')}
+function fingerprint(evidence){const compact={subject:evidence?.subject||{},comparisonSubject:evidence?.comparisonSubject||{},fieldEvidence:evidence?.fieldEvidence||{},auxiliaryFacts:evidence?.auxiliaryFacts||{},identity:evidence?.identity||{},conflicts:evidence?.conflicts||[],conditionEvidence:evidence?.conditionEvidence||[],rehabAnalysis:evidence?.rehabAnalysis||null,comps:(evidence?.comps||[]).map(c=>({address:c.address,salePrice:c.salePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,squareFootage:c.squareFootage,bedrooms:c.bedrooms,bathrooms:c.bathrooms,yearBuilt:c.yearBuilt,propertyType:c.propertyType,source:c.source,sourceKey:c.sourceKey}))};return crypto.createHash('sha256').update(JSON.stringify(compact)).digest('hex')}
 async function persistEvidence(address,evidence,{synthesis=null,synthesisFailure=null}={}){
   const researchKey=key(address),retrievedAt=evidence?.retrievedAt||new Date().toISOString();
   if(sql&&!FILE_MODE){

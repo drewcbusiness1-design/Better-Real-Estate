@@ -12,7 +12,8 @@ const WEB_FACT_TIMEOUT_MS = 90000;
 const WEB_COMP_TIMEOUT_MS = 150000;
 const REGRID_NEARBY_RADIUS_METERS = 3219; // ~2 miles
 const REGRID_NEARBY_LIMIT = 40;
-const PRIMARY_PROPERTY_DOMAINS = ['zillow.com','realtor.com','redfin.com','trulia.com','homes.com','movoto.com','compass.com','remax.com','coldwellbanker.com','century21.com'];
+const PRIMARY_PROPERTY_DOMAINS = ['zillow.com','realtor.com','redfin.com','homes.com','movoto.com','compass.com','remax.com','coldwellbanker.com','century21.com'];
+const SECONDARY_PROPERTY_DOMAINS = ['trulia.com','realtor.com','redfin.com','homes.com','movoto.com','compass.com','remax.com','coldwellbanker.com','century21.com'];
 const MAX_WEB_PASSES = 4;
 
 function clean(v,n=500){return String(v??'').trim().slice(0,n)}
@@ -147,8 +148,18 @@ function webSources(payload){const urls=[];for(const item of payload?.output||[]
 function canonicalUrl(v){try{const u=new URL(v);return `${u.hostname.toLowerCase()}${decodeURIComponent(u.pathname).replace(/\/$/,'')}`}catch{return ''}}
 function urlWasActuallySearched(url,sources){const c=canonicalUrl(url);if(!c)return false;return (sources||[]).some(s=>canonicalUrl(s)===c)}
 function evidenceSourceFamily(e){const k=String(e?.sourceKey||e?.source||'').toLowerCase();if(/zillow\.com|trulia\.com/.test(k))return 'portal:zillow-group';if(/realtor\.com/.test(k))return 'portal:realtor';if(/redfin\.com/.test(k))return 'portal:redfin';if(/homes\.com/.test(k))return 'portal:homes';return k||'unknown'}
+function sourceFamilyForDomain(domain){return evidenceSourceFamily({sourceKey:`web:${String(domain||'').replace(/^www\./,'').toLowerCase()}`})}
+function independentFactDomains(web){const seen=new Set((web?.factEvidence||[]).map(evidenceSourceFamily));const preferred=SECONDARY_PROPERTY_DOMAINS.filter(d=>!seen.has(sourceFamilyForDomain(d)));return preferred.length?preferred:SECONDARY_PROPERTY_DOMAINS}
+function independentCompDomains(web){const seen=new Set((web?.comps||[]).map(x=>x.sourceFamily||evidenceSourceFamily(x)));const preferred=SECONDARY_PROPERTY_DOMAINS.filter(d=>!seen.has(sourceFamilyForDomain(d)));return preferred.length?preferred:SECONDARY_PROPERTY_DOMAINS}
+function comparisonSubject(resolved){const subject={...(resolved?.subject||{})};for(const field of ['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType']){if(subject[field]!==null&&subject[field]!==undefined&&subject[field]!=='')continue;const fe=resolved?.fieldEvidence?.[field];if(fe?.status==='recorded'&&fe.recordedValue!==null&&fe.recordedValue!==undefined&&fe.recordedValue!=='')subject[field]=fe.recordedValue;}return subject}
 function evidenceMoneyGrounded(value,text){const n=Number(value),raw=clean(text,420).replace(/,/g,'');if(!Number.isFinite(n)||!raw)return false;return [...raw.matchAll(/\b\d+(?:\.\d{1,2})?\b/g)].some(m=>Math.abs(Number(m[0])-n)<=Math.max(1,Math.abs(n)*.00001))}
-function evidenceDateGrounded(value,text){const d=new Date(value),raw=normText(text);if(!Number.isFinite(d.getTime())||!raw)return false;const year=String(d.getUTCFullYear()),month=d.getUTCMonth()+1,day=d.getUTCDate(),months=['january','february','march','april','may','june','july','august','september','october','november','december'];if(!raw.includes(year))return false;const monthOk=raw.includes(months[month-1])||new RegExp(`\\b0?${month}[-/ ]0?${day}\\b`).test(raw)||new RegExp(`\\b0?${day}[-/ ]0?${month}\\b`).test(raw);return monthOk}
+function evidenceDateGrounded(value,text){
+  const d=new Date(value),raw=normText(text);if(!Number.isFinite(d.getTime())||!raw)return false;
+  const year=d.getUTCFullYear(),yy=String(year).slice(-2),month=d.getUTCMonth()+1,day=d.getUTCDate(),months=['january','february','march','april','may','june','july','august','september','october','november','december'],abbr=months[month-1].slice(0,3);
+  const yearOk=raw.includes(String(year))||new RegExp(`(?:^|\\D)${yy}(?:\\D|$)`).test(raw);if(!yearOk)return false;
+  const numericMdy=new RegExp(`\\b0?${month}[-/ .]0?${day}[-/ .](?:${year}|${yy})\\b`),numericDmy=new RegExp(`\\b0?${day}[-/ .]0?${month}[-/ .](?:${year}|${yy})\\b`),wordy=new RegExp(`\\b(?:${months[month-1]}|${abbr})\\s+0?${day}(?:st|nd|rd|th)?(?:\\s+|,\\s*)(?:${year}|${yy})\\b`),wordyReverse=new RegExp(`\\b0?${day}(?:st|nd|rd|th)?\\s+(?:${months[month-1]}|${abbr})(?:\\s+|,\\s*)(?:${year}|${yy})\\b`);
+  return numericMdy.test(raw)||numericDmy.test(raw)||wordy.test(raw)||wordyReverse.test(raw);
+}
 function webReliability(kind){return ({county_assessor:98,public_record:92,broker_listing:86,real_estate_portal:72,other:55})[kind]||55}
 function sourceTier(kind){return ({authorized_mls:4,county_assessor:4,public_record:3,broker_listing:3,real_estate_portal:2,other:1})[kind]||1}
 function evidenceNumberGrounded(field,value,text){
@@ -173,7 +184,7 @@ function compEvidenceGrounded(comp){
   return addressOk&&priceOk&&dateOk;
 }
 function distanceEvidenceGrounded(distance,text){if(distance===null||distance===undefined||distance==='')return false;const n=Number(distance);if(!Number.isFinite(n)||n<0||n>100)return false;const raw=clean(text,220).replace(/,/g,'');return [...raw.matchAll(/\b\d+(?:\.\d+)?\b/g)].some(m=>Math.abs(Number(m[0])-n)<.011)}
-async function researchWeb(address,{needFacts=true,needComps=true,subject=null,allowedDomains=null,passLabel='general'}={}){
+async function researchWeb(address,{needFacts=true,needComps=true,subject=null,allowedDomains=null,avoidDomains=[],passLabel='general',compSeeds=[]}={}){
   const key=clean(process.env.OPENAI_API_KEY,3000);if(!key||(!needFacts&&!needComps))return {configured:!!key,skipped:true,facts:null,factEvidence:[],conditionEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:key?'not_needed':'not_configured'}};
   const started=Date.now();
   const fieldEnum=['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType','lastSalePrice','lastSaleDate','lotSizeSqFt','annualTaxes','assessedValue','rentEstimate','currentListPrice','parcelNumber'];
@@ -189,9 +200,10 @@ async function researchWeb(address,{needFacts=true,needComps=true,subject=null,a
   const body={model:process.env.OPENAI_RESEARCH_MODEL||'gpt-5.6-luna',tools:[webTool],tool_choice:'required',reasoning:{effort:'medium'},include:['web_search_call.action.sources'],instructions:[
     'You are the production property-evidence researcher for Better Real Estate. Research ONLY the exact full address supplied. Accuracy, cross-source corroboration, and provenance matter more than speed.',
     `Research pass: ${passLabel}. Do not stop after the first usable page. Deliberately seek multiple independent exact-address sources when they exist.`,
+    Array.isArray(avoidDomains)&&avoidDomains.length?`INDEPENDENCE TARGET: Prefer sources outside these already-seen domains/source families when credible alternatives exist: ${avoidDomains.slice(0,12).join(', ')}. Do not force a weaker source merely to be different.`:'',
     'Use the hosted public web-search tool only; do not scrape websites or bypass access controls. Run multiple targeted searches when needed and inspect the exact-address result, not only generic snippets.',
     needFacts?'SUBJECT SEARCH PLAN: search the exact quoted address repeatedly with targeted variants for beds baths sqft year built property type, tax/assessor/public record, current or recent listing, and last sale. Inspect exact-address pages from major real-estate portals, brokerage/listing pages, county/assessor/tax/public-record sources, and other credible surfaced pages. Seek at least two independent exact-address sources for each core fact when available and actively look for disagreement.':'Subject facts are already sufficiently established; do not spend search effort collecting them.',
-    needComps?'COMP SEARCH PLAN: run multiple targeted searches for recent SOLD/CLOSED comparable properties near the subject, including exact-address sold pages and nearby sold/comparable tables on major real-estate portals and brokerage sites. Prefer the same property type, similar living area, nearby location, and sales within 18 months. Return several credible candidates rather than stopping at the first few. Exclude active/pending/list prices from ARV evidence.':'Closed-sale evidence is already sufficient; do not spend search effort collecting additional sold comps.',
+    needComps?'COMP SEARCH PLAN: run multiple targeted searches for recent SOLD/CLOSED comparable properties near the subject, including exact-address sold pages and nearby sold/comparable tables on major real-estate portals and brokerage sites. Prefer the same property type, similar living area, nearby location, and sales within 18 months. Return several credible candidates rather than stopping at the first few. Exclude active/pending/list prices from ARV evidence. If candidate comp addresses are supplied below, deliberately search those exact addresses on independent sources to corroborate close price/date while also finding additional strong candidates.':'Closed-sale evidence is already sufficient; do not spend search effort collecting additional sold comps.',
     'Exact-property guard: every subject fact must clearly describe the exact house number + street and compatible city/state/ZIP. Never borrow facts from a neighbor, nearby comp, similarly named street, or generic market page.',
     'For every subject fact return ONE row per source per field. evidenceText must be a short source-grounding phrase that visibly contains the returned value (for example “4 beds”, “1,132 sqft”, “SingleFamily”, “$1,103 annual tax”). If the displayed evidence does not contain the value, omit the row.',
     'Return conflicts exactly as found. Never harmonize 3 beds into 4 beds, estimate square footage, infer year built, or silently choose one source over another.',
@@ -199,12 +211,12 @@ async function researchWeb(address,{needFacts=true,needComps=true,subject=null,a
     needComps?'For each sold comp, evidenceText must visibly contain the comp address plus closed/sold price AND the closed/sold date. Return distanceMiles ONLY if the consulted source explicitly displays that distance from the subject and put the matching phrase in distanceEvidenceText; otherwise return null. Mark distressed=true only when the source explicitly identifies foreclosure, auction, fixer/as-is, distressed, teardown or equivalent.':'',
     'Every sourceUrl must be a URL actually surfaced by web search. Prefer exact property pages over search/category pages.',
     'Do not invent coordinates, distances, values, repair scope, close prices, close dates, source URLs or citations. Return fewer rows rather than uncertain rows.'
-  ].filter(Boolean).join('\n'),input:`Exact subject property: "${address}"\nRequested evidence: ${requested.join('; ')}${subject?`\nKnown subject context (search targeting only, not proof): ${JSON.stringify({bedrooms:subject.bedrooms,bathrooms:subject.bathrooms,squareFootage:subject.squareFootage,yearBuilt:subject.yearBuilt,propertyType:subject.propertyType})}`:''}\nReturn only evidence tied to URLs actually consulted by web search.`,text:{format:{type:'json_schema',name:'better_property_web_research',schema,strict:true}},max_output_tokens:3800};
+  ].filter(Boolean).join('\n'),input:`Exact subject property: "${address}"\nRequested evidence: ${requested.join('; ')}${subject?`\nKnown subject context (search targeting only, not proof): ${JSON.stringify({bedrooms:subject.bedrooms,bathrooms:subject.bathrooms,squareFootage:subject.squareFootage,yearBuilt:subject.yearBuilt,propertyType:subject.propertyType})}`:''}${Array.isArray(compSeeds)&&compSeeds.length?`\nCandidate sold-comp addresses to corroborate on independent sources: ${compSeeds.slice(0,8).join(' | ')}`:''}\nReturn only evidence tied to URLs actually consulted by web search.`,text:{format:{type:'json_schema',name:'better_property_web_research',schema,strict:true}},max_output_tokens:needFacts&&needComps?5200:needComps?4600:3600};
   const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(needComps&&!needFacts?WEB_COMP_TIMEOUT_MS:WEB_FACT_TIMEOUT_MS)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`Web research failed (${r.status}): ${clean(j?.error?.message||'unknown error',180)}`);let parsed=null;try{parsed=JSON.parse(extractText(j))}catch{};const sources=webSources(j);if(!parsed)return {configured:true,facts:null,factEvidence:[],conditionEvidence:[],comps:[],sources,error:'Web research returned no structured evidence.',diagnostic:{status:'no_structured_output',durationMs:elapsed(started),sourceCount:sources.length}};
   const factEvidence=(parsed.factEvidence||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)).map(x=>{const match=addressMatchDetails(address,{address:x.subjectAddress});const value=['propertyType','lastSaleDate','parcelNumber'].includes(x.field)?clean(x.textValue,120):num(x.numberValue);return {field:x.field,value,subjectAddress:clean(x.subjectAddress,250),source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return clean(x.sourceName,80).toLowerCase()}})()}`,sourceType:'Public web',sourceKind:x.sourceKind,reliability:webReliability(x.sourceKind),tier:sourceTier(x.sourceKind),sourceUrl:x.sourceUrl,pageTitle:clean(x.pageTitle,180),evidenceText:clean(x.evidenceText,320),verification:'web-source-specific',addressMatchScore:match.score,retrievedAt:nowIso()}}).filter(x=>x.value!==null&&x.value!==undefined&&x.value!==''&&x.addressMatchScore>=60&&evidenceTextGrounded(x.field,x.value,x.evidenceText));
   const facts={};for(const f of factEvidence){if(facts[f.field]===undefined)facts[f.field]=f.value}
   const conditionEvidence=(parsed.conditionEvidence||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)).map(x=>{const match=addressMatchDetails(address,{address:x.subjectAddress});return {summary:clean(x.summary,240),subjectAddress:clean(x.subjectAddress,250),source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return 'unknown'}})()}`,sourceKind:x.sourceKind,sourceUrl:x.sourceUrl,evidenceText:clean(x.evidenceText,360),reliability:webReliability(x.sourceKind),addressMatchScore:match.score,retrievedAt:nowIso()}}).filter(x=>x.summary&&x.evidenceText&&x.addressMatchScore>=60);
-  const comps=(parsed.soldComps||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)&&compEvidenceGrounded(x)).map(x=>{const d=distanceEvidenceGrounded(x.distanceMiles,x.distanceEvidenceText)?Number(x.distanceMiles):null;return {...x,distanceMiles:d,distanceVerification:d!==null?'Source-reported exact comparable distance':null,source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return 'unknown'}})()}`,sourceType:'Public web',sourceKind:x.sourceKind,reliability:webReliability(x.sourceKind),verification:'web-corroborated',evidenceText:clean(x.evidenceText,420),distanceEvidenceText:clean(x.distanceEvidenceText,220),retrievedAt:nowIso()}});
+  const comps=(parsed.soldComps||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)&&compEvidenceGrounded(x)).map(x=>{const d=distanceEvidenceGrounded(x.distanceMiles,x.distanceEvidenceText)?Number(x.distanceMiles):null;return {...x,distanceMiles:d,distanceVerification:d!==null?'Source-reported exact comparable distance':null,source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return 'unknown'}})()}`,sourceType:'Public web',sourceKind:x.sourceKind,sourceFamily:evidenceSourceFamily({sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return 'unknown'}})()}`}),reliability:webReliability(x.sourceKind),verification:'web-corroborated',evidenceText:clean(x.evidenceText,420),distanceEvidenceText:clean(x.distanceEvidenceText,220),retrievedAt:nowIso()}});
   const marketContext=(parsed.marketContext||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources));
   return {configured:true,facts,factEvidence,conditionEvidence,comps,marketContext,notes:parsed.notes||[],sources,error:null,diagnostic:{status:'complete',durationMs:elapsed(started),sourceCount:sources.length,factRows:factEvidence.length,conditionRows:conditionEvidence.length,soldComps:comps.length,sourceReportedDistances:comps.filter(x=>x.distanceMiles!==null).length,mode:{needFacts,needComps},passLabel,domainFiltered:Boolean(allowedDomains&&allowedDomains.length)}};
 }
@@ -276,7 +288,29 @@ function resolveSubjectEvidence({mlsSubject=null,mlsSubjects=[],regridSubject=nu
   return {subject,fieldEvidence,auxiliaryFacts:resolveAuxiliaryFacts(web),conflicts,identity:{addressMatched:matched,addressMatchScore:Number.isFinite(addressScore)?addressScore:null,resolvedCoreFields:resolvedCore,verifiedCoreFields:verifiedCore,corroboratedCoreFields:corroboratedCore,confidence,sufficientForValuation:matched&&resolvedCore>=3&&valuationCore,sourceCount:identitySources.length,webIdentitySources:webIdentity.length}};
 }
 
-function dedupeComps(rows,subject){const seen=new Map();for(const x0 of rows||[]){const x={...x0};if(!x.salePrice||!x.address)continue;if(subject?.latitude&&subject?.longitude&&x.latitude&&x.longitude)x.distanceMiles=hav(subject.latitude,subject.longitude,x.latitude,x.longitude);const k=`${normText(x.address)}|${Math.round(Number(x.salePrice))}|${String(x.saleDate||'').slice(0,10)}`;if(!seen.has(k)){x.corroboratingSources=[...new Set([x.source].filter(Boolean))];x.corroboratingSourceKeys=[...new Set([x.sourceKey].filter(Boolean))];seen.set(k,x)}else{const prior=seen.get(k);prior.corroboratingSources=[...new Set([...(prior.corroboratingSources||[prior.source]),x.source].filter(Boolean))];prior.corroboratingSourceKeys=[...new Set([...(prior.corroboratingSourceKeys||[prior.sourceKey]),x.sourceKey].filter(Boolean))];for(const f of ['distanceMiles','distanceVerification','squareFootage','bedrooms','bathrooms','yearBuilt','propertyType','latitude','longitude','evidenceText','sourceUrl'])if((prior[f]===null||prior[f]===undefined||prior[f]==='')&&(x[f]!==null&&x[f]!==undefined&&x[f]!==''))prior[f]=x[f];prior.distressed=Boolean(prior.distressed||x.distressed);}}return [...seen.values()]}
+function dedupeComps(rows,subject){
+  const seen=new Map();
+  for(const x0 of rows||[]){
+    const x={...x0};if(!x.salePrice||!x.address)continue;
+    if(subject?.address){const m=addressMatchDetails(subject.address,{address:x.address});if(m.houseExact&&m.streetRatio>=.8&&!m.hardMismatch)continue;}
+    if(subject?.latitude&&subject?.longitude&&x.latitude&&x.longitude)x.distanceMiles=hav(subject.latitude,subject.longitude,x.latitude,x.longitude);
+    const k=`${normText(x.address)}|${Math.round(Number(x.salePrice))}|${String(x.saleDate||'').slice(0,10)}`;
+    if(!seen.has(k)){
+      x.corroboratingSources=[...new Set([x.source].filter(Boolean))];
+      x.corroboratingSourceKeys=[...new Set([x.sourceKey].filter(Boolean))];
+      x.corroboratingSourceFamilies=[...new Set([x.sourceFamily||evidenceSourceFamily(x)].filter(Boolean))];
+      seen.set(k,x);
+    }else{
+      const prior=seen.get(k);
+      prior.corroboratingSources=[...new Set([...(prior.corroboratingSources||[prior.source]),x.source].filter(Boolean))];
+      prior.corroboratingSourceKeys=[...new Set([...(prior.corroboratingSourceKeys||[prior.sourceKey]),x.sourceKey].filter(Boolean))];
+      prior.corroboratingSourceFamilies=[...new Set([...(prior.corroboratingSourceFamilies||[prior.sourceFamily||evidenceSourceFamily(prior)]),x.sourceFamily||evidenceSourceFamily(x)].filter(Boolean))];
+      for(const f of ['distanceMiles','distanceVerification','squareFootage','bedrooms','bathrooms','yearBuilt','propertyType','latitude','longitude','evidenceText','sourceUrl'])if((prior[f]===null||prior[f]===undefined||prior[f]==='')&&(x[f]!==null&&x[f]!==undefined&&x[f]!==''))prior[f]=x[f];
+      prior.distressed=Boolean(prior.distressed||x.distressed);
+    }
+  }
+  return [...seen.values()];
+}
 async function researchMlsSource(cfg,address,parsed){
   const started=Date.now();try{
     const clauses=[];if(parsed.street)clauses.push(`contains(tolower(UnparsedAddress),'${esc(parsed.street.toLowerCase())}')`);if(parsed.city)clauses.push(`tolower(City) eq '${esc(parsed.city.toLowerCase())}'`);if(parsed.state)clauses.push(`StateOrProvince eq '${esc(parsed.state.toUpperCase())}'`);
@@ -308,42 +342,45 @@ async function researchFresh(address,{onProgress=null}={}){
   const deterministicStart=Date.now();
   const regridPromise=(async()=>{try{return await researchRegrid(address)}catch(e){if(regridCoverageError(e)){const note='Regrid coverage is unavailable for this address/account area; Better continued with public-web and authorized MLS evidence.';limitations.push({source:'Regrid',error:note});return {configured:true,subject:null,candidates:[],coverageUnavailable:true,diagnostic:{status:'coverage_unavailable',error:clean(e.message,160)}}}const error=clean(e.name==='TimeoutError'?`Timed out after ${Math.round(REGRID_TIMEOUT_MS/1000)} seconds.`:e.message,180);errors.push({source:'Regrid',error});return {configured:!!regridToken(),subject:null,candidates:[],error,diagnostic:{status:'error',error}}}})();
   const mlsPromise=Promise.all(mlsCfgs.map(cfg=>researchMlsSource(cfg,address,parsed)));
-  const webPrimaryPromise=process.env.OPENAI_API_KEY?researchWeb(address,{needFacts:true,needComps:false,allowedDomains:PRIMARY_PROPERTY_DOMAINS,passLabel:'subject-major-property-sites'}).catch(e=>({configured:true,skipped:false,factEvidence:[],conditionEvidence:[],comps:[],sources:[],marketContext:[],notes:[],diagnostic:{status:'error',error:clean(e.message,180)}})):Promise.resolve(null);
+  const webPrimaryPromise=process.env.OPENAI_API_KEY?researchWeb(address,{needFacts:true,needComps:true,allowedDomains:PRIMARY_PROPERTY_DOMAINS,passLabel:'subject-and-sold-comps-major-property-sites'}).catch(e=>({configured:true,skipped:false,factEvidence:[],conditionEvidence:[],comps:[],sources:[],marketContext:[],notes:[],diagnostic:{status:'error',error:clean(e.message,180)}})):Promise.resolve(null);
   const [regrid,mlsResults,webPrimary]=await Promise.all([regridPromise,mlsPromise,webPrimaryPromise]);
   if(webPrimary)diagnostics.webPasses++;
   diagnostics.stages.identity={durationMs:elapsed(deterministicStart),regrid:regrid.diagnostic||{status:'unknown'},mls:mlsResults.map((x,i)=>({name:mlsCfgs[i]?.name,status:x.diagnostic?.status||'unknown',durationMs:x.diagnostic?.durationMs||null,error:x.error||null})),publicWeb:webPrimary?.diagnostic||{status:process.env.OPENAI_API_KEY?'not_run':'not_configured'}};
   for(let i=0;i<mlsResults.length;i++)if(mlsResults[i].error)errors.push({source:mlsCfgs[i].name,error:mlsResults[i].error});
   const mlsSubjects=mlsResults.map(x=>x.subject).filter(Boolean),deterministicComps=mlsResults.flatMap(x=>x.comps||[]);
   let combinedWeb=combineWebResults(webPrimary),resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:combinedWeb,address});
-  await progress('facts',28,'Cross-checking beds, baths, living area, year built and property type across independent exact-address sources.',{establishedCore:establishedCoreCount(resolved),webSources:combinedWeb.sources.length,regridStatus:regrid.diagnostic?.status||'unknown'});
+  await progress('facts',26,'Cross-checking beds, baths, living area, year built and property type across independent exact-address sources.',{establishedCore:establishedCoreCount(resolved),webSources:combinedWeb.sources.length,regridStatus:regrid.diagnostic?.status||'unknown'});
   let webSecondary=null;
   if(process.env.OPENAI_API_KEY&&(establishedCoreCount(resolved)<5||!resolved.identity?.addressMatched)&&diagnostics.webPasses<MAX_WEB_PASSES){
-    try{webSecondary=await researchWeb(address,{needFacts:true,needComps:false,allowedDomains:null,passLabel:'subject-public-records-brokers-and-secondary-sources'});diagnostics.webPasses++;}
-    catch(e){errors.push({source:'Better Web Research · secondary subject pass',error:clean(e.message,180)});}
+    const seenFactDomains=[...new Set((combinedWeb.factEvidence||[]).map(x=>String(x.sourceKey||'').replace(/^web:/,'')).filter(Boolean))];
+    try{webSecondary=await researchWeb(address,{needFacts:true,needComps:false,allowedDomains:null,avoidDomains:seenFactDomains,passLabel:'subject-independent-property-and-public-record-sources'});diagnostics.webPasses++;}
+    catch(e){errors.push({source:'Better Web Research · independent subject pass',error:clean(e.message,180)});}
     combinedWeb=combineWebResults(webPrimary,webSecondary);resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:combinedWeb,address});
   }
-  await progress('facts_resolved',42,'Property facts reconciled. Researching closed sales for valuation.',{establishedCore:establishedCoreCount(resolved),identityMatched:resolved.identity?.addressMatched,webSources:combinedWeb.sources.length});
+  await progress('facts_resolved',40,'Property facts reconciled. Validating researched closed sales for valuation.',{establishedCore:establishedCoreCount(resolved),identityMatched:resolved.identity?.addressMatched,webSources:combinedWeb.sources.length});
   let nearby={configured:false,comps:[],diagnostic:{status:'not_run'}};
   if(regrid.subject){try{nearby=await researchRegridNearby(regrid.subject)}catch(e){if(regridCoverageError(e)){limitations.push({source:'Regrid nearby sales',error:'Regrid nearby-sale coverage is unavailable here; Better continued with public sold-comparable research.'});nearby={configured:true,comps:[],diagnostic:{status:'coverage_unavailable'}}}else{const error=clean(e.name==='TimeoutError'?`Timed out after ${Math.round(REGRID_TIMEOUT_MS/1000)} seconds.`:e.message,180);errors.push({source:'Regrid nearby sales',error});nearby={configured:true,comps:[],diagnostic:{status:'error',error}}}}}
   diagnostics.stages.nearbySales=nearby.diagnostic;deterministicComps.push(...(nearby.comps||[]));
-  let comps=dedupeComps(deterministicComps,resolved.subject),compAnalysis=intelligence.analyzeComps(resolved.subject,comps),webCompPrimary=null,webCompSecondary=null;
-  if(process.env.OPENAI_API_KEY&&!(compAnalysis.valuationReady||compAnalysis.indicativeReady)&&diagnostics.webPasses<MAX_WEB_PASSES){
-    await progress('web_comps',58,'Searching multiple real-estate sites for recent nearby closed sales.');
-    try{webCompPrimary=await researchWeb(address,{needFacts:false,needComps:true,subject:resolved.subject,allowedDomains:PRIMARY_PROPERTY_DOMAINS,passLabel:'sold-comps-major-property-sites'});diagnostics.webPasses++;}
-    catch(e){errors.push({source:'Better Web Research · primary sold-comps pass',error:clean(e.message,180)});}
-    combinedWeb=combineWebResults(webPrimary,webSecondary,webCompPrimary);resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:combinedWeb,address});
-    comps=dedupeComps([...deterministicComps,...combinedWeb.comps],resolved.subject);compAnalysis=intelligence.analyzeComps(resolved.subject,comps);
-  }
-  if(process.env.OPENAI_API_KEY&&!(compAnalysis.valuationReady||compAnalysis.indicativeReady)&&diagnostics.webPasses<MAX_WEB_PASSES){
-    await progress('web_comps_deep',72,'Expanding sold-comp research to local brokerage, public-record and secondary property sources.');
-    try{webCompSecondary=await researchWeb(address,{needFacts:false,needComps:true,subject:resolved.subject,allowedDomains:null,passLabel:'sold-comps-local-brokers-public-records-secondary'});diagnostics.webPasses++;}
+  let compSubject=comparisonSubject(resolved),comps=dedupeComps([...deterministicComps,...combinedWeb.comps],compSubject),compAnalysis=intelligence.analyzeComps(compSubject,comps),webCompDeep=null,webCompCorroborate=null;
+  if(process.env.OPENAI_API_KEY&&!compAnalysis.valuationReady&&diagnostics.webPasses<MAX_WEB_PASSES){
+    await progress('web_comps',58,'Expanding sold-comp research across brokerage, portal and public-record sources.');
+    const seeds=rankWebCompsForVerification(compSubject,combinedWeb.comps).slice(0,8).map(x=>x.address).filter(Boolean);
+    try{webCompDeep=await researchWeb(address,{needFacts:false,needComps:true,subject:compSubject,allowedDomains:null,passLabel:'sold-comps-local-brokers-public-records-secondary',compSeeds:seeds});diagnostics.webPasses++;}
     catch(e){errors.push({source:'Better Web Research · expanded sold-comps pass',error:clean(e.message,180)});}
-    combinedWeb=combineWebResults(webPrimary,webSecondary,webCompPrimary,webCompSecondary);resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:combinedWeb,address});
-    comps=dedupeComps([...deterministicComps,...combinedWeb.comps],resolved.subject);compAnalysis=intelligence.analyzeComps(resolved.subject,comps);
+    combinedWeb=combineWebResults(webPrimary,webSecondary,webCompDeep);resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:combinedWeb,address});compSubject=comparisonSubject(resolved);
+    comps=dedupeComps([...deterministicComps,...combinedWeb.comps],compSubject);compAnalysis=intelligence.analyzeComps(compSubject,comps);
+  }
+  if(process.env.OPENAI_API_KEY&&!compAnalysis.valuationReady&&diagnostics.webPasses<MAX_WEB_PASSES&&combinedWeb.comps.length&&(!compAnalysis.indicativeReady||Number(compAnalysis.sourceDiversity||0)<2)){
+    await progress('web_comps_corroborate',72,'Cross-checking the strongest sold comps on independent real-estate sources.');
+    const seeds=rankWebCompsForVerification(compSubject,combinedWeb.comps).slice(0,8).map(x=>x.address).filter(Boolean),domains=independentCompDomains(combinedWeb);
+    try{webCompCorroborate=await researchWeb(address,{needFacts:false,needComps:true,subject:compSubject,allowedDomains:domains,passLabel:'sold-comps-independent-corroboration',compSeeds:seeds});diagnostics.webPasses++;}
+    catch(e){errors.push({source:'Better Web Research · independent comp corroboration',error:clean(e.message,180)});}
+    combinedWeb=combineWebResults(webPrimary,webSecondary,webCompDeep,webCompCorroborate);resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:combinedWeb,address});compSubject=comparisonSubject(resolved);
+    comps=dedupeComps([...deterministicComps,...combinedWeb.comps],compSubject);compAnalysis=intelligence.analyzeComps(compSubject,comps);
   }
   // Regrid distance verification is strictly optional. Never spend extra Regrid calls after a coverage failure.
-  if(combinedWeb.comps.length&&regridToken()&&!regrid.coverageUnavailable&&regrid.diagnostic?.status!=='coverage_unavailable'&&Number.isFinite(Number(resolved.subject?.latitude))&&Number.isFinite(Number(resolved.subject?.longitude))){
-    try{const dv=await verifyWebCompDistances(resolved.subject,combinedWeb.comps);combinedWeb.comps=dv.comps;diagnostics.stages.distanceVerification=dv.diagnostic;comps=dedupeComps([...deterministicComps,...combinedWeb.comps],resolved.subject);compAnalysis=intelligence.analyzeComps(resolved.subject,comps);}catch(e){limitations.push({source:'Comp distance verification',error:'Optional parcel-based distance verification was unavailable; source-reported distances and non-precise ARV rules were preserved.'})}
+  if(combinedWeb.comps.length&&regridToken()&&!regrid.coverageUnavailable&&regrid.diagnostic?.status!=='coverage_unavailable'&&Number.isFinite(Number(compSubject?.latitude))&&Number.isFinite(Number(compSubject?.longitude))){
+    try{const dv=await verifyWebCompDistances(compSubject,combinedWeb.comps);combinedWeb.comps=dv.comps;diagnostics.stages.distanceVerification=dv.diagnostic;comps=dedupeComps([...deterministicComps,...combinedWeb.comps],compSubject);compAnalysis=intelligence.analyzeComps(compSubject,comps);}catch(e){limitations.push({source:'Comp distance verification',error:'Optional parcel-based distance verification was unavailable; source-reported distances and non-precise ARV rules were preserved.'})}
   }else diagnostics.stages.distanceVerification={status:'not_needed_or_unavailable'};
   await progress('validation',88,'Scoring sold comps, screening distressed/outlier sales, and building the investor-grade valuation.',{establishedCore:establishedCoreCount(resolved),compCount:comps.length,preciseArv:Boolean(compAnalysis.valuationReady),indicativeArv:Boolean(compAnalysis.indicativeReady)});
   diagnostics.stages.web={status:diagnostics.webPasses?'complete':'not_configured',passes:combinedWeb.passes,sourceCount:combinedWeb.sources.length};
@@ -356,13 +393,13 @@ async function researchFresh(address,{onProgress=null}={}){
     compAnalysis.valuationReady?'The precise sold-comp gate passed.':compAnalysis.indicativeReady?'A defensible working ARV range is available, but distance support is not strong enough to call it precise.':'Closed-sale evidence is still insufficient for a defensible ARV.'
   ].join(' ');
   const subjectMarket=(combinedWeb.marketContext||[]).filter(x=>addressMatchScore(address,{address:x.address})>=60).sort((a,b)=>Number(b.price||0)-Number(a.price||0))[0]||null;
-  return {configured:sources.length>0,sourceCount:sources.length,sources,subject:resolved.subject,fieldEvidence:resolved.fieldEvidence,auxiliaryFacts:resolved.auxiliaryFacts||{},identity:resolved.identity,rawSubjects:{mls:mlsSubjects,regrid:regrid.subject||null,regridCandidates:regrid.candidates||[]},comps,compAnalysis,conditionEvidence:combinedWeb.conditionEvidence||[],marketContext:combinedWeb.marketContext||[],marketSnapshot:subjectMarket?{status:subjectMarket.status||null,askingPrice:num(subjectMarket.price),sourceUrl:subjectMarket.sourceUrl||null}:null,webSources:combinedWeb.sources||[],conflicts:resolved.conflicts,errors,limitations,retrievedAt:nowIso(),notice,diagnostics};
+  return {configured:sources.length>0,sourceCount:sources.length,sources,subject:resolved.subject,comparisonSubject:compSubject,fieldEvidence:resolved.fieldEvidence,auxiliaryFacts:resolved.auxiliaryFacts||{},identity:resolved.identity,rawSubjects:{mls:mlsSubjects,regrid:regrid.subject||null,regridCandidates:regrid.candidates||[]},comps,compAnalysis,conditionEvidence:combinedWeb.conditionEvidence||[],marketContext:combinedWeb.marketContext||[],marketSnapshot:subjectMarket?{status:subjectMarket.status||null,askingPrice:num(subjectMarket.price),sourceUrl:subjectMarket.sourceUrl||null}:null,webSources:combinedWeb.sources||[],conflicts:resolved.conflicts,errors,limitations,retrievedAt:nowIso(),notice,diagnostics};
 }
 async function research(address,opts={}){const key=cacheKey(address);if(inFlightResearch.has(key))return inFlightResearch.get(key);const p=researchFresh(address,opts).finally(()=>inFlightResearch.delete(key));inFlightResearch.set(key,p);return p}
 
 module.exports={
   research,
-  configuredSources:()=>{const a=configs().map(x=>({name:x.name,type:'Authorized MLS / RESO Web API'}));if(regridToken())a.push({name:'Regrid',type:'County / parcel records'});if(process.env.OPENAI_API_KEY)a.push({name:'Better Web Research',type:'Public web search'});return a},
+  configuredSources:()=>{const a=configs().map(x=>({name:x.name,type:'Authorized MLS / RESO Web API'}));if(regridToken())a.push({name:'Regrid',type:'Optional county / parcel records'});if(process.env.OPENAI_API_KEY)a.push({name:'Better Web Research',type:'Multi-source public property research'});return a},
   cacheKey,
   _norm:normMls,
   _parseAddress:parseAddress,
@@ -379,6 +416,10 @@ module.exports={
   _researchWeb:researchWeb,
   _evidenceTextGrounded:evidenceTextGrounded,
   _compEvidenceGrounded:compEvidenceGrounded,
+  _evidenceDateGrounded:evidenceDateGrounded,
   _urlWasActuallySearched:urlWasActuallySearched,
-  _dedupeComps:dedupeComps
+  _dedupeComps:dedupeComps,
+  _comparisonSubject:comparisonSubject,
+  _independentFactDomains:independentFactDomains,
+  _independentCompDomains:independentCompDomains
 };
