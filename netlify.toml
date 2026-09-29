@@ -13,7 +13,7 @@
   # once esbuild has bundled it for the cloud, which is invisible until
   # it's actually deployed. Marking them external is the standard fix.
   external_node_modules = ["express", "bcryptjs", "cookie-session", "serverless-http", "@neondatabase/serverless", "pg", "stripe", "@netlify/blobs"]
-  included_files = ["mailer.js", "store.js", "storage.js", "dropship.js", "cj-adapter.js", "policy.js", "payments.js", "ai.js", "marketing.js", "communications.js", "social.js", "dealSources.js", "dealIntelligence.js", "server.js"]
+  included_files = ["mailer.js", "store.js", "storage.js", "dropship.js", "cj-adapter.js", "policy.js", "payments.js", "ai.js", "marketing.js", "communications.js", "social.js", "dealSources.js", "dealIntelligence.js", "dealResearchJobs.js", "dealResearchCache.js", "server.js"]
 
 [functions."marketing-cron"]
   schedule = "0 15 * * *"
@@ -45,3 +45,6 @@
   command = "echo 'static'"
   targetPort = 3000
   publish = "public"
+
+[functions."deal-research-background"]
+  background = true

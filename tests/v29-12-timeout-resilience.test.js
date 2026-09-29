@@ -1,11 +1,11 @@
 const fs=require('fs'),assert=require('assert');
 const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ds=fs.readFileSync('dealSources.js','utf8'),pkg=require('../package.json');
 assert.equal(pkg.version,'2.9.15');
-assert(server.includes("/api/deal-builder/research"),'research must have its own serverless request');
-assert(app.includes("/api/deal-builder/research"),'client must run research separately');
-assert(app.includes('Step 1 of 2')&&app.includes('Step 2 of 2'),'client must show actual progress');
+assert(server.includes("/api/deal-builder/research/start"),'research must start independently of final synthesis');
+assert(app.includes("/api/deal-builder/research/start"),'client must start research separately');
+assert(app.includes('Researching property · ${job.progress||0}%')&&app.includes('Research complete · applying the property-truth'),'client must show real background progress');
 assert(ds.includes('Promise.all([')&&ds.includes('researchRegrid(address)')&&ds.includes('Promise.all(mlsCfgs.map'),'deterministic identity sources must run concurrently');
-assert(ds.includes('const needFacts=')&&ds.includes('const needComps=')&&ds.includes('researchWeb(address,{needFacts,needComps})'),'web research must be adaptive, not unconditional');
-assert(ds.includes('REGRID_TIMEOUT_MS = 6500')&&ds.includes('MLS_TIMEOUT_MS = 8000')&&ds.includes('WEB_TIMEOUT_MS = 18000'),'external sources need bounded timeouts');
+assert(ds.includes('let needFacts=')&&ds.includes('let needComps=')&&ds.includes('webFactPass')&&ds.includes('webCompPass'),'web research must be adaptive and staged, not unconditional');
+assert(ds.includes('REGRID_TIMEOUT_MS = 6500')&&ds.includes('MLS_TIMEOUT_MS = 8000')&&ds.includes('WEB_FACT_TIMEOUT_MS = 90000')&&ds.includes('WEB_COMP_TIMEOUT_MS = 150000'),'provider calls must stay bounded while background research gets adequate time');
 assert(server.includes('AI synthesis failed after research completed'),'failure must identify which stage failed');
-console.log('v29.12 timeout resilience regression passed');
+console.log('v29.12 timeout/background resilience regression passed');

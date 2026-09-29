@@ -16,6 +16,8 @@ const ai = require('./ai');
 const marketing = require('./marketing');
 const communications = require('./communications');
 const social = require('./social');
+const dealResearchCache = require('./dealResearchCache');
+const dealResearchJobs = require('./dealResearchJobs');
 const app = express();
 
 /* Every app.get/post/patch/delete below is an async function. Express 4
@@ -1515,11 +1517,11 @@ function dealBuilderAllowance(user) {
 app.get('/api/deal-builder/usage', requireAuth, (req,res) => res.json({ usage:dealBuilderAllowance(req.user) }));
 app.get('/api/tools/usage', requireAuth, (req,res)=>res.json({ dealBuilder:dealBuilderAllowance(req.user), listingAi:plusToolAllowance(req.user,'listingAi',2), dispoAi:plusToolAllowance(req.user,'dispoAi',3) }));
 function dealBuilderLimitError(req,allowance){return isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Plus includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Plus includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.');}
-const DEAL_RESEARCH_CACHE_VERSION = 'v29.15-retrieval-r1';
-const DEAL_RESEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const DEAL_RESEARCH_MIN_REFRESH_MS = 30 * 60 * 1000;
+const DEAL_RESEARCH_CACHE_VERSION = dealResearchCache.VERSION;
+const DEAL_RESEARCH_CACHE_TTL_MS = dealResearchCache.TTL_MS;
+const DEAL_RESEARCH_MIN_REFRESH_MS = dealResearchCache.MIN_REFRESH_MS;
 const DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000;
-function dealResearchKey(address){ const ds=require('./dealSources'); return `${DEAL_RESEARCH_CACHE_VERSION}:${ds.cacheKey(address)}`; }
+function dealResearchKey(address){ return dealResearchCache.key(address); }
 function priorQualifiedDealProperty(db,user,key){ return (db.dealAnalyses||[]).some(x=>x.userId===user.id&&x.qualified===true&&x.researchKey===key); }
 function addressDealAllowance(db,user,key){ const base=dealBuilderAllowance(user), prior=priorQualifiedDealProperty(db,user,key); return {...base, priorQualified:prior, allowedForAddress:prior||base.unlimited||base.remaining>0}; }
 function evidenceFingerprint(evidence){
@@ -1530,6 +1532,19 @@ function evidenceOnlyDealAnalysis(address,evidence,compAnalysis,reason){
   const verified=evidence?.subject||{};
   return {provider:'Better Real Estate Evidence Engine',generatedAt:new Date().toISOString(),subject:{formattedAddress:verified.address||address,addressLine1:verified.address||address,city:verified.city||'',state:verified.state||'',propertyType:verified.propertyType??null,bedrooms:verified.bedrooms??null,bathrooms:verified.bathrooms??null,squareFootage:verified.squareFootage??null,yearBuilt:verified.yearBuilt??null},arv:{estimate:compAnalysis?.valuationReady?compAnalysis.estimate:null,low:compAnalysis?.valuationReady?compAnalysis.low:null,high:compAnalysis?.valuationReady?compAnalysis.high:null},rehab:[],description:reason?`Verified property evidence and comp analysis are available, but AI synthesis is temporarily unavailable: ${reason}`:'Better verified the available evidence but the property-truth and closed-sale comp gates are not both strong enough for a responsible full deal analysis yet. Review Property evidence and Research diagnostics; Better will not invent the missing pieces.',confidence:compAnalysis?.valuationReady?(compAnalysis.confidence||'Moderate'):'Low',assumptions:[],warnings:[reason?'The verified evidence and deterministic comp result are still shown. This AI synthesis failure did not consume an analysis allowance.':'Precise ARV and AI synthesis were withheld because subject facts or distance/recency-verified closed comps were insufficient or conflicting.'],comparables:compAnalysis?.valuationReady?(compAnalysis.selected||[]).map(c=>({address:c.address,price:c.adjustedSalePrice||c.salePrice,salePrice:c.salePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,similarity:c.similarity,source:c.source})):[],rent:null};
 }
+app.post('/api/deal-builder/research/start', requireAuth, async (req,res) => {
+  const address=String(req.body?.address||'').trim(); if(address.length<8)return res.status(400).json({error:'Enter a complete property address.'});
+  const key=dealResearchKey(address),addressAllowance=addressDealAllowance(req.db,req.user,key);if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
+  const now=Date.now(),forceRefresh=req.body?.forceRefresh===true;req.db.dealResearchCache=req.db.dealResearchCache||[];
+  const cached=req.db.dealResearchCache.find(x=>x.key===key),age=cached?now-new Date(cached.retrievedAt||0).getTime():Infinity;
+  if(cached?.evidence&&age<DEAL_RESEARCH_CACHE_TTL_MS&&(!forceRefresh||age<DEAL_RESEARCH_MIN_REFRESH_MS)){
+    const evidence=JSON.parse(JSON.stringify(cached.evidence));evidence.serverOwned=true;evidence.cache={hit:true,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:cached.retrievedAt,ageMs:age,refreshProtected:forceRefresh&&age<DEAL_RESEARCH_MIN_REFRESH_MS};
+    return res.json({state:'complete',address,evidence,usage:addressAllowance});
+  }
+  const job=await dealResearchJobs.startOrReuse({userId:req.user.id,address,researchKey:key,cacheVersion:DEAL_RESEARCH_CACHE_VERSION,forceRefresh});
+  res.status(job.reused?200:202).json({state:job.status,jobId:job.id,statusToken:job.statusToken,runToken:job.runToken,reused:Boolean(job.reused),backgroundPath:'/.netlify/functions/deal-research-background',statusPath:'/.netlify/functions/deal-research-status',usage:addressAllowance});
+});
+
 app.post('/api/deal-builder/research', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
   const key=dealResearchKey(address),addressAllowance=addressDealAllowance(req.db,req.user,key); if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});

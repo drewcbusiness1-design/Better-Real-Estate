@@ -2024,7 +2024,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 44;
+const TUTORIAL_VERSION = 45;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2065,6 +2065,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'dealbuilder',selector:'.source-evidence-card',min:1,release:42,title:'Verified property facts',copy:'Better now verifies the subject property field by field. Conflicting or single-source beds, baths, square footage, year built and property type are withheld instead of being presented as facts. Open Property evidence to see exactly what each source reported.'},
  {view:'dealbuilder',selector:'.source-evidence-card',min:1,release:43,title:'Production property intelligence',copy:'Better now resolves the exact property first, uses deterministic Regrid and authorized MLS evidence before spending on web research, checks nearby recorded closed sales, distinguishes Recorded from independently Verified facts, and withholds ARV unless the property and comp gates pass. Research is cached to reduce Netlify and API usage.'},
   {view:'dealbuilder',selector:'.source-evidence-card',min:1,release:44,title:'Property research reliability',copy:'Better now runs a targeted, location-aware public-web research pass when deterministic sources leave facts or sold comps unresolved. Single-source values stay labeled Recorded and visible for reference, while only corroborated facts can unlock valuation.'},
+  {view:'dealbuilder',selector:'.source-evidence-card',min:1,release:45,title:'Deep background property research',copy:'Deal Intelligence no longer races a short browser request. Better can spend the time needed resolving the exact parcel, cross-checking public property evidence, researching closed sales, screening conflicts and only then producing an evidence-backed analysis. Fresh research is cached so reopening the property does not repeat paid work.'},
  {view:'buyercrm',selector:'.buyercrmpage',min:0,title:'Buyer CRM',copy:'Keep buyer markets, buy boxes, private notes and follow-up stages in one pipeline.'},
  {view:'insights',selector:'.insightspage',min:0,title:'Demand Insights',copy:'See where published buyer demand is concentrated by market, property type and strategy.'},
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
@@ -2159,9 +2160,25 @@ async function renderDealBuilder(){
     if(!address.value.trim()){status.textContent='Enter a complete address.';return}
     run.disabled=true;run.textContent='Analyzing…';status.textContent='Preparing evidence-first property research…';results.innerHTML='';
     try{
-      status.textContent='Step 1 of 2 · Resolving the exact property, approved records and closed-sale comps; web corroboration runs only if needed…';
-      const researched=await api('POST','/api/deal-builder/research',{address:address.value.trim(),forceRefresh});const ev0=researched.evidence||{};
-      status.textContent='Step 2 of 2 · Applying the property-truth and comp gates, then synthesizing only server-verified evidence…';
+      status.textContent='Starting a thorough property-research job. You can wait here while Better cross-checks the address, records, public sources and sold comps…';
+      const started=await api('POST','/api/deal-builder/research/start',{address:address.value.trim(),forceRefresh});
+      let ev0=started.evidence||{};
+      if(started.state!=='complete'){
+        if(!started.reused){
+          const bg=await fetch(started.backgroundPath,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId:started.jobId,runToken:started.runToken})});
+          if(!bg.ok&&bg.status!==202)throw new Error('Unable to start the background property research job.');
+        }
+        let waitMs=started.reused?4000:2500,finished=false;
+        while(!finished){
+          await new Promise(resolve=>setTimeout(resolve,waitMs));
+          const sr=await fetch(`${started.statusPath}?jobId=${encodeURIComponent(started.jobId)}&token=${encodeURIComponent(started.statusToken)}`,{headers:{Accept:'application/json'},cache:'no-store'});if(!sr.ok)throw new Error('Unable to read the property research status.');
+          const sj=await sr.json(),job=sj.job||{};status.textContent=`Researching property · ${job.progress||0}% · ${job.message||'Checking evidence…'}`;
+          if(job.status==='complete'){ev0=job.evidence||{};finished=true;break}
+          if(job.status==='failed')throw new Error(job.error||'Property research could not complete.');
+          waitMs=Math.min(Math.max(Number(sj.retryAfterMs)||5000,5000),12000);
+        }
+      }
+      status.textContent='Research complete · applying the property-truth and comp gates, then synthesizing only server-verified evidence…';
       const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()});paintUsage(r.usage);
       const a=r.analysis,ev=r.evidence||ev0,live=ev.subject||{},p={...(a.subject||{})},aiDraft=r.aiDraft||null;
       const cacheText=ev.cache?.retrievedAt?` · Research ${ev.cache.hit?'reused':'updated'} ${new Date(ev.cache.retrievedAt).toLocaleString()}`:''; const synthText=r.synthesisReused?' · AI synthesis reused — no new AI call':r.synthesisDeferred?' · AI synthesis unavailable — verified evidence/comp result preserved without consuming an analysis use':'';
@@ -2185,7 +2202,7 @@ async function renderDealBuilder(){
       if(ev.webSources?.length)evidenceCard.appendChild(el('div',{class:'web-evidence-links'},[el('b',{},'Public web evidence'),...ev.webSources.slice(0,8).map((u,i)=>el('a',{href:u,target:'_blank',rel:'noopener noreferrer'},`Source ${i+1} · ${(()=>{try{return new URL(u).hostname.replace(/^www\./,'')}catch{return 'web'}})()}`))]));
       if(ev.errors?.length)evidenceCard.appendChild(el('div',{class:'hint'},'Source note: '+ev.errors.map(x=>x.source+': '+x.error).join(' · ')));
       const refresh=el('button',{class:'btn-ghost compactbtn',onclick:()=>analyze(true)},'Refresh research');evidenceCard.appendChild(el('div',{class:'evidence-actions'},[el('div',{class:'hint'},ev.cache?.retrievedAt?`Last researched ${new Date(ev.cache.retrievedAt).toLocaleString()}${ev.cache.hit?' · cached to save API/Netlify usage':''}${ev.cache?.refreshProtected?' · refresh protection reused recent evidence':''}`:'Research time unavailable'),refresh]));
-      if(state.access?.adminUnlimited&&ev.diagnostics?.stages){const d=ev.diagnostics.stages,diag=el('details',{class:'research-diagnostics'},[el('summary',{},'Admin · Research diagnostics'),el('div',{class:'hint'},`Total research time: ${ev.diagnostics.durationMs??'—'} ms · diagnostics are cached and do not issue provider calls.`)]);const rows=[['Property identity',d.identity?.regrid?.status||'unknown',d.identity?.durationMs],['Regrid nearby sales',d.nearbySales?.status||'unknown',d.nearbySales?.durationMs],['Public web',d.web?.status||'unknown',d.web?.durationMs],['Comp gate',d.compGate?.status||'unknown',null]];for(const [name,st,ms] of rows)diag.appendChild(el('div',{class:'diagnostic-row'},[el('span',{},name),el('strong',{},st),el('small',{},ms!==null&&ms!==undefined?`${ms} ms`:'')]));evidenceCard.appendChild(diag);}
+      if(state.access?.adminUnlimited&&ev.diagnostics?.stages){const d=ev.diagnostics.stages,r=d.identity?.regrid||{},wf=d.web?.subject||{},wc=d.web?.comps||{},diag=el('details',{class:'research-diagnostics'},[el('summary',{},'Admin · Research diagnostics'),el('div',{class:'hint'},`Total research time: ${ev.diagnostics.durationMs??'—'} ms · diagnostics are cached and do not issue provider calls.`)]);const rows=[['Property identity',`${r.status||'unknown'}${r.queryMode?' · '+r.queryMode:''}${r.count!==undefined?' · '+r.count+' candidate(s)':''}${r.matchScore!==null&&r.matchScore!==undefined?' · match '+r.matchScore:''}`,d.identity?.durationMs],['Regrid nearby sales',`${d.nearbySales?.status||'unknown'}${d.nearbySales?.recordedSales!==undefined?' · '+d.nearbySales.recordedSales+' sale(s)':''}`,d.nearbySales?.durationMs],['Public web · subject',`${wf.status||'not needed'}${wf.sourceCount!==undefined?' · '+wf.sourceCount+' source(s)':''}${wf.factRows!==undefined?' · '+wf.factRows+' fact row(s)':''}`,wf.durationMs],['Public web · sold comps',`${wc.status||'not needed'}${wc.sourceCount!==undefined?' · '+wc.sourceCount+' source(s)':''}${wc.soldComps!==undefined?' · '+wc.soldComps+' comp(s)':''}${wc.distanceVerification?.verified!==undefined?' · '+wc.distanceVerification.verified+' distance-verified':''}`,wc.durationMs],['Comp gate',`${d.compGate?.status||'unknown'}${d.compGate?.selected!==undefined?' · '+d.compGate.selected+' selected':''}${d.compGate?.distanceVerified!==undefined?' · '+d.compGate.distanceVerified+' distance-verified':''}`,null]];for(const [name,st,ms] of rows)diag.appendChild(el('div',{class:'diagnostic-row'},[el('span',{},name),el('strong',{},st),el('small',{},ms!==null&&ms!==undefined?`${ms} ms`:'')]));if(ev.rawSubjects?.regridCandidates?.length)diag.appendChild(el('div',{class:'hint'},'Regrid candidates: '+ev.rawSubjects.regridCandidates.map(x=>`${x.address||'unknown'} · local ${x.localScore??'—'} · Regrid ${x.regridScore??'—'} · street ${x.streetRatio??'—'}`).join(' | ')));evidenceCard.appendChild(diag);}
       results.appendChild(evidenceCard);
 
       const hasArv=()=>Number(calcArv())>0;

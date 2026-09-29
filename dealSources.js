@@ -8,9 +8,10 @@ const inFlightResearch = new Map();
 
 const REGRID_TIMEOUT_MS = 6500;
 const MLS_TIMEOUT_MS = 8000;
-const WEB_TIMEOUT_MS = 18000;
+const WEB_FACT_TIMEOUT_MS = 90000;
+const WEB_COMP_TIMEOUT_MS = 150000;
 const REGRID_NEARBY_RADIUS_METERS = 3219; // ~2 miles
-const REGRID_NEARBY_LIMIT = 100;
+const REGRID_NEARBY_LIMIT = 40;
 
 function clean(v,n=500){return String(v??'').trim().slice(0,n)}
 function num(v){if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
@@ -102,9 +103,16 @@ function regridToken(){return clean(process.env.REGRID_API_TOKEN||process.env.RE
 async function regridFetch(url,token){const r=await fetch(url,{headers:{Accept:'application/json','x-regrid-token':token},signal:AbortSignal.timeout(REGRID_TIMEOUT_MS)});if(!r.ok)throw new Error(`Regrid returned ${r.status}`);return r.json()}
 async function researchRegrid(address){
   const token=regridToken();if(!token)return {configured:false,subject:null,error:null,candidates:[],diagnostic:{status:'not_configured'}};
-  const started=Date.now(),u=new URL('https://app.regrid.com/api/v2/parcels/address');u.searchParams.set('query',address);u.searchParams.set('limit','5');u.searchParams.set('return_custom','false');u.searchParams.set('return_field_labels','false');u.searchParams.set('return_geometry','false');u.searchParams.set('return_matched_buildings','false');u.searchParams.set('return_matched_addresses','false');u.searchParams.set('return_enhanced_ownership','false');u.searchParams.set('return_zoning','false');
-  const j=await regridFetch(u,token),features=j?.parcels?.features||j?.features||[],picked=selectRegridFeature(features,address);
-  if(picked.subject)return {configured:true,subject:picked.subject,error:null,count:features.length,matchScore:picked.matchScore,providerScore:picked.providerScore,candidates:picked.candidates,diagnostic:{status:'matched',durationMs:elapsed(started),count:features.length,matchScore:picked.matchScore,regridScore:picked.providerScore,rank:picked.subject.regridRank||null}};
+  const started=Date.now(),parsed=parseAddress(address);
+  const makeUrl=(query,useStatePath=true)=>{const u=new URL('https://app.regrid.com/api/v2/parcels/address');u.searchParams.set('query',query);if(useStatePath&&parsed.state)u.searchParams.set('path',`/us/${parsed.state.toLowerCase()}`);u.searchParams.set('limit','5');u.searchParams.set('return_custom','false');u.searchParams.set('return_field_labels','false');u.searchParams.set('return_geometry','false');u.searchParams.set('return_matched_buildings','false');u.searchParams.set('return_matched_addresses','false');u.searchParams.set('return_enhanced_ownership','false');u.searchParams.set('return_zoning','false');return u};
+  // Regrid documents address search as a street-address query with path used to restrict geography.
+  // Prefer that form first; only fall back to the pasted full address if the ranked results are empty/unsafe.
+  let j=await regridFetch(makeUrl(parsed.street||address,true),token),features=j?.parcels?.features||j?.features||[],picked=selectRegridFeature(features,address),queryMode='street_plus_state_path';
+  if(!picked.subject){
+    const j2=await regridFetch(makeUrl(address,false),token),features2=j2?.parcels?.features||j2?.features||[],picked2=selectRegridFeature(features2,address);
+    if(picked2.subject||(!features.length&&features2.length)){j=j2;features=features2;picked=picked2;queryMode='full_address_fallback'}
+  }
+  if(picked.subject)return {configured:true,subject:picked.subject,error:null,count:features.length,matchScore:picked.matchScore,providerScore:picked.providerScore,candidates:picked.candidates,diagnostic:{status:'matched',durationMs:elapsed(started),count:features.length,matchScore:picked.matchScore,regridScore:picked.providerScore,rank:picked.subject.regridRank||null,queryMode}};
   // Typeahead is an Enterprise product. It is an optional rescue path only.
   if(String(process.env.REGRID_USE_TYPEAHEAD||'').toLowerCase()==='true'){
     try{
@@ -114,11 +122,11 @@ async function researchRegrid(address){
       if(cand){const d=new URL(`https://app.regrid.com/api/v2/parcels/${encodeURIComponent(cand.llUuid)}`);d.searchParams.set('return_custom','false');d.searchParams.set('return_geometry','false');d.searchParams.set('return_matched_buildings','false');d.searchParams.set('return_matched_addresses','false');d.searchParams.set('return_enhanced_ownership','false');d.searchParams.set('return_zoning','false');const dj=await regridFetch(d,token),df=(dj?.parcels?.features||dj?.features||[])[0];if(df){const subject=normRegrid(df),m=addressMatchDetails(address,subject);if(m.houseExact&&m.streetRatio>=.8&&!m.hardMismatch)return {configured:true,subject:{...subject,addressMatchScore:m.score,regridScore:cand.score,regridRank:1},error:null,count:features.length,matchScore:m.score,providerScore:cand.score,candidates:picked.candidates,diagnostic:{status:'matched_typeahead_rescue',durationMs:elapsed(started),matchScore:m.score,regridScore:cand.score}};}}
     }catch(e){return {configured:true,subject:null,error:`Regrid address results did not pass exact-property checks; optional Typeahead rescue also failed: ${clean(e.message,140)}`,count:features.length,matchScore:picked.matchScore,providerScore:picked.providerScore,candidates:picked.candidates,diagnostic:{status:'no_safe_match',durationMs:elapsed(started),count:features.length,matchScore:picked.matchScore,regridScore:picked.providerScore,typeaheadError:clean(e.message,120)}}}
   }
-  return {configured:true,subject:null,error:features.length?'Regrid returned parcels, but none passed Better’s exact house/street and locality checks.':'No Regrid parcel matched this address.',count:features.length,matchScore:picked.matchScore,providerScore:picked.providerScore,candidates:picked.candidates,diagnostic:{status:'no_safe_match',durationMs:elapsed(started),count:features.length,matchScore:picked.matchScore,regridScore:picked.providerScore}};
+  return {configured:true,subject:null,error:features.length?'Regrid returned parcels, but none passed Better’s exact house/street and locality checks.':'No Regrid parcel matched this address.',count:features.length,matchScore:picked.matchScore,providerScore:picked.providerScore,candidates:picked.candidates,diagnostic:{status:'no_safe_match',durationMs:elapsed(started),count:features.length,matchScore:picked.matchScore,regridScore:picked.providerScore,queryMode}};
 }
 async function researchRegridNearby(subject){
   const token=regridToken();if(!token||!Number.isFinite(Number(subject?.latitude))||!Number.isFinite(Number(subject?.longitude)))return {configured:!!token,comps:[],diagnostic:{status:token?'no_coordinates':'not_configured'}};
-  const started=Date.now(),u=new URL('https://app.regrid.com/api/v2/parcels/point');u.searchParams.set('lat',String(subject.latitude));u.searchParams.set('lon',String(subject.longitude));u.searchParams.set('radius',String(REGRID_NEARBY_RADIUS_METERS));u.searchParams.set('limit',String(REGRID_NEARBY_LIMIT));u.searchParams.set('return_geometry','false');u.searchParams.set('return_custom','false');u.searchParams.set('return_matched_buildings','false');u.searchParams.set('return_matched_addresses','false');u.searchParams.set('return_enhanced_ownership','false');u.searchParams.set('return_zoning','false');
+  const started=Date.now(),u=new URL('https://app.regrid.com/api/v2/parcels/query'),cutoff=new Date(Date.now()-3*365*24*60*60*1000).toISOString().slice(0,10);u.searchParams.set('geojson',JSON.stringify({type:'Point',coordinates:[Number(subject.longitude),Number(subject.latitude)]}));u.searchParams.set('radius',String(REGRID_NEARBY_RADIUS_METERS));u.searchParams.set('fields[saleprice][gt]','0');u.searchParams.set('fields[saledate][gte]',cutoff);u.searchParams.set('limit',String(REGRID_NEARBY_LIMIT));u.searchParams.set('return_geometry','false');u.searchParams.set('return_custom','false');u.searchParams.set('return_matched_buildings','false');u.searchParams.set('return_matched_addresses','false');u.searchParams.set('return_enhanced_ownership','false');u.searchParams.set('return_zoning','false');
   const j=await regridFetch(u,token),features=j?.parcels?.features||j?.features||[],seen=new Set(),comps=[];
   for(const f of features){const r=normRegrid(f);if(!r.salePrice||!r.saleDate||!r.address)continue;if(subject.llUuid&&r.llUuid===subject.llUuid)continue;const key=`${normText(r.address)}|${r.salePrice}|${String(r.saleDate).slice(0,10)}`;if(seen.has(key))continue;seen.add(key);r.distanceMiles=hav(subject.latitude,subject.longitude,r.latitude,r.longitude);r.source='Regrid recorded sale';r.sourceKey='regrid';r.sourceType='County / parcel records';r.verification='recorded-sale';comps.push(r)}
   return {configured:true,comps:comps.sort((a,b)=>(a.distanceMiles??99)-(b.distanceMiles??99)).slice(0,40),diagnostic:{status:'complete',durationMs:elapsed(started),returned:features.length,recordedSales:comps.length,radiusMiles:Number((REGRID_NEARBY_RADIUS_METERS/1609.344).toFixed(1))}};
@@ -130,14 +138,14 @@ function canonicalUrl(v){try{const u=new URL(v);return `${u.protocol}//${u.hostn
 function urlWasActuallySearched(url,sources){const c=canonicalUrl(url);return !!c&&(sources||[]).some(s=>{const x=canonicalUrl(s);return x===c||x.startsWith(c)||c.startsWith(x)})}
 function webReliability(kind){return ({county_assessor:98,public_record:92,broker_listing:86,real_estate_portal:72,other:55})[kind]||55}
 function sourceTier(kind){return ({authorized_mls:4,county_assessor:4,public_record:3,broker_listing:3,real_estate_portal:2,other:1})[kind]||1}
-async function researchWeb(address,{needFacts=true,needComps=true}={}){
+async function researchWeb(address,{needFacts=true,needComps=true,subject=null}={}){
   const key=clean(process.env.OPENAI_API_KEY,3000);if(!key||(!needFacts&&!needComps))return {configured:!!key,skipped:true,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:key?'not_needed':'not_configured'}};
   const started=Date.now();
   const schema={type:'object',additionalProperties:false,required:['factEvidence','soldComps','marketContext','notes'],properties:{factEvidence:{type:'array',maxItems:30,items:{type:'object',additionalProperties:false,required:['field','numberValue','textValue','subjectAddress','sourceUrl','sourceName','sourceKind'],properties:{field:{type:'string',enum:['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType','lastSalePrice','lastSaleDate']},numberValue:{anyOf:[{type:'number'},{type:'null'}]},textValue:{anyOf:[{type:'string'},{type:'null'}]},subjectAddress:{type:'string'},sourceUrl:{type:'string'},sourceName:{type:'string'},sourceKind:{type:'string',enum:['county_assessor','public_record','broker_listing','real_estate_portal','other']}}}},soldComps:{type:'array',maxItems:12,items:{type:'object',additionalProperties:false,required:['address','salePrice','saleDate','bedrooms','bathrooms','squareFootage','yearBuilt','propertyType','sourceUrl','sourceName','sourceKind'],properties:{address:{type:'string'},salePrice:{type:'number'},saleDate:{type:'string'},bedrooms:{anyOf:[{type:'number'},{type:'null'}]},bathrooms:{anyOf:[{type:'number'},{type:'null'}]},squareFootage:{anyOf:[{type:'number'},{type:'null'}]},yearBuilt:{anyOf:[{type:'number'},{type:'null'}]},propertyType:{anyOf:[{type:'string'},{type:'null'}]},sourceUrl:{type:'string'},sourceName:{type:'string'},sourceKind:{type:'string',enum:['county_assessor','public_record','broker_listing','real_estate_portal','other']}}}},marketContext:{type:'array',maxItems:8,items:{type:'object',additionalProperties:false,required:['address','status','price','sourceUrl'],properties:{address:{type:'string'},status:{type:'string'},price:{anyOf:[{type:'number'},{type:'null'}]},sourceUrl:{type:'string'}}}},notes:{type:'array',maxItems:8,items:{type:'string'}}}};
   const requested=[];if(needFacts)requested.push('Verify subject bedrooms, bathrooms, living area, year built, property type');if(needComps)requested.push('Find recent nearby CLOSED/SOLD comparable sales');
-  const parsedAddress=parseAddress(address),webTool={type:'web_search',search_context_size:'medium',external_web_access:true};
+  const parsedAddress=parseAddress(address),webTool={type:'web_search',search_context_size:'high',external_web_access:true};
   if(parsedAddress.city||parsedAddress.state)webTool.user_location={type:'approximate',country:'US',...(parsedAddress.city?{city:parsedAddress.city}:{}),...(parsedAddress.state?{region:parsedAddress.state}:{})};
-  const body={model:process.env.OPENAI_RESEARCH_MODEL||'gpt-5.6-luna',tools:[webTool],tool_choice:'required',reasoning:{effort:'low'},include:['web_search_call.action.sources'],instructions:[
+  const body={model:process.env.OPENAI_RESEARCH_MODEL||'gpt-5.6-luna',tools:[webTool],tool_choice:'required',reasoning:{effort:'medium'},include:['web_search_call.action.sources'],instructions:[
     'You are the production property-evidence researcher for Better Real Estate. Research ONLY the exact full address supplied. Accuracy and provenance matter more than completeness.',
     'Use the hosted public web-search tool only; do not scrape websites or bypass access controls. Run a small targeted search plan instead of one broad query. Keep the total search effort bounded.',
     needFacts?'SUBJECT SEARCH PLAN: (1) search the exact quoted address by itself; (2) search the exact quoted address with major real-estate sources such as Zillow, Realtor.com, Redfin, Trulia, Homes.com and broker/FSBO pages; (3) search the exact quoted address with county assessor, county tax, parcel, property record, or recorder terms. Stop early when strong evidence is found.':'Subject facts are already sufficiently corroborated; do not spend search effort collecting them.',
@@ -148,8 +156,8 @@ async function researchWeb(address,{needFacts=true,needComps=true}={}){
     needComps?'For sold comps, return only CLOSED sales with an exact comp address, closed price, closed date and source URL. Prefer recent nearby properties similar in type/size/bed-bath.':'',
     'Every sourceUrl must be a URL actually surfaced by the web-search tool. If a fact or sold sale cannot be tied to a surfaced source, omit it.',
     'Do not invent coordinates, distances, close prices, close dates, source URLs or citations. Return fewer results rather than uncertain results.'
-  ].filter(Boolean).join('\n'),input:`Exact subject property: "${address}"\nRequested evidence: ${requested.join('; ')}\nReturn only evidence tied to URLs actually consulted by web search.`,text:{format:{type:'json_schema',name:'better_property_web_research',schema,strict:true}},max_output_tokens:1600};
-  const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(WEB_TIMEOUT_MS)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`Web research failed (${r.status}): ${clean(j?.error?.message||'unknown error',180)}`);let parsed=null;try{parsed=JSON.parse(extractText(j))}catch{};const sources=webSources(j);if(!parsed)return {configured:true,facts:null,factEvidence:[],comps:[],sources,error:'Web research returned no structured evidence.',diagnostic:{status:'no_structured_output',durationMs:elapsed(started),sourceCount:sources.length}};
+  ].filter(Boolean).join('\n'),input:`Exact subject property: "${address}"\nRequested evidence: ${requested.join('; ')}${subject?`\nKnown subject context (use only as search targeting, not as proof): ${JSON.stringify({bedrooms:subject.bedrooms,bathrooms:subject.bathrooms,squareFootage:subject.squareFootage,yearBuilt:subject.yearBuilt,propertyType:subject.propertyType})}`:''}\nReturn only evidence tied to URLs actually consulted by web search.`,text:{format:{type:'json_schema',name:'better_property_web_research',schema,strict:true}},max_output_tokens:2600};
+  const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(needComps&&!needFacts?WEB_COMP_TIMEOUT_MS:WEB_FACT_TIMEOUT_MS)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`Web research failed (${r.status}): ${clean(j?.error?.message||'unknown error',180)}`);let parsed=null;try{parsed=JSON.parse(extractText(j))}catch{};const sources=webSources(j);if(!parsed)return {configured:true,facts:null,factEvidence:[],comps:[],sources,error:'Web research returned no structured evidence.',diagnostic:{status:'no_structured_output',durationMs:elapsed(started),sourceCount:sources.length}};
   const factEvidence=(parsed.factEvidence||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)).map(x=>{const match=addressMatchDetails(address,{address:x.subjectAddress});const value=x.field==='propertyType'||x.field==='lastSaleDate'?clean(x.textValue,120):num(x.numberValue);return {field:x.field,value,subjectAddress:clean(x.subjectAddress,250),source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return clean(x.sourceName,80).toLowerCase()}})()}`,sourceType:'Public web',sourceKind:x.sourceKind,reliability:webReliability(x.sourceKind),tier:sourceTier(x.sourceKind),sourceUrl:x.sourceUrl,verification:'web-source-specific',addressMatchScore:match.score,retrievedAt:nowIso()}}).filter(x=>x.value!==null&&x.value!==undefined&&x.value!==''&&x.addressMatchScore>=60);
   const facts={};for(const f of factEvidence){if(facts[f.field]===undefined)facts[f.field]=f.value}
   const comps=(parsed.soldComps||[]).filter(x=>urlWasActuallySearched(x.sourceUrl,sources)).map(x=>({...x,source:`Web · ${clean(x.sourceName,80)||'source'}`,sourceKey:`web:${(()=>{try{return new URL(x.sourceUrl).hostname.replace(/^www\./,'').toLowerCase()}catch{return 'unknown'}})()}`,sourceType:'Public web',sourceKind:x.sourceKind,reliability:webReliability(x.sourceKind),verification:'web-corroborated',distanceMiles:null,retrievedAt:nowIso()}));
@@ -179,9 +187,27 @@ function resolveField(field,evidence){
   return {field,value,recordedValue,status,confidence,sources:win.items.map(evidenceLabel),alternatives:groups.slice(1).map(g=>({value:g.value,sources:g.items.map(evidenceLabel)})),raw:items.map(evidenceLabel),independentSources:independent,winningTier:win.maxTier};
 }
 function sourceEvidenceForField(field,normalizedMls,regridSubject,web){const out=[];for(const mlsSubject of normalizedMls||[])if(mlsSubject&&validFieldValue(field,mlsSubject[field]))out.push({value:mlsSubject[field],source:mlsSubject.source,sourceKey:mlsSubject.sourceKey||`mls:${mlsSubject.source}`,sourceType:'MLS / RESO',sourceKind:'authorized_mls',reliability:100,tier:4});if(regridSubject&&validFieldValue(field,regridSubject[field]))out.push({value:regridSubject[field],source:'Regrid',sourceKey:'regrid',sourceType:'County / parcel records',sourceKind:'public_record',sourceUrl:regridSubject.sourceRecordUrl||null,reliability:90,tier:3});for(const x of web?.factEvidence||[])if(x.field===field)out.push(x);return out}
+function webIdentitySources(web,address){
+  const bySource=new Map();for(const x of web?.factEvidence||[]){if(!x?.sourceKey||!x.subjectAddress||Number(x.addressMatchScore)<60)continue;const prior=bySource.get(x.sourceKey),parsed=parseAddress(x.subjectAddress),cand={source:x.source,sourceKey:x.sourceKey,sourceType:'Public web',sourceKind:x.sourceKind,reliability:Number(x.reliability||0),tier:evidenceTier(x),address:x.subjectAddress,city:parsed.city||null,state:parsed.state||null,postalCode:parsed.zip||null,addressMatchScore:Number(x.addressMatchScore)};if(!prior||cand.addressMatchScore>prior.addressMatchScore)bySource.set(x.sourceKey,cand)}
+  const rows=[...bySource.values()].sort((a,b)=>b.tier-a.tier||b.reliability-a.reliability||b.addressMatchScore-a.addressMatchScore);
+  const strong=rows.filter(x=>x.tier>=3);if(strong.some(x=>x.tier>=4))return strong;return rows.length>=2?rows:[];
+}
+function rankWebCompsForVerification(subject,comps){
+  const st=normPropertyType(subject?.propertyType),ss=Number(subject?.squareFootage)||null,sb=Number(subject?.bedrooms)||null,sba=Number(subject?.bathrooms)||null,now=Date.now();
+  return (comps||[]).filter(x=>x?.address&&Number(x.salePrice)>0&&x.saleDate).map((x,i)=>{let score=0;const ct=normPropertyType(x.propertyType);if(st&&ct&&st===ct)score+=30;if(ss&&Number(x.squareFootage)){const d=Math.abs(Number(x.squareFootage)-ss)/ss;score+=d<=.15?25:d<=.30?15:d<=.50?5:0}if(sb&&Number(x.bedrooms))score+=Math.max(0,10-Math.abs(Number(x.bedrooms)-sb)*5);if(sba&&Number(x.bathrooms))score+=Math.max(0,10-Math.abs(Number(x.bathrooms)-sba)*4);const age=(now-new Date(x.saleDate).getTime())/86400000;if(Number.isFinite(age))score+=age<=180?20:age<=365?15:age<=548?8:0;return {...x,_verifyRank:score,_originalIndex:i}}).sort((a,b)=>b._verifyRank-a._verifyRank||a._originalIndex-b._originalIndex);
+}
+async function verifyWebCompDistances(subject,comps){
+  const token=regridToken(),rows=rankWebCompsForVerification(subject,comps).slice(0,6);if(!token)return {comps:rows,diagnostic:{status:'not_configured',checked:0,verified:0}};
+  if(!Number.isFinite(Number(subject?.latitude))||!Number.isFinite(Number(subject?.longitude)))return {comps:rows,diagnostic:{status:'no_subject_coordinates',checked:0,verified:0}};
+  let checked=0,verified=0;for(const row of rows){
+    try{const p=parseAddress(row.address);if(!p.houseNumber||!p.street)continue;const u=new URL('https://app.regrid.com/api/v2/parcels/address');u.searchParams.set('query',p.street);if(p.state)u.searchParams.set('path',`/us/${p.state.toLowerCase()}`);u.searchParams.set('limit','1');u.searchParams.set('return_geometry','false');u.searchParams.set('return_custom','false');u.searchParams.set('return_matched_buildings','false');u.searchParams.set('return_matched_addresses','false');u.searchParams.set('return_enhanced_ownership','false');u.searchParams.set('return_zoning','false');checked++;const j=await regridFetch(u,token),features=j?.parcels?.features||j?.features||[],pick=selectRegridFeature(features,row.address);if(pick.subject&&Number.isFinite(Number(pick.subject.latitude))&&Number.isFinite(Number(pick.subject.longitude))){row.distanceMiles=hav(subject.latitude,subject.longitude,pick.subject.latitude,pick.subject.longitude);row.distanceVerification='Regrid exact-address parcel coordinate';verified++;}}
+    catch(e){row.distanceVerificationError=clean(e.message,120)}
+  }
+  return {comps:rows.map(({_verifyRank,_originalIndex,...x})=>x),diagnostic:{status:verified?'complete':'no_verified_distances',checked,verified,candidatesConsidered:Math.min(6,(comps||[]).length)}};
+}
 function resolveSubjectEvidence({mlsSubject=null,mlsSubjects=[],regridSubject=null,web=null,address}){
   const normalizedMls=[...(mlsSubjects||[])];if(mlsSubject&&!normalizedMls.includes(mlsSubject))normalizedMls.unshift(mlsSubject);
-  const fields=['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType'],fieldEvidence={},identitySources=[...normalizedMls,regridSubject].filter(Boolean).sort((a,b)=>(b.addressMatchScore||0)-(a.addressMatchScore||0)),identitySource=identitySources[0]||null;
+  const fields=['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType'],fieldEvidence={},webIdentity=webIdentitySources(web,address),identitySources=[...normalizedMls,regridSubject,...webIdentity].filter(Boolean).sort((a,b)=>(b.addressMatchScore||0)-(a.addressMatchScore||0)||evidenceTier(b)-evidenceTier(a)),identitySource=identitySources[0]||null;
   const subject={address,source:'Cross-checked evidence',sourceType:'Verified consensus',retrievedAt:nowIso()};
   if(identitySource){subject.address=identitySource.address||address;subject.city=identitySource.city||null;subject.state=identitySource.state||null;subject.postalCode=identitySource.postalCode||null;subject.parcelId=identitySource.parcelId||null;subject.llUuid=identitySource.llUuid||null;subject.latitude=identitySource.latitude??null;subject.longitude=identitySource.longitude??null;subject.sourceUpdatedAt=identitySource.sourceUpdatedAt||null}
   for(const field of fields){const resolved=resolveField(field,sourceEvidenceForField(field,normalizedMls,regridSubject,web));fieldEvidence[field]=resolved;subject[field]=resolved.value}
@@ -190,7 +216,7 @@ function resolveSubjectEvidence({mlsSubject=null,mlsSubjects=[],regridSubject=nu
   const addressScore=Math.max(...identitySources.map(x=>Number(x.addressMatchScore)).filter(Number.isFinite),-Infinity),matched=Number.isFinite(addressScore)&&addressScore>=55&&identitySources.some(x=>addressMatchDetails(address,x).houseExact&&addressMatchDetails(address,x).streetRatio>=.8&&!addressMatchDetails(address,x).hardMismatch);
   const valuationCore=Boolean(subject.squareFootage&&subject.propertyType&&(subject.bedrooms!==null||subject.bathrooms!==null||subject.yearBuilt!==null));
   const confidence=matched&&resolvedCore>=4?'High':matched&&resolvedCore>=3?'Moderate':'Low';
-  return {subject,fieldEvidence,conflicts,identity:{addressMatched:matched,addressMatchScore:Number.isFinite(addressScore)?addressScore:null,resolvedCoreFields:resolvedCore,confidence,sufficientForValuation:matched&&resolvedCore>=3&&valuationCore}};
+  return {subject,fieldEvidence,conflicts,identity:{addressMatched:matched,addressMatchScore:Number.isFinite(addressScore)?addressScore:null,resolvedCoreFields:resolvedCore,confidence,sufficientForValuation:matched&&resolvedCore>=3&&valuationCore,sourceCount:identitySources.length,webIdentitySources:webIdentity.length}};
 }
 
 function dedupeComps(rows,subject){const seen=new Map();for(const x0 of rows||[]){const x={...x0};if(!x.salePrice||!x.address)continue;if(subject?.latitude&&subject?.longitude&&x.latitude&&x.longitude)x.distanceMiles=hav(subject.latitude,subject.longitude,x.latitude,x.longitude);const k=`${normText(x.address)}|${Math.round(Number(x.salePrice))}|${String(x.saleDate||'').slice(0,10)}`;if(!seen.has(k))seen.set(k,x);else{const prior=seen.get(k);prior.corroboratingSources=[...new Set([...(prior.corroboratingSources||[prior.source]),x.source].filter(Boolean))]}}return [...seen.values()]}
@@ -203,8 +229,10 @@ async function researchMlsSource(cfg,address,parsed){
   }catch(e){return {subject:null,comps:[],error:clean(e.name==='TimeoutError'?`Timed out after ${Math.round(MLS_TIMEOUT_MS/1000)} seconds.`:e.message,180),diagnostic:{status:'error',durationMs:elapsed(started),error:clean(e.message,140)}}}
 }
 
-async function researchFresh(address){
+async function researchFresh(address,{onProgress=null}={}){
   const intelligence=require('./dealIntelligence'),parsed=parseAddress(address),errors=[],sources=[],diagnostics={startedAt:nowIso(),stages:{}};
+  const progress=async(phase,percent,message,detail=null)=>{if(typeof onProgress==='function')try{await onProgress({phase,progress:percent,message,detail})}catch{}};
+  await progress('identity',8,'Resolving the exact property and checking deterministic records.');
   const mlsCfgs=configs();for(const cfg of mlsCfgs)sources.push({name:cfg.name,type:'Authorized MLS / RESO Web API'});if(regridToken())sources.push({name:'Regrid',type:'County / parcel records'});
   const deterministicStart=Date.now();
   const [regrid,mlsResults]=await Promise.all([
@@ -213,34 +241,49 @@ async function researchFresh(address){
   ]);
   diagnostics.stages.identity={durationMs:elapsed(deterministicStart),regrid:regrid.diagnostic||{status:'unknown'},mls:mlsResults.map((x,i)=>({name:mlsCfgs[i]?.name,status:x.diagnostic?.status||'unknown',durationMs:x.diagnostic?.durationMs||null,error:x.error||null}))};
   if(regrid.error)errors.push({source:'Regrid',error:regrid.error});for(let i=0;i<mlsResults.length;i++)if(mlsResults[i].error)errors.push({source:mlsCfgs[i].name,error:mlsResults[i].error});
+  await progress('records',24,'Property identity checked. Collecting parcel and authorized listing evidence.',{regridStatus:regrid.diagnostic?.status||'unknown',regridCandidates:regrid.count||0});
   const mlsSubjects=mlsResults.map(x=>x.subject).filter(Boolean),deterministicComps=mlsResults.flatMap(x=>x.comps||[]);
   let nearby={configured:false,comps:[],diagnostic:{status:'not_run'}};
   if(regrid.subject){try{nearby=await researchRegridNearby(regrid.subject)}catch(e){const error=clean(e.name==='TimeoutError'?`Timed out after ${Math.round(REGRID_TIMEOUT_MS/1000)} seconds.`:e.message,180);errors.push({source:'Regrid nearby sales',error});nearby={configured:true,comps:[],diagnostic:{status:'error',error}}}}
   diagnostics.stages.nearbySales=nearby.diagnostic;
+  await progress('nearby_sales',36,'Checking recorded nearby sales before spending on public-web research.',{recordedSales:nearby.comps?.length||0});
   deterministicComps.push(...(nearby.comps||[]));
   let resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:null,address}),comps=dedupeComps(deterministicComps,resolved.subject),compAnalysis=intelligence.analyzeComps(resolved.subject,comps);
-  const needFacts=Object.values(resolved.fieldEvidence).some(x=>x.status!=='verified'&&x.status!=='verified_with_conflict');
-  const needComps=!compAnalysis.valuationReady;
-  let web={configured:!!process.env.OPENAI_API_KEY,skipped:true,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:'not_needed'}};
-  if((needFacts||needComps)&&process.env.OPENAI_API_KEY){
+  let needFacts=Object.values(resolved.fieldEvidence).some(x=>x.status!=='verified'&&x.status!=='verified_with_conflict');
+  let needComps=!compAnalysis.valuationReady;
+  let web={configured:!!process.env.OPENAI_API_KEY,skipped:true,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:'not_needed'}},webFactPass=null,webCompPass=null;
+  if(needFacts&&process.env.OPENAI_API_KEY){
     sources.push({name:'Better Web Research',type:'Public web search'});
-    try{web=await researchWeb(address,{needFacts,needComps})}catch(e){const error=clean(e.name==='TimeoutError'?`Timed out after ${Math.round(WEB_TIMEOUT_MS/1000)} seconds; deterministic evidence was kept and no unsupported web facts were accepted.`:e.message,180);errors.push({source:'Better Web Research',error});web={configured:true,skipped:false,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:'error',durationMs:null,error}}}
+    await progress('web_facts',48,'Cross-checking the exact address across public property and assessor sources.');
+    try{webFactPass=await researchWeb(address,{needFacts:true,needComps:false,subject:resolved.subject});}
+    catch(e){const timeout=e.name==='TimeoutError';const error=clean(timeout?`Subject web research exceeded ${Math.round(WEB_FACT_TIMEOUT_MS/1000)} seconds; deterministic evidence was preserved.`:e.message,180);errors.push({source:'Better Web Research · subject facts',error});webFactPass={configured:true,skipped:false,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:'error',durationMs:null,error}}}
+    web={...web,...webFactPass,skipped:false};
+    resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:webFactPass,address});
+    comps=dedupeComps(deterministicComps,resolved.subject);compAnalysis=intelligence.analyzeComps(resolved.subject,comps);needComps=!compAnalysis.valuationReady;
   }
-  diagnostics.stages.web=web.diagnostic||{status:web.skipped?'not_needed':'unknown'};
-  resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web,address});
-  comps=dedupeComps([...deterministicComps,...(web.comps||[])],resolved.subject);compAnalysis=intelligence.analyzeComps(resolved.subject,comps);
+  if(needComps&&process.env.OPENAI_API_KEY){
+    if(!sources.some(x=>x.name==='Better Web Research'))sources.push({name:'Better Web Research',type:'Public web search'});
+    await progress('web_comps',68,'Researching recent closed sales and validating comp details.');
+    try{webCompPass=await researchWeb(address,{needFacts:false,needComps:true,subject:resolved.subject});const dv=await verifyWebCompDistances(resolved.subject,webCompPass.comps||[]);webCompPass.comps=dv.comps;webCompPass.diagnostic={...(webCompPass.diagnostic||{}),distanceVerification:dv.diagnostic};}
+    catch(e){const timeout=e.name==='TimeoutError';const error=clean(timeout?`Sold-comp web research exceeded ${Math.round(WEB_COMP_TIMEOUT_MS/1000)} seconds; verified evidence was preserved.`:e.message,180);errors.push({source:'Better Web Research · sold comps',error});webCompPass={configured:true,skipped:false,facts:null,factEvidence:[],comps:[],sources:[],marketContext:[],diagnostic:{status:'error',durationMs:null,error}}}
+  }
+  const combinedWeb={configured:!!process.env.OPENAI_API_KEY,skipped:!webFactPass&&!webCompPass,factEvidence:[...(webFactPass?.factEvidence||[]),...(webCompPass?.factEvidence||[])],comps:[...(webFactPass?.comps||[]),...(webCompPass?.comps||[])],sources:[...new Set([...(webFactPass?.sources||[]),...(webCompPass?.sources||[])])],marketContext:[...(webFactPass?.marketContext||[]),...(webCompPass?.marketContext||[])],notes:[...(webFactPass?.notes||[]),...(webCompPass?.notes||[])]};
+  diagnostics.stages.web={status:combinedWeb.skipped?'not_needed':((webFactPass?.diagnostic?.status==='error'||webCompPass?.diagnostic?.status==='error')?'partial':'complete'),subject: webFactPass?.diagnostic||{status:needFacts?'not_run':'not_needed'},comps:webCompPass?.diagnostic||{status:needComps?'not_run':'not_needed'},sourceCount:combinedWeb.sources.length};
+  resolved=resolveSubjectEvidence({mlsSubjects,regridSubject:regrid.subject,web:combinedWeb,address});
+  comps=dedupeComps([...deterministicComps,...combinedWeb.comps],resolved.subject);compAnalysis=intelligence.analyzeComps(resolved.subject,comps);
+  await progress('validation',86,'Cross-checking conflicts, duplicates, recency, similarity, and the sold-comp gate.',{resolvedCoreFields:resolved.identity?.resolvedCoreFields||0,compCount:comps.length});
   diagnostics.stages.compGate={status:compAnalysis.valuationReady?'ready':'withheld',reviewed:compAnalysis.reviewed,selected:compAnalysis.selected.length,distanceVerified:compAnalysis.distanceVerifiedCount||0,confidence:compAnalysis.confidence,warnings:compAnalysis.warnings};
   diagnostics.finishedAt=nowIso();diagnostics.durationMs=new Date(diagnostics.finishedAt).getTime()-new Date(diagnostics.startedAt).getTime();
   const notice=[
     regrid.configured?(regrid.subject?'Regrid matched the exact property.':'Regrid was queried but no parcel passed Better’s exact-property checks.'):'Regrid is not configured.',
     mlsCfgs.length?`${mlsCfgs.length} authorized MLS / RESO source${mlsCfgs.length===1?' was':'s were'} queried.`:'No authorized MLS feed is configured.',
     nearby.comps?.length?`${nearby.comps.length} nearby Regrid recorded sale${nearby.comps.length===1?' was':'s were'} found.`:'No usable nearby Regrid recorded sales were found.',
-    web.skipped?'Public-web research was not needed.':web.diagnostic?.status==='complete'?'Public-web corroboration was completed once for unresolved facts/comps.':'Public-web corroboration did not complete; deterministic evidence was preserved.',
+    combinedWeb.skipped?'Public-web research was not needed.':diagnostics.stages.web.status==='complete'?'Public-web subject/comp research completed for the unresolved evidence.':'Public-web research completed only partially; verified deterministic evidence was preserved.',
     compAnalysis.valuationReady?'The sold-comp gate passed.':'The sold-comp gate did not pass, so Better will withhold a precise ARV.'
   ].join(' ');
-  return {configured:sources.length>0,sourceCount:sources.length,sources,subject:resolved.subject,fieldEvidence:resolved.fieldEvidence,identity:resolved.identity,rawSubjects:{mls:mlsSubjects,regrid:regrid.subject||null,regridCandidates:regrid.candidates||[]},comps,compAnalysis,marketContext:web.marketContext||[],webSources:web.sources||[],conflicts:resolved.conflicts,errors,retrievedAt:nowIso(),notice,diagnostics};
+  return {configured:sources.length>0,sourceCount:sources.length,sources,subject:resolved.subject,fieldEvidence:resolved.fieldEvidence,identity:resolved.identity,rawSubjects:{mls:mlsSubjects,regrid:regrid.subject||null,regridCandidates:regrid.candidates||[]},comps,compAnalysis,marketContext:combinedWeb.marketContext||[],webSources:combinedWeb.sources||[],conflicts:resolved.conflicts,errors,retrievedAt:nowIso(),notice,diagnostics};
 }
-async function research(address){const key=cacheKey(address);if(inFlightResearch.has(key))return inFlightResearch.get(key);const p=researchFresh(address).finally(()=>inFlightResearch.delete(key));inFlightResearch.set(key,p);return p}
+async function research(address,opts={}){const key=cacheKey(address);if(inFlightResearch.has(key))return inFlightResearch.get(key);const p=researchFresh(address,opts).finally(()=>inFlightResearch.delete(key));inFlightResearch.set(key,p);return p}
 
 module.exports={
   research,
@@ -251,6 +294,8 @@ module.exports={
   _normRegrid:normRegrid,
   _researchRegrid:researchRegrid,
   _researchRegridNearby:researchRegridNearby,
+  _verifyWebCompDistances:verifyWebCompDistances,
+  _rankWebCompsForVerification:rankWebCompsForVerification,
   _selectRegridFeature:selectRegridFeature,
   _addressMatchScore:addressMatchScore,
   _addressMatchDetails:addressMatchDetails,

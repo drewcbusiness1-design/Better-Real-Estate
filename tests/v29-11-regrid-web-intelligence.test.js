@@ -8,6 +8,6 @@ assert(ds.includes('num_bedrooms')&&ds.includes('num_bath'),'Regrid beds/baths m
 assert(ds.includes('soldComps')&&ds.includes('marketContext'),'Web research must separate sold comps from market context');
 assert(ds.includes('conflicts'),'Cross-source conflicts must be preserved');
 assert(srv.includes('compAnalysis.valuationReady&&compAnalysis.estimate'),'Evidence-gated researched comps must drive ARV when enough evidence exists');
-assert(app.includes('Resolving the exact property, approved records and closed-sale comps'),'UI must disclose evidence-first research');
+assert(app.includes('cross-checks the address, records, public sources and sold comps')||app.includes('Resolves the exact property first'),'UI must disclose evidence-first research');
 assert(env.includes('REGRID_API_TOKEN='),'Deployment template must document Regrid');
 console.log('v29.11 Regrid + web intelligence tests passed');
