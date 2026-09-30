@@ -119,15 +119,21 @@ function isAdminEmail(email) {
 }
 
 /** Roles a person may actually choose when signing up. Note: no 'admin'. */
-const SIGNUP_ROLES = ['buyer', 'seller'];
+const SIGNUP_ROLES = ['buyer', 'seller', 'lender'];
 
-/** Resolve the role an account should have, ignoring anything user-supplied. */
+/** Normalize multi-select public roles. Admin is never accepted from the client. */
+function normalizeSignupRoles(input) {
+  const raw = Array.isArray(input) ? input : [input];
+  return [...new Set(raw.map(v => String(v || '').trim().toLowerCase()).filter(v => SIGNUP_ROLES.includes(v)))];
+}
+
+/** Resolve the legacy primary role while preserving the admin allowlist boundary. */
 function resolveRole(email, requestedRole) {
   if (isAdminEmail(email)) return 'admin';
-  return SIGNUP_ROLES.includes(requestedRole) ? requestedRole : 'buyer';
+  return normalizeSignupRoles(requestedRole)[0] || 'buyer';
 }
 
 module.exports = {
-  checkShopItem, scanForElectronics, isAdminEmail, resolveRole,
+  checkShopItem, scanForElectronics, isAdminEmail, resolveRole, normalizeSignupRoles,
   SIGNUP_ROLES, USER_BANNED_CATEGORIES, adminEmails
 };

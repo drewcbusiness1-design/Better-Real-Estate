@@ -200,7 +200,9 @@ exports.sendAdminBroadcast = (to, name, { subject, headline, body, ctaLabel, cta
 };
 
 exports.sendNewSignupAlert = (to, user) => {
-  const role = String(user?.role || 'member');
+  const roleLabels = { buyer:'Buyer / Investor', seller:'Seller / Wholesaler', lender:'Lender / Funder', admin:'Admin' };
+  const rawRoles = Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role || 'member'];
+  const role = rawRoles.map(r => roleLabels[r] || String(r)).join(', ');
   const joined = user?.createdAt ? new Date(user.createdAt).toLocaleString('en-US', { timeZone: 'America/New_York' }) : 'Just now';
   const adminUrl = `${APP_URL.replace(/\/$/, '')}/?view=memberships`;
   return send(to, `New Better Real Estate signup — ${user?.name || 'New member'}`,

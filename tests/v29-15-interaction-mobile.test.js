@@ -15,9 +15,10 @@ for (const token of [
   "input.value = input.value.trim() ? body + '\\n' + input.value : body",
   "if (state.view !== 'chat' || !state.chatUserId || sendingMessage) return;",
   "release:49,title:'Responsive actions'",
-  "release:49,title:'Mobile scrolling & messaging polish'",
-  'const TUTORIAL_VERSION = 49;'
+  "release:49,title:'Mobile scrolling & messaging polish'"
 ]) assert(app.includes(token) || css.includes(token), token);
+const tutorialVersion = Number((app.match(/const TUTORIAL_VERSION = (\d+);/) || [])[1] || 0);
+assert(tutorialVersion >= 49, 'interaction polish tutorial version must remain 49 or newer');
 
 for (const token of [
   'button:not(:disabled):active',

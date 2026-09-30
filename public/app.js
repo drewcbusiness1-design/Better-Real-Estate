@@ -42,6 +42,49 @@ function iconSvg(name, size = 20) {
 }
 function membershipBadge(label) { return label ? el('span', { class:'membershiplevel ' + String(label).toLowerCase().replace(/[^a-z]+/g,'-') }, label) : null; }
 
+const ACCOUNT_ROLE_OPTIONS = [
+  ['buyer','Buyer / Investor','Find and acquire deals'],
+  ['seller','Seller / Wholesaler','Post and move properties'],
+  ['lender','Lender / Funder','Provide capital and connect with deals']
+];
+const ACCOUNT_ROLE_LABELS = Object.fromEntries(ACCOUNT_ROLE_OPTIONS.map(([value,label]) => [value,label]));
+function userRoles(user) {
+  if (!user) return [];
+  if (user.role === 'admin') return ['admin'];
+  const roles = Array.isArray(user.roles) && user.roles.length ? user.roles : [user.role];
+  return [...new Set(roles.filter(r => ACCOUNT_ROLE_LABELS[r]))];
+}
+function hasRole(user, role) { return userRoles(user).includes(role); }
+function roleLabel(user) {
+  if (user?.role === 'admin') return 'Admin';
+  const labels = userRoles(user).map(r => ACCOUNT_ROLE_LABELS[r]);
+  return labels.join(' · ') || 'Member';
+}
+function buildRoleSelector(initialRoles = [], onChange = () => {}) {
+  const selected = new Set((initialRoles || []).filter(r => ACCOUNT_ROLE_LABELS[r]));
+  const tabs = el('div', { class:'roletabs rolemultiselect' });
+  const sync = () => {
+    [...tabs.children].forEach(button => {
+      const active = selected.has(button.dataset.role);
+      button.classList.toggle('selected', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    onChange([...selected]);
+  };
+  ACCOUNT_ROLE_OPTIONS.forEach(([value,label,description]) => {
+    const button = el('button', { type:'button', class:selected.has(value) ? 'selected' : '', 'aria-pressed':selected.has(value) ? 'true' : 'false' }, [
+      el('b', {}, label), el('small', {}, description)
+    ]);
+    button.dataset.role = value;
+    button.onclick = () => {
+      if (selected.has(value)) selected.delete(value); else selected.add(value);
+      sync();
+    };
+    tabs.appendChild(button);
+  });
+  return { element:tabs, values:() => [...selected], set(values){ selected.clear(); (values||[]).forEach(v => ACCOUNT_ROLE_LABELS[v] && selected.add(v)); sync(); } };
+}
+
 async function api(method, path, body) {
   const res = await fetch(path, {
     method, credentials: 'include',
@@ -403,7 +446,7 @@ function renderAuth() {
   wrap.appendChild(el('h2', {}, isSignup ? 'Create your account' : 'Welcome back'));
   wrap.appendChild(el('div', { class: 'sub' }, state.companyInviteToken ? (isSignup ? 'Create your account to join your company workspace.' : 'Sign in with the email that received your company invitation.') : (isSignup ? `${state.pricing?.signupTrialDays || 7} days of full access, no card required.` : 'Sign in to continue.')));
 
-  let role = 'buyer';
+  let roles = [];
   const name = el('input', { placeholder: 'Jordan Alvarez' });
   const email = el('input', { type: 'text', autocomplete: 'username', placeholder: isSignup ? 'you@email.com' : 'Email or @username' });
   const pass = el('input', { type: 'password', placeholder: isSignup ? 'At least 6 characters' : 'Your password' });
@@ -412,15 +455,10 @@ function renderAuth() {
   const err = el('div', { class: 'errmsg' });
 
   if (isSignup) {
-    wrap.appendChild(el('label', {}, "I'm here as"));
-    const tabs = el('div', { class: 'roletabs' });
-    [['buyer','Buyer'],['seller','Seller']].forEach(([v, l]) => {
-      const b = el('button', { class: v === role ? 'selected' : '' }, l);
-      b.onclick = () => { role = v; [...tabs.children].forEach(c => c.classList.remove('selected')); b.classList.add('selected'); };
-      tabs.appendChild(b);
-    });
-    wrap.appendChild(tabs);
-    wrap.appendChild(el('div', { class: 'hint' }, 'Everyone can post, browse and use the marketplace — your role just sets which screen opens first.'));
+    wrap.appendChild(el('label', {}, "How do you work in real estate?"));
+    const rolePicker = buildRoleSelector([], next => { roles = next; });
+    wrap.appendChild(rolePicker.element);
+    wrap.appendChild(el('div', { class: 'hint' }, 'Choose all that apply. This helps the right people find you and never limits what you can do on Better.'));
     wrap.appendChild(el('label', {}, 'Name')); wrap.appendChild(name);
   }
   wrap.appendChild(el('label', {}, 'Email')); wrap.appendChild(email);
@@ -437,8 +475,9 @@ function renderAuth() {
     err.textContent = '';
     try {
       await withButtonBusy(submit, async () => {
+      if (isSignup && !roles.length) throw new Error('Choose at least one role.');
       const payload = isSignup
-        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role, referralCode: ref.value.trim(), affiliateCode: state.pendingAffiliate || '', marketingOptIn: marketingOpt.checked }
+        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role: roles[0], roles, referralCode: ref.value.trim(), affiliateCode: state.pendingAffiliate || '', marketingOptIn: marketingOpt.checked }
         : { email: email.value.trim(), password: pass.value };
       const d = await api('POST', isSignup ? '/api/signup' : '/api/login', payload);
       state.user = d.user; if (d.pricing) state.pricing = d.pricing;
@@ -2062,7 +2101,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 49;
+const TUTORIAL_VERSION = 50;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2109,6 +2148,7 @@ function tutorialStepsFor(tier=tutorialTier()){
   {view:'dealbuilder',selector:'.deal-intel-snapshot',min:1,release:48,title:'Complete Deal Intelligence',copy:'Better now carries recorded property facts cleanly into the investor view, keeps searching independent sources when corroboration is weak, cross-checks sold comps across multiple source families, and preserves deterministic working ARV, repair planning and deal math even when AI narrative synthesis remains evidence-gated.'},
   {view:'network',selector:'.personactions',min:0,release:49,title:'Responsive actions',copy:'Follow, friend, save, send and other actions now acknowledge your tap immediately and show a consistent processing state when the server is still working, so you never have to guess whether Better registered the action.'},
   {view:'messages',selector:'.page',min:0,release:49,title:'Mobile scrolling & messaging polish',copy:'Long panels, modals, lists and workspaces remain reachable on mobile, and sent messages clear from the composer immediately while failed sends restore the draft instead of losing it.'},
+  {view:'network',selector:'.networksearch',min:0,release:50,title:'Roles that match how you work',copy:'Profiles can now identify as Buyer / Investor, Seller / Wholesaler, Lender / Funder, or any combination. Use Network filters to find the exact people a deal needs, and update your own roles anytime in Settings.'},
  {view:'buyercrm',selector:'.buyercrmpage',min:0,title:'Buyer CRM',copy:'Keep buyer markets, buy boxes, private notes and follow-up stages in one pipeline.'},
  {view:'insights',selector:'.insightspage',min:0,title:'Demand Insights',copy:'See where published buyer demand is concentrated by market, property type and strategy.'},
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
@@ -2516,7 +2556,7 @@ function personCard(user, opts = {}) {
     el('div', { class: 'personmeta' }, [
       el('div', { class: 'personname' }, [user.name, user.verified ? el('span', { class: 'vbadge' }, '✓') : null]),
       user.username ? el('div', { class: 'personhandle' }, '@' + user.username) : null,
-      el('div', { class: 'personsub' }, [user.company?.name, user.role, ...(user.markets || []), user.location].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3).join(' · ')),
+      el('div', { class: 'personsub' }, [user.company?.name, roleLabel(user), ...(user.markets || []), user.location].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3).join(' · ')),
       el('div', { class: 'personstats' }, `${user.listingCount || 0} listings · ${user.followerCount || 0} followers · ${user.friendCount || 0} friends`)
     ])
   ]);
@@ -2624,7 +2664,7 @@ async function renderNetwork() {
         accept.onclick = async () => { try { await withButtonBusy(accept, async () => { await api('POST', '/api/friends/requests/' + encodeURIComponent(r.id) + '/respond', { action: 'accept' }); await refreshUnread(); render(); }); } catch (e) { toast(e.message, 'err'); } };
         const decline = el('button', {}, 'Decline');
         decline.onclick = async () => { try { await withButtonBusy(decline, async () => { await api('POST', '/api/friends/requests/' + encodeURIComponent(r.id) + '/respond', { action: 'decline' }); await refreshUnread(); render(); }); } catch (e) { toast(e.message, 'err'); } };
-        card.appendChild(el('div', { class: 'listrow' }, [avatarNode(r.user, 'small'), el('div', { class: 'grow', onclick: () => go('profile', { profileId: r.user.id }) }, [el('div', { class: 't' }, r.user.name), el('div', { class: 's' }, [r.user.role, ...(r.user.markets || [])].filter(Boolean).slice(0, 2).join(' · '))]), accept, decline]));
+        card.appendChild(el('div', { class: 'listrow' }, [avatarNode(r.user, 'small'), el('div', { class: 'grow', onclick: () => go('profile', { profileId: r.user.id }) }, [el('div', { class: 't' }, r.user.name), el('div', { class: 's' }, [roleLabel(r.user), ...(r.user.markets || [])].filter(Boolean).slice(0, 2).join(' · '))]), accept, decline]));
       });
       wrap.appendChild(card);
     }
@@ -2645,7 +2685,7 @@ async function renderNetwork() {
   const controls = el('div', { class: 'networksearch' });
   const q = el('input', { placeholder: 'Search name, @username, company, market or role…', value: state.networkQ || '' });
   const role = el('select');
-  [['all','All people'],['buyer','Buyers'],['seller','Sellers']].forEach(([v,l]) => role.appendChild(el('option', { value: v, selected: state.networkRole === v ? 'selected' : null }, l)));
+  [['all','All people'],['buyer','Buyers / Investors'],['seller','Sellers / Wholesalers'],['lender','Lenders / Funders']].forEach(([v,l]) => role.appendChild(el('option', { value: v, selected: state.networkRole === v ? 'selected' : null }, l)));
   controls.appendChild(q); controls.appendChild(role); wrap.appendChild(controls);
   const results = el('div', { class: 'peoplegrid' }); wrap.appendChild(results);
   let searchTimer = null, seq = 0;
@@ -2738,7 +2778,7 @@ async function renderChat() {
   const wrap = el('div', { class: 'page chatpage' });
   wrap.appendChild(el('div', { class: 'chathead' }, [
     el('button', { class: 'backbtn', onclick: () => go('messages') }, '← Messages'),
-    el('div', { class: 'chatperson', onclick: () => go('profile', { profileId: other.id }) }, [avatarNode(other, 'small'), el('div', {}, [el('b', {}, other.name), el('span', {}, [other.role, ...(other.markets || [])].filter(Boolean).slice(0,2).join(' · '))])]),
+    el('div', { class: 'chatperson', onclick: () => go('profile', { profileId: other.id }) }, [avatarNode(other, 'small'), el('div', {}, [el('b', {}, other.name), el('span', {}, [roleLabel(other), ...(other.markets || [])].filter(Boolean).slice(0,2).join(' · '))])]),
     friendButton(other, () => {})
   ]));
   const stream = el('div', { class: 'chatstream' });
@@ -2907,7 +2947,7 @@ async function renderMe() {
     el('div', { class: 'profileherobody' }, [
       el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, state.user.foundingMember ? el('span',{class:'founding-badge'},state.user.founderLaunchPosition?`Founding Member · #${state.user.founderLaunchPosition}`:'Founding Member') : null, state.user.settings?.showMembershipLevel !== false ? membershipBadge(state.access?.adminUnlimited ? 'Admin' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free') : null]),
       state.user.username ? el('div', { class: 'profileusername' }, '@' + state.user.username) : null,
-      el('div', { class: 'sub' }, `${state.user.role} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free'}`),
+      el('div', { class: 'sub' }, `${roleLabel(state.user)} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free'}`),
       state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
       state.user.investmentMarkets?.length ? el('div',{class:'profile-markets'},state.user.investmentMarkets.map(x=>el('span',{},x))) : null,
       state.user.bio ? el('p', { class: 'profilebio' }, state.user.bio) : null,
@@ -2999,7 +3039,7 @@ async function renderProfile() {
     owner.username ? el('div', { class: 'profileusername' }, '@' + owner.username) : null,
     owner.activityStatus ? el('div',{class:'activity-status'},[el('span',{class:'activity-dot'},''),owner.activityStatus]) : null,
     company ? el('button', { class: 'companychip', onclick: () => go('company', { companyId: company.id }) }, company.name) : null,
-    el('div', { class: 'sub' }, `${owner.role} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')),
+    el('div', { class: 'sub' }, `${roleLabel(owner)} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')),
     owner.location ? el('div', { class: 'profilelocation' }, owner.location) : null,
     owner.investmentMarkets?.length ? el('div',{class:'profile-markets'},owner.investmentMarkets.map(x=>el('span',{},x))) : null,
     owner.bio ? el('p', { class: 'profilebio' }, owner.bio) : null
@@ -3007,7 +3047,7 @@ async function renderProfile() {
   const profileHero = el('div', { class: 'profilehero' }, [avatarNode(owner, 'profile'), profileBody]);
   wrap.appendChild(profileHero);
   if(credibility) wrap.appendChild(el('div',{class:'credibility-row'},[credibility.accountSince?el('span',{},'Member since '+new Date(credibility.accountSince).toLocaleDateString(undefined,{month:'short',year:'numeric'})):null,el('span',{},`${credibility.verifiedClosings||0} verified closing${credibility.verifiedClosings===1?'':'s'}`),credibility.responseRate!==null?el('span',{},`${credibility.responseRate}% response rate`):null].filter(Boolean)));
-  wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${owner.role}${owner.location ? ' · ' + owner.location : ''}` }));
+  wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${roleLabel(owner)}${owner.location ? ' · ' + owner.location : ''}` }));
 
   if (state.user && state.user.id !== owner.id) {
     const actions = el('div', { class: 'profileactions' });
@@ -3018,7 +3058,7 @@ async function renderProfile() {
     const friendUser = { ...owner, friendStatus: friendship?.status || 'none', friendRequestId: friendship?.requestId || null };
     actions.appendChild(friendButton(friendUser, () => render()));
     actions.appendChild(el('button', { class: 'btn-primary', onclick: () => go('chat', { chatUserId: owner.id }) }, 'Message'));
-    if (owner.role === 'seller') actions.appendChild(el('button', { class: 'btn-ghost', onclick: () => go('buyerportal', { buyerPortalType: 'user', buyerPortalId: owner.id }) }, 'Join buyer list'));
+    if (hasRole(owner, 'seller')) actions.appendChild(el('button', { class: 'btn-ghost', onclick: () => go('buyerportal', { buyerPortalType: 'user', buyerPortalId: owner.id }) }, 'Join buyer list'));
     wrap.appendChild(actions);
   }
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Listings'));
@@ -3197,6 +3237,25 @@ async function renderSettings() {
   } }, 'Save profile'));
   pbox.appendChild(pst);
   wrap.appendChild(pbox);
+
+  if (state.user.role !== 'admin') {
+    wrap.appendChild(el('div', { class: 'sectiontitle' }, 'How you work'));
+    let selectedRoles = userRoles(state.user);
+    const roleBox = el('div', { class:'card role-settings' }, [
+      el('div', { class:'settings-copy' }, [el('b', {}, 'Your real estate roles'), el('div', { class:'hint' }, 'Choose all that apply. These appear on your profile and help buyers, wholesalers, investors and funders find the right people.')])
+    ]);
+    const rolePicker = buildRoleSelector(selectedRoles, next => { selectedRoles = next; });
+    roleBox.appendChild(rolePicker.element);
+    const roleStatus = el('div', { class:'okmsg', 'aria-live':'polite' });
+    roleBox.appendChild(el('button', { class:'btn-primary', onclick:async e => {
+      roleStatus.textContent=''; roleStatus.className='okmsg';
+      if (!selectedRoles.length) { roleStatus.className='errmsg'; roleStatus.textContent='Choose at least one role.'; return; }
+      try { await withButtonBusy(e.currentTarget, async () => { const { user } = await api('PATCH','/api/me',{roles:selectedRoles}); state.user=user; roleStatus.textContent='Roles saved.'; }); }
+      catch(err) { roleStatus.className='errmsg'; roleStatus.textContent=err.message; }
+    } }, 'Save roles'));
+    roleBox.appendChild(roleStatus);
+    wrap.appendChild(roleBox);
+  }
 
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Investment markets'));
   let selectedMarkets=[...(state.user.investmentMarkets||[])];
@@ -3604,7 +3663,7 @@ async function renderLeaderboard() {
       r.avatarUrl ? el('img', { src: r.avatarUrl, style: 'width:100%;height:100%;object-fit:cover' }) : initials(r.name)),
     el('div', { class: 'grow', onclick: () => go('profile', { profileId: r.id }) }, [
       el('div', { class: 't' }, [r.name, r.verified ? el('span', { class: 'vbadge' }, '✓') : null, r.badge ? el('span', { class: 'badge ' + r.badge }, r.badge) : null]),
-      el('div', { class: 's' }, `${r.role}${r.rating ? ' · ★ ' + r.rating : ''}${r.closedDeals ? ' · ' + r.closedDeals + ' closed' : ''}`)
+      el('div', { class: 's' }, `${roleLabel(r)}${r.rating ? ' · ★ ' + r.rating : ''}${r.closedDeals ? ' · ' + r.closedDeals + ' closed' : ''}`)
     ]),
     el('div', { class: 'lbpts' }, r.points + ' pts')
   ])));
@@ -3771,7 +3830,7 @@ async function renderMemberships() {
         const paid = u.paidPlan && u.paidPlan !== 'free' && u.paidPlanUntil && new Date(u.paidPlanUntil) > new Date();
         const meta = el('div', { class: 'membershipmeta' }, [
           el('div', { class: 'membershipname' }, [u.name, u.username ? el('span',{class:'personhandle'},'@'+u.username) : null]),
-          el('div', { class: 's' }, `${u.email} · ${u.role}${u.location ? ' · ' + u.location : ''}`),
+          el('div', { class: 's' }, `${u.email} · ${roleLabel(u)}${u.location ? ' · ' + u.location : ''}`),
           el('div', { class: 'membershipbadges' }, [
             el('span', { class: 'pill' }, paid ? `Paid ${grantLabel(u.paidPlan)} through ${fmtDate(u.paidPlanUntil)}` : 'No active paid plan'),
             activeGrant ? el('span', { class: 'pill good' }, `Free ${grantLabel(u.grant.grantPlan)} through ${fmtDate(u.grant.grantUntil)}`) : el('span', { class: 'pill' }, 'No complimentary grant'),
@@ -3834,7 +3893,7 @@ async function renderTransactionHub(){
  const intake=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'DEAL INTAKE'),el('h3',{},'Let opportunities come to you')]),el('button',{class:'btn-ghost',onclick:async()=>{const x=await api('GET','/api/intake-link');try{await navigator.clipboard.writeText(x.url);toast('Deal intake link copied','ok')}catch{prompt('Copy your deal intake link',x.url);}}},'Copy intake link')])]);if(!d.intake.length)intake.appendChild(el('div',{class:'hub-empty'},'Share your intake link with sellers and partners. New submissions land here.'));d.intake.slice(0,10).forEach(x=>intake.appendChild(el('div',{class:'hub-row'},el('div',{class:'grow'},[el('b',{},x.address),el('span',{},x.name+(x.asking?' · '+money(x.asking):'')),x.notes?el('small',{},x.notes):null]))));grid.appendChild(intake);
  const outcomes=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'CLOSING RECORDS'),el('h3',{},'Outcomes & profit')]),el('button',{class:'btn-ghost',onclick:()=>downloadExport('outcomes')},'Export CSV')])]);if(!d.outcomes.length)outcomes.appendChild(el('div',{class:'hub-empty'},'Closed and completed deal outcomes will appear here.'));d.outcomes.slice(0,10).forEach(x=>outcomes.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},x.status.toUpperCase()),el('span',{},'Recorded '+new Date(x.createdAt).toLocaleDateString())]),el('strong',{class:x.profit>=0?'positive':'negative'},money(x.profit))])));grid.appendChild(outcomes);
  const creds=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'BUYER CREDENTIALS'),el('h3',{},'Proof & qualifications')]),el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add buyer credential',[{key:'label',label:'Credential name',placeholder:'Proof of Funds — Sept 2026'},{key:'note',label:'Private note',type:'textarea',placeholder:'Reference or verification note'}],'Add credential',async v=>{await api('POST','/api/credentials',{type:'proof-of-funds',...v});render();})},'+ Credential')])]);if(!d.credentials.length)creds.appendChild(el('div',{class:'hub-empty'},'Keep credential references here and selectively share deal documents through Deal Rooms.'));d.credentials.forEach(x=>creds.appendChild(el('div',{class:'hub-row'},el('div',{class:'grow'},[el('b',{},x.label),el('small',{},x.note||x.type)]))));grid.appendChild(creds);
- const services=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'SERVICE NETWORK'),el('h3',{},'Professionals for the deal')]),el('button',{class:'btn-ghost',onclick:()=>go('settings')},'My service profile')])]);try{const sr=await api('GET','/api/service-providers');if(!sr.providers.length)services.appendChild(el('div',{class:'hub-empty'},'Title, lending, contractor and other service profiles will appear as professionals opt in.'));sr.providers.slice(0,8).forEach(u=>services.appendChild(el('button',{class:'hub-provider',onclick:()=>go('profile',{profileId:u.id})},[avatarNode(u),el('div',{},[el('b',{},u.name),el('span',{},(u.settings?.serviceTypes||[]).join(' · ')||u.role)])])));}catch{}grid.appendChild(services);
+ const services=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'SERVICE NETWORK'),el('h3',{},'Professionals for the deal')]),el('button',{class:'btn-ghost',onclick:()=>go('settings')},'My service profile')])]);try{const sr=await api('GET','/api/service-providers');if(!sr.providers.length)services.appendChild(el('div',{class:'hub-empty'},'Title, lending, contractor and other service profiles will appear as professionals opt in.'));sr.providers.slice(0,8).forEach(u=>services.appendChild(el('button',{class:'hub-provider',onclick:()=>go('profile',{profileId:u.id})},[avatarNode(u),el('div',{},[el('b',{},u.name),el('span',{},(u.settings?.serviceTypes||[]).join(' · ')||roleLabel(u))])])));}catch{}grid.appendChild(services);
  wrap.appendChild(grid);wrap.appendChild(el('div',{class:'hub-exportbar'},[el('div',{},[el('b',{},'Your data stays portable.'),el('span',{},'Export serious business records whenever you need them.')]),el('button',{class:'btn-ghost',onclick:()=>downloadExport('pipeline')},'Export pipeline CSV')]));return wrap;
 }
 async function renderAffiliateCenter(){
@@ -3976,7 +4035,7 @@ async function renderAdmin() {
   const demoGrid=el('div',{class:'demo-form-grid'});
   const field=(label,control,help='')=>{const f=el('label',{class:'demo-field'},[el('span',{class:'demo-field-label'},label),control]);if(help)f.appendChild(el('small',{},help));return f;};
   const dName=el('input',{placeholder:'Example: Better Demo'}),dEmail=el('input',{type:'email',placeholder:'demo@example.com'}),dPass=el('input',{type:'password',placeholder:'At least 6 characters'});
-  const dRole=el('select',{},[['buyer','Buyer / Investor'],['seller','Seller / Wholesaler'],['agent','Agent'],['service','Service provider']].map(([v,l])=>el('option',{value:v},l)));
+  const dRole=el('select',{},[['buyer','Buyer / Investor'],['seller','Seller / Wholesaler'],['lender','Lender / Funder']].map(([v,l])=>el('option',{value:v},l)));
   const dPlan=el('select',{},[['free','Free'],['pro','Better Plus'],['platinum','Platinum'],['wholesale','Wholesale Teams']].map(([v,l])=>el('option',{value:v},l)));
   const dStatus=el('div',{class:'demo-feedback','aria-live':'polite'});
   const createDemo=el('button',{class:'btn-primary demo-primary-action'},'Create Demo Account');
@@ -4060,7 +4119,7 @@ async function renderAdmin() {
       rows.forEach(u=>{
         const btn=el('button',{class:u.verified?'btn-ghost compactbtn verifiedaction':'btn-primary compactbtn'},u.verified?'Remove verification':'Grant verification');
         btn.onclick=async()=>{const next=!u.verified;if(!confirm(`${next?'Grant':'Remove'} account verification for ${u.name}?`))return;try{await api('POST','/api/admin/set-user-verification',{userId:u.id,verified:next});toast(next?'Account verified':'Verification removed','ok');await loadVerifyUsers();}catch(e){toast(e.message,'err')}};
-        verifyResults.appendChild(el('div',{class:'listrow adminverifyrow'},[el('div',{class:'grow'},[el('div',{class:'t'},[u.name,u.verified?el('span',{class:'vbadge'},'✓ Verified'):null]),el('div',{class:'s'},[u.username?'@'+u.username:null,u.email,u.role,accountAgeLabel(u.createdAt)].filter(Boolean).join(' · '))]),btn]));
+        verifyResults.appendChild(el('div',{class:'listrow adminverifyrow'},[el('div',{class:'grow'},[el('div',{class:'t'},[u.name,u.verified?el('span',{class:'vbadge'},'✓ Verified'):null]),el('div',{class:'s'},[u.username?'@'+u.username:null,u.email,roleLabel(u),accountAgeLabel(u.createdAt)].filter(Boolean).join(' · '))]),btn]));
       });
     } catch(e){verifyResults.innerHTML='';verifyResults.appendChild(el('div',{class:'errmsg'},e.message));}
   };

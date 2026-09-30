@@ -1,6 +1,6 @@
 const assert=require('assert');const fs=require('fs');
 const server=fs.readFileSync('server.js','utf8'),client=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),store=fs.readFileSync('store.js','utf8'),social=fs.readFileSync('social.js','utf8'),pkg=require('../package.json'),lock=require('../package-lock.json');
-assert.equal(pkg.version,'2.9.15');assert.equal(lock.version,'2.9.15');
+assert.equal(pkg.version,'2.9.16');assert.equal(lock.version,'2.9.16');
 assert.ok(server.includes("label: 'Better Plus'"),'$30 plan must display as Better Plus');
 assert.ok(server.includes("plusToolAllowance(req.user, 'listingAi', 2)"),'Plus AI listing quota missing');
 assert.ok(server.includes("plusToolAllowance(req.user, 'dispoAi', 3)"),'Plus Better Dispo quota missing');
@@ -10,6 +10,6 @@ assert.ok(client.includes("AI Deal Builder — 5 analyses per day"));assert.ok(c
 assert.ok(server.includes("app.get('/api/referrals/me'"),'Referral analytics endpoint missing');assert.ok(server.includes("app.get('/s/join'"));assert.ok(store.includes("'referralClicks'"),'Referral click persistence missing');
 assert.ok(client.includes("'Referral center'"));assert.ok(client.includes("Link visits"));assert.ok(client.includes("Activated"));assert.ok(client.includes("Paid referrals"));
 assert.ok(server.includes("app.post('/api/admin/set-founding-member'"),'Admin founding control missing');assert.ok(social.includes('foundingMember: !!u.foundingMember'),'Founding badge must be public-profile safe');assert.ok(client.includes("'Founding Member'"));
-assert.ok(client.includes('const TUTORIAL_VERSION = 49;'),'Tutorial must update with release');assert.ok(client.includes("release:32,title:'Referral center'"));assert.ok(client.includes("release:32,title:'Better Plus access'"));
+assert.ok(client.includes('const TUTORIAL_VERSION = 50;'),'Tutorial must update with release');assert.ok(client.includes("release:32,title:'Referral center'"));assert.ok(client.includes("release:32,title:'Better Plus access'"));
 assert.ok(css.includes('.referral-center')&&css.includes('.founding-badge'),'Growth UI styling missing');assert.ok(css.includes('.membershiplevel.pro,.membershiplevel.plus'),'Plus membership badge styling missing');assert.ok(!client.includes('Skip this step'),'Removed tutorial control must not return');
 console.log('✓ v28 growth/referral/Plus acceptance tests passed');

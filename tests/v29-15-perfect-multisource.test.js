@@ -33,7 +33,7 @@ assert(src.includes("passLabel:'subject-and-sold-comps-major-property-sites'")&&
 assert(src.includes('regridCoverageError')&&src.includes('coverage_unavailable'),'Regrid coverage failures must be optional limitations, not blockers');
 assert(cache.includes("VERSION='v29.15-complete-intelligence-r5'"));
 assert(bg.includes("phase:'synthesis'")&&bg.includes('cache.persistEvidence(job.address,evidence,{synthesis,synthesisFailure})'),'final synthesis should be completed inside the background job when evidence supports it');
-assert(app.includes('const TUTORIAL_VERSION = 49;')&&app.includes("release:47,title:'Multi-source investor intelligence'"));
+assert(app.includes('const TUTORIAL_VERSION = 50;')&&app.includes("release:47,title:'Multi-source investor intelligence'"));
 assert(app.includes('aux-fact-grid')&&app.includes("a.arv?.precision==='working_range'?'Working ARV':'After-repair value'"));
 assert(css.includes('.dealbuilderpage{width:min(1080px,100%)')&&css.includes('v29.15 final Deal Intelligence presentation repair')&&css.includes('.evidence-field-grid{grid-template-columns:repeat(3')&&css.includes('.aux-fact-grid{display:grid')); 
 console.log('v29.15 perfect multi-source investor intelligence regression passed');

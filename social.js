@@ -4,6 +4,7 @@ function publicProfileUser(u) {
     name: u.name,
     username: u.username || null,
     role: u.role,
+    roles: u.role === 'admin' ? ['admin'] : (Array.isArray(u.roles) && u.roles.length ? u.roles : [u.role].filter(Boolean)),
     bio: u.bio || '',
     location: u.location || '',
     avatarUrl: u.avatarUrl || null,
@@ -55,12 +56,16 @@ function searchUsers(db, viewerId, q = '', role = '') {
   const roleFilter = String(role || '').trim().toLowerCase();
   const words = query.split(/\s+/).filter(Boolean);
   let users = (db.users || []).filter(u => u.id !== viewerId);
-  if (roleFilter && roleFilter !== 'all') users = users.filter(u => String(u.role || '').toLowerCase() === roleFilter);
+  if (roleFilter && roleFilter !== 'all') users = users.filter(u => {
+    const roles = u.role === 'admin' ? ['admin'] : (Array.isArray(u.roles) && u.roles.length ? u.roles : [u.role]);
+    return roles.map(x => String(x || '').toLowerCase()).includes(roleFilter);
+  });
   if (words.length) {
     users = users.filter(u => {
       const listingMarkets = (db.listings || []).filter(l => l.ownerId === u.id).map(l => l.city).join(' ');
       const company = u.companyId ? (db.companies || []).find(c => c.id === u.companyId) : null;
-      const hay = [u.name, u.username, u.role, u.bio, u.location, company?.name, company?.slug, listingMarkets].filter(Boolean).join(' ').toLowerCase();
+      const roles = u.role === 'admin' ? ['admin'] : (Array.isArray(u.roles) && u.roles.length ? u.roles : [u.role]);
+      const hay = [u.name, u.username, ...roles, u.bio, u.location, company?.name, company?.slug, listingMarkets].filter(Boolean).join(' ').toLowerCase();
       return words.every(w => hay.includes(w));
     });
   }

@@ -20,8 +20,9 @@ function eligibleBroadcastUsers(db, audience = {}) {
   const market = String(audience.market || '').trim().toLowerCase();
   return (db.users || []).filter(u => {
     if (!u || u.role === 'admin' || !u.emailVerified || u.marketingOptIn !== true || u.marketingUnsubscribedAt) return false;
-    if (kind === 'buyers' && u.role !== 'buyer') return false;
-    if (kind === 'sellers' && u.role !== 'seller') return false;
+    const roles = Array.isArray(u.roles) && u.roles.length ? u.roles : [u.role];
+    if (kind === 'buyers' && !roles.includes('buyer')) return false;
+    if (kind === 'sellers' && !roles.includes('seller')) return false;
     if (kind === 'teams' && !u.companyId) return false;
     if (market && !String(u.location || '').toLowerCase().includes(market)) return false;
     return true;

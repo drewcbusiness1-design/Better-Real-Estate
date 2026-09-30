@@ -429,3 +429,11 @@ Regrid address-search responses may keep the canonical address in `properties.he
 - For wholesaler acquisition, explain the simple path: **join → post the first property → connect with buyers/investors → build the network → move the deal forward**. Clearly distinguish the experience from letting deals disappear inside generic Facebook groups.
 - Make the first property post feel easy and low-friction. Prefer a specific CTA such as **“Post Your First Property — Free”** over generic platform-awareness copy.
 - Build trust only with truthful, verified signals. Never invent user counts, listings, buyer activity, testimonials, transactions, URLs, screenshots or marketplace traction. Early-stage growth may be part of the story, but it must be represented honestly.
+
+
+## v29.16 multi-role identity
+- Signup roles are now multi-select: Buyer / Investor, Seller / Wholesaler, Lender / Funder. At least one is required.
+- Users may hold multiple roles simultaneously; roles are descriptive/discovery metadata and do not restrict platform access.
+- Existing users can update roles in Settings → How you work.
+- Network role filters and public role displays must always use the full role set, while the legacy single `role` field remains for backwards compatibility.
+- Admin is never a selectable public role and remains allowlist-controlled server-side.

@@ -492,9 +492,10 @@ async function sendNewSignupAlerts(db, newUser) {
 
 /* ============================ AUTH ============================ */
 app.post('/api/signup', async (req, res) => {
-  const { name, email, password, role, referralCode, marketingOptIn } = req.body || {};
-  if (!name || !email || !password || !role) return res.status(400).json({ error: 'All fields are required.' });
-  if (!policy.SIGNUP_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role.' });
+  const { name, email, password, role, roles, referralCode, marketingOptIn } = req.body || {};
+  if (!name || !email || !password) return res.status(400).json({ error: 'All fields are required.' });
+  const selectedRoles = policy.normalizeSignupRoles(Array.isArray(roles) ? roles : [role]);
+  if (!selectedRoles.length) return res.status(400).json({ error: 'Choose at least one role.' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
   const db = await loadDB();
   const cleanEmail = email.trim().toLowerCase();
@@ -506,7 +507,8 @@ app.post('/api/signup', async (req, res) => {
     id: crypto.randomUUID(), name: name.trim(), email: cleanEmail,
     username: null,
     passwordHash: bcrypt.hashSync(password, 10),
-    role: policy.resolveRole(cleanEmail, role),
+    role: policy.resolveRole(cleanEmail, selectedRoles[0]),
+    roles: selectedRoles,
     bio: '', phone: '', location: '', investmentMarkets: [], avatarUrl: null, points: 0,
     buyBoxes: [defaultBuyBox()], settings: defaultSettings(),
     plan: 'free', planUntil: null, trialUntil,
@@ -558,9 +560,12 @@ app.post('/api/login', async (req, res) => {
   // Re-derive the role from the allowlist on each login. Adding or removing
   // an address in ADMIN_EMAILS takes effect immediately, and an 'admin'
   // value written into the database by any other means is overwritten here.
-  const correctRole = policy.resolveRole(user.email, user.role === 'admin' ? 'buyer' : user.role);
+  const storedRoles = policy.normalizeSignupRoles(Array.isArray(user.roles) && user.roles.length ? user.roles : [user.role === 'admin' ? 'buyer' : user.role]);
+  const safeRoles = storedRoles.length ? storedRoles : ['buyer'];
+  const correctRole = policy.resolveRole(user.email, safeRoles[0]);
   let changed = false;
   if (user.role !== correctRole) { user.role = correctRole; changed = true; }
+  if (JSON.stringify(user.roles || []) !== JSON.stringify(safeRoles)) { user.roles = safeRoles; changed = true; }
   if (ensureUsername(db, user)) changed = true;
   if (syncOneCompanyMember(db, user)) changed = true;
   if (changed) await saveDB(db);
@@ -682,7 +687,7 @@ app.get('/api/site/status', async (req, res) => res.json({ mailConfigured: maile
 
 /* ============================ PROFILE ============================ */
 app.patch('/api/me', requireAuth, async (req, res) => {
-  const { name, username, bio, phone, location, avatarData } = req.body || {};
+  const { name, username, bio, phone, location, avatarData, roles } = req.body || {};
   if (name !== undefined) req.user.name = String(name).trim() || req.user.name;
   if (username !== undefined) {
     const clean = normalizeUsername(username);
@@ -702,6 +707,12 @@ app.patch('/api/me', requireAuth, async (req, res) => {
   if (bio !== undefined) req.user.bio = String(bio).slice(0, 400);
   if (phone !== undefined) req.user.phone = String(phone).slice(0, 40);
   if (location !== undefined) req.user.location = String(location).trim().slice(0, 80);
+  if (roles !== undefined && !isAdminUser(req.user)) {
+    const selectedRoles = policy.normalizeSignupRoles(roles);
+    if (!selectedRoles.length) return res.status(400).json({ error: 'Choose at least one role.' });
+    req.user.roles = selectedRoles;
+    req.user.role = selectedRoles[0]; // legacy compatibility; role-aware features use the full roles array.
+  }
   if (avatarData) { const url = await writeImage(avatarData); if (url) req.user.avatarUrl = url; }
   await saveDB(req.db); res.json({ user: publicUser(req.user) });
 });
@@ -2291,7 +2302,7 @@ const US_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI
 const cleanStates = xs => [...new Set((Array.isArray(xs)?xs:[]).map(x=>String(x||'').trim().toUpperCase()).filter(x=>US_STATES.has(x)))].slice(0,12);
 function listingState(l){ const m=String(l?.city||'').toUpperCase().match(/,\s*([A-Z]{2})(?:\s|$)/); return m?m[1]:''; }
 const activityWindowMs = { '24h':86400000, '7d':7*86400000, '30d':30*86400000 };
-function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
+function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,roles:Array.isArray(u.roles)?u.roles:[u.role].filter(Boolean),plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
 app.post('/api/activity/heartbeat', requireAuth, async (req,res)=>{ if(isDemoUser(req.user)){req.user.lastActiveAt=new Date().toISOString();await saveDB(req.db);return res.json({ok:true,at:req.user.lastActiveAt,demo:true});} const now=new Date(); req.user.lastActiveAt=now.toISOString(); req.db.activityEvents=req.db.activityEvents||[]; const last=[...req.db.activityEvents].reverse().find(x=>x.userId===req.user.id); if(!last||now-new Date(last.at)>15*60_000)req.db.activityEvents.push({id:crypto.randomUUID(),userId:req.user.id,at:now.toISOString()}); const cutoff=Date.now()-180*86400000; if(req.db.activityEvents.length>50000)req.db.activityEvents=req.db.activityEvents.filter(x=>new Date(x.at).getTime()>=cutoff); await saveDB(req.db); res.json({ok:true,at:req.user.lastActiveAt}); });
 app.get('/api/notifications', requireAuth, async (req,res)=>{const rows=(req.db.dealNotifications||[]).filter(n=>n.userId===req.user.id).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,60);res.json({notifications:rows,unread:rows.filter(n=>!n.read).length});});
 app.post('/api/notifications/read', requireAuth, async (req,res)=>{for(const n of (req.db.dealNotifications||[]))if(n.userId===req.user.id)n.read=true;await saveDB(req.db);res.json({ok:true});});
@@ -3432,7 +3443,7 @@ app.post('/api/admin/demo-accounts', requireAuth, requireAdmin, async (req, res)
   if (password.length < 6) return res.status(400).json({ error:'Password must be at least 6 characters.' });
   if (req.db.users.some(u => String(u.email||'').toLowerCase() === email)) return res.status(409).json({ error:'An account with that email already exists.' });
   const user = {
-    id: crypto.randomUUID(), name, email, username:null, passwordHash:bcrypt.hashSync(password,10), role:requestedRole,
+    id: crypto.randomUUID(), name, email, username:null, passwordHash:bcrypt.hashSync(password,10), role:requestedRole, roles:[requestedRole],
     bio:'', phone:'', location:'', investmentMarkets:[], avatarUrl:null, points:0, buyBoxes:[defaultBuyBox()], settings:defaultSettings(),
     plan:'free', planUntil:null, trialUntil:null, unlockCredits:PRICING.freeUnlocks, verified:false, paymentMethods:[], payoutMethod:null,
     emailVerified:true, marketingOptIn:false, marketingConsentAt:null, marketingUnsubscribedAt:null, marketingLastSentAt:null, marketingSequence:0,
