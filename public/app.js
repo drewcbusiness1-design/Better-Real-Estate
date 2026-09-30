@@ -80,6 +80,37 @@ function skeletonFeed(n = 3) {
 /* haptic-ish tap feedback where supported */
 const buzz = (ms = 8) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
 
+/* v49 — every action acknowledges the tap immediately; async actions can also
+   expose a consistent busy state without duplicating submissions. */
+function setButtonBusy(button, busy) {
+  if (!button) return;
+  if (busy) {
+    button.dataset.wasDisabled = button.disabled ? '1' : '0';
+    button.dataset.busy = 'true';
+    button.setAttribute('aria-busy', 'true');
+    button.disabled = true;
+  } else {
+    const wasDisabled = button.dataset.wasDisabled === '1';
+    delete button.dataset.busy;
+    delete button.dataset.wasDisabled;
+    button.removeAttribute('aria-busy');
+    button.disabled = wasDisabled;
+  }
+}
+async function withButtonBusy(button, work) {
+  if (!button || button.dataset.busy === 'true') return;
+  setButtonBusy(button, true);
+  try { return await work(); }
+  finally { setButtonBusy(button, false); }
+}
+document.addEventListener('pointerdown', e => {
+  const button = e.target?.closest?.('button');
+  if (!button || button.disabled) return;
+  button.classList.add('tap-ack');
+  buzz(4);
+  setTimeout(() => button.classList.remove('tap-ack'), 180);
+}, { passive: true });
+
 const money = n => '$' + Number(n).toLocaleString();
 const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
@@ -405,6 +436,7 @@ function renderAuth() {
   submit.onclick = async () => {
     err.textContent = '';
     try {
+      await withButtonBusy(submit, async () => {
       const payload = isSignup
         ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role, referralCode: ref.value.trim(), affiliateCode: state.pendingAffiliate || '', marketingOptIn: marketingOpt.checked }
         : { email: email.value.trim(), password: pass.value };
@@ -423,6 +455,7 @@ function renderAuth() {
         const target = state.postAuthTarget; state.postAuthTarget = null;
         go(target.view || 'feed', { detailId: target.detailId, profileId: target.profileId, companyId: target.companyId, shopItemId: target.shopItemId, networkTab: target.networkTab || 'discover' });
       } else go('feed');
+      });
     } catch (e) { err.textContent = e.message; }
   };
   wrap.appendChild(submit);
@@ -606,13 +639,14 @@ function propertyCard(l) {
   const saveBtn = el('button', { class: l.savedByMe ? 'saved' : '' }, l.savedByMe ? '♥ Saved' : '♡ Save');
   saveBtn.onclick = async e => {
     e.stopPropagation();
-    buzz();
     try {
-      const { saved } = await api('POST', '/api/saves/toggle', { listingId: l.id });
-      saveBtn.className = saved ? 'saved heartpop' : 'heartpop';
-      saveBtn.textContent = saved ? '♥ Saved' : '♡ Save';
-      setTimeout(() => saveBtn.classList.remove('heartpop'), 400);
-      if (saved) toast('Saved to your list', 'ok');
+      await withButtonBusy(saveBtn, async () => {
+        const { saved } = await api('POST', '/api/saves/toggle', { listingId: l.id });
+        saveBtn.className = saved ? 'saved heartpop' : 'heartpop';
+        saveBtn.textContent = saved ? '♥ Saved' : '♡ Save';
+        setTimeout(() => saveBtn.classList.remove('heartpop'), 400);
+        if (saved) toast('Saved to your list', 'ok');
+      });
     } catch (err) { toast(err.message, 'err'); }
   };
 
@@ -824,8 +858,12 @@ async function renderDetail() {
       followBtn.textContent = following ? 'Following' : 'Follow'; followBtn.className = following ? 'following' : '';
     }).catch(() => {});
     followBtn.onclick = async () => {
-      const { following } = await api('POST', '/api/follow', { userId: owner.id });
-      followBtn.textContent = following ? 'Following' : 'Follow'; followBtn.className = following ? 'following' : '';
+      try {
+        await withButtonBusy(followBtn, async () => {
+          const { following } = await api('POST', '/api/follow', { userId: owner.id });
+          followBtn.textContent = following ? 'Following' : 'Follow'; followBtn.className = following ? 'following' : '';
+        });
+      } catch (e) { toast(e.message, 'err'); }
     };
   }
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
@@ -2024,7 +2062,7 @@ async function renderOffers() {
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 48;
+const TUTORIAL_VERSION = 49;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2069,6 +2107,8 @@ function tutorialStepsFor(tier=tutorialTier()){
   {view:'dealbuilder',selector:'.deal-intel-snapshot',min:1,release:46,title:'Investor-grade analysis',copy:'Deal Intelligence separates established property facts from source detail, screens distressed sales, accepts grounded distance evidence, and provides transparent repair-planning ranges with a recommended scenario.'},
   {view:'dealbuilder',selector:'.deal-intel-snapshot',min:1,release:47,title:'Multi-source investor intelligence',copy:'Deal Intelligence now researches multiple public real-estate sources by default, treats parcel data as optional corroboration, cross-checks exact-address facts, expands sold-comp research when needed, and returns a complete investor snapshot with ARV precision, repair planning and deal math.'},
   {view:'dealbuilder',selector:'.deal-intel-snapshot',min:1,release:48,title:'Complete Deal Intelligence',copy:'Better now carries recorded property facts cleanly into the investor view, keeps searching independent sources when corroboration is weak, cross-checks sold comps across multiple source families, and preserves deterministic working ARV, repair planning and deal math even when AI narrative synthesis remains evidence-gated.'},
+  {view:'network',selector:'.personactions',min:0,release:49,title:'Responsive actions',copy:'Follow, friend, save, send and other actions now acknowledge your tap immediately and show a consistent processing state when the server is still working, so you never have to guess whether Better registered the action.'},
+  {view:'messages',selector:'.page',min:0,release:49,title:'Mobile scrolling & messaging polish',copy:'Long panels, modals, lists and workspaces remain reachable on mobile, and sent messages clear from the composer immediately while failed sends restore the draft instead of losing it.'},
  {view:'buyercrm',selector:'.buyercrmpage',min:0,title:'Buyer CRM',copy:'Keep buyer markets, buy boxes, private notes and follow-up stages in one pipeline.'},
  {view:'insights',selector:'.insightspage',min:0,title:'Demand Insights',copy:'See where published buyer demand is concentrated by market, property type and strategy.'},
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
@@ -2445,24 +2485,26 @@ function friendButton(user, onChanged) {
   const b = el('button', { class: 'friendbtn' }, friendLabel(user.friendStatus));
   b.onclick = async (ev) => {
     ev?.stopPropagation?.();
+    if (user.friendStatus === 'friends' && !confirm('Remove ' + user.name + ' from your friends?')) return;
     try {
-      if (user.friendStatus === 'none' || !user.friendStatus) {
-        const r = await api('POST', '/api/friends/request', { userId: user.id });
-        user.friendStatus = r.status; user.friendRequestId = r.requestId || null;
-      } else if (user.friendStatus === 'incoming_pending') {
-        const r = await api('POST', '/api/friends/requests/' + encodeURIComponent(user.friendRequestId) + '/respond', { action: 'accept' });
-        user.friendStatus = r.status; user.friendRequestId = null;
-      } else if (user.friendStatus === 'outgoing_pending') {
-        await api('DELETE', '/api/friends/request/' + encodeURIComponent(user.friendRequestId));
-        user.friendStatus = 'none'; user.friendRequestId = null;
-      } else if (user.friendStatus === 'friends') {
-        if (!confirm('Remove ' + user.name + ' from your friends?')) return;
-        await api('DELETE', '/api/friends/' + encodeURIComponent(user.id));
-        user.friendStatus = 'none'; user.friendRequestId = null;
-      }
-      await refreshUnread();
-      b.textContent = friendLabel(user.friendStatus);
-      if (onChanged) onChanged(user);
+      await withButtonBusy(b, async () => {
+        if (user.friendStatus === 'none' || !user.friendStatus) {
+          const r = await api('POST', '/api/friends/request', { userId: user.id });
+          user.friendStatus = r.status; user.friendRequestId = r.requestId || null;
+        } else if (user.friendStatus === 'incoming_pending') {
+          const r = await api('POST', '/api/friends/requests/' + encodeURIComponent(user.friendRequestId) + '/respond', { action: 'accept' });
+          user.friendStatus = r.status; user.friendRequestId = null;
+        } else if (user.friendStatus === 'outgoing_pending') {
+          await api('DELETE', '/api/friends/request/' + encodeURIComponent(user.friendRequestId));
+          user.friendStatus = 'none'; user.friendRequestId = null;
+        } else if (user.friendStatus === 'friends') {
+          await api('DELETE', '/api/friends/' + encodeURIComponent(user.id));
+          user.friendStatus = 'none'; user.friendRequestId = null;
+        }
+        await refreshUnread();
+        b.textContent = friendLabel(user.friendStatus);
+        if (onChanged) onChanged(user);
+      });
     } catch (e) { toast(e.message, 'err'); }
   };
   return b;
@@ -2482,7 +2524,7 @@ function personCard(user, opts = {}) {
   const actions = el('div', { class: 'personactions' });
   const follow = el('button', {}, user.following ? 'Following' : 'Follow');
   follow.onclick = async () => {
-    try { const r = await api('POST', '/api/follow', { userId: user.id }); user.following = r.following; follow.textContent = r.following ? 'Following' : 'Follow'; }
+    try { await withButtonBusy(follow, async () => { const r = await api('POST', '/api/follow', { userId: user.id }); user.following = r.following; follow.textContent = r.following ? 'Following' : 'Follow'; }); }
     catch (e) { toast(e.message, 'err'); }
   };
   actions.appendChild(follow);
@@ -2579,9 +2621,9 @@ async function renderNetwork() {
       const card = el('div', { class: 'card' });
       incoming.forEach(r => {
         const accept = el('button', {}, 'Accept');
-        accept.onclick = async () => { try { await api('POST', '/api/friends/requests/' + encodeURIComponent(r.id) + '/respond', { action: 'accept' }); await refreshUnread(); render(); } catch (e) { toast(e.message, 'err'); } };
+        accept.onclick = async () => { try { await withButtonBusy(accept, async () => { await api('POST', '/api/friends/requests/' + encodeURIComponent(r.id) + '/respond', { action: 'accept' }); await refreshUnread(); render(); }); } catch (e) { toast(e.message, 'err'); } };
         const decline = el('button', {}, 'Decline');
-        decline.onclick = async () => { try { await api('POST', '/api/friends/requests/' + encodeURIComponent(r.id) + '/respond', { action: 'decline' }); await refreshUnread(); render(); } catch (e) { toast(e.message, 'err'); } };
+        decline.onclick = async () => { try { await withButtonBusy(decline, async () => { await api('POST', '/api/friends/requests/' + encodeURIComponent(r.id) + '/respond', { action: 'decline' }); await refreshUnread(); render(); }); } catch (e) { toast(e.message, 'err'); } };
         card.appendChild(el('div', { class: 'listrow' }, [avatarNode(r.user, 'small'), el('div', { class: 'grow', onclick: () => go('profile', { profileId: r.user.id }) }, [el('div', { class: 't' }, r.user.name), el('div', { class: 's' }, [r.user.role, ...(r.user.markets || [])].filter(Boolean).slice(0, 2).join(' · '))]), accept, decline]));
       });
       wrap.appendChild(card);
@@ -2592,7 +2634,7 @@ async function renderNetwork() {
       const card = el('div', { class: 'card' });
       outgoing.forEach(r => {
         const cancel = el('button', {}, 'Cancel');
-        cancel.onclick = async () => { try { await api('DELETE', '/api/friends/request/' + encodeURIComponent(r.id)); await refreshUnread(); render(); } catch (e) { toast(e.message, 'err'); } };
+        cancel.onclick = async () => { try { await withButtonBusy(cancel, async () => { await api('DELETE', '/api/friends/request/' + encodeURIComponent(r.id)); await refreshUnread(); render(); }); } catch (e) { toast(e.message, 'err'); } };
         card.appendChild(el('div', { class: 'listrow' }, [avatarNode(r.user, 'small'), el('div', { class: 'grow', onclick: () => go('profile', { profileId: r.user.id }) }, [el('div', { class: 't' }, r.user.name), el('div', { class: 's' }, 'Request pending')]), cancel]));
       });
       wrap.appendChild(card);
@@ -2742,22 +2784,34 @@ async function renderChat() {
   renderMessagesIntoStream(messages);
   lastSignature = signatureFor(messages);
 
+  let sendingMessage = false;
   const doSend = async () => {
-    const body = input.value.trim(); if (!body) return;
-    send.disabled = true;
+    const body = input.value.trim();
+    if (!body || sendingMessage || send.dataset.busy === 'true') return;
+    sendingMessage = true;
+    const optimistic = { id: 'pending-' + Date.now(), body, outgoing: true, at: new Date().toISOString() };
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    renderMessagesIntoStream([...messages, optimistic]);
     try {
-      await api('POST', '/api/messages', { toUserId: other.id, body });
-      input.value = '';
-      await syncChat({ force: true });
+      await withButtonBusy(send, async () => {
+        await api('POST', '/api/messages', { toUserId: other.id, body });
+        await syncChat({ force: true });
+      });
+    } catch (e) {
+      renderMessagesIntoStream(messages);
+      input.value = input.value.trim() ? body + '\n' + input.value : body;
+      toast(e.message, 'err');
+    } finally {
+      sendingMessage = false;
+      input.focus();
     }
-    catch (e) { toast(e.message, 'err'); }
-    finally { send.disabled = false; }
   };
   send.onclick = doSend;
   input.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); } };
   setTimeout(() => { stream.scrollTop = stream.scrollHeight; input.focus(); }, 0);
   startViewPolling(async () => {
-    if (state.view !== 'chat' || !state.chatUserId) return;
+    if (state.view !== 'chat' || !state.chatUserId || sendingMessage) return;
     await syncChat();
   }, 3000);
   return wrap;
@@ -2959,7 +3013,7 @@ async function renderProfile() {
     const actions = el('div', { class: 'profileactions' });
     const fb = el('button', { class: 'btn-ghost' }, 'Follow');
     api('GET', '/api/follow/status/' + owner.id).then(({ following }) => fb.textContent = following ? 'Following' : 'Follow').catch(() => {});
-    fb.onclick = async () => { const { following } = await api('POST', '/api/follow', { userId: owner.id }); fb.textContent = following ? 'Following' : 'Follow'; };
+    fb.onclick = async () => { try { await withButtonBusy(fb, async () => { const { following } = await api('POST', '/api/follow', { userId: owner.id }); fb.textContent = following ? 'Following' : 'Follow'; }); } catch (e) { toast(e.message, 'err'); } };
     actions.appendChild(fb);
     const friendUser = { ...owner, friendStatus: friendship?.status || 'none', friendRequestId: friendship?.requestId || null };
     actions.appendChild(friendButton(friendUser, () => render()));
@@ -3848,7 +3902,7 @@ function openQuickCustomizer(){
  const back=el('button',{class:'btn-ghost',type:'button'},'Back');back.onclick=()=>{shade.remove();openQuickOptions();};const save=el('button',{class:'btn-primary'},'Save quick options');save.onclick=async()=>{const ids=catalog.filter((x,i)=>list.querySelectorAll('input')[i].checked).map(x=>x.id);if(!ids.length)return toast('Choose at least one quick option.','err');try{await saveQuickOptions(ids);shade.remove();toast('Quick options updated.','ok');renderTop();openQuickOptions();}catch(e){toast(e.message,'err')}};const actions=el('div',{class:'quick-custom-actions'},[back,save]);card.append(list,actions);shade.appendChild(card);document.body.appendChild(shade);
 }
 
-function openFormModal(title,fields,saveLabel,onSave){const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card form-modal'});card.appendChild(el('div',{class:'quick-head'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER REAL ESTATE'),el('h3',{},title)]),el('button',{class:'iconbtn',onclick:()=>shade.remove()},'×')]));const refs={};fields.forEach(f=>{card.appendChild(el('label',{},f.label));let input;if(f.type==='textarea'){input=el('textarea',{placeholder:f.placeholder||''});input.value=f.value||'';}else{input=el('input',{type:f.type||'text',placeholder:f.placeholder||'',value:f.value||''});}refs[f.key]=input;card.appendChild(input);});const st=el('div',{class:'errmsg'}),actions=el('div',{class:'form-modal-actions'},[el('button',{class:'btn-ghost',onclick:()=>shade.remove()},'Cancel'),el('button',{class:'btn-primary',onclick:async e=>{e.currentTarget.disabled=true;st.textContent='';try{await onSave(Object.fromEntries(Object.entries(refs).map(([k,v])=>[k,v.value])));shade.remove();}catch(err){st.textContent=err.message;e.currentTarget.disabled=false;}}},saveLabel||'Save')]);card.append(st,actions);shade.appendChild(card);document.body.appendChild(shade);setTimeout(()=>Object.values(refs)[0]?.focus(),20);}
+function openFormModal(title,fields,saveLabel,onSave){const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card form-modal'});card.appendChild(el('div',{class:'quick-head'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER REAL ESTATE'),el('h3',{},title)]),el('button',{class:'iconbtn',onclick:()=>shade.remove()},'×')]));const refs={};fields.forEach(f=>{card.appendChild(el('label',{},f.label));let input;if(f.type==='textarea'){input=el('textarea',{placeholder:f.placeholder||''});input.value=f.value||'';}else{input=el('input',{type:f.type||'text',placeholder:f.placeholder||'',value:f.value||''});}refs[f.key]=input;card.appendChild(input);});const st=el('div',{class:'errmsg'}),actions=el('div',{class:'form-modal-actions'},[el('button',{class:'btn-ghost',onclick:()=>shade.remove()},'Cancel'),el('button',{class:'btn-primary',onclick:async e=>{st.textContent='';try{await withButtonBusy(e.currentTarget,async()=>{await onSave(Object.fromEntries(Object.entries(refs).map(([k,v])=>[k,v.value])));shade.remove();});}catch(err){st.textContent=err.message;}}},saveLabel||'Save')]);card.append(st,actions);shade.appendChild(card);document.body.appendChild(shade);setTimeout(()=>Object.values(refs)[0]?.focus(),20);}
 function statePicker(selected=[],onChange){const chosen=new Set(selected||[]),wrap=el('div',{class:'state-picker'});STATE_CODES.forEach(code=>{const b=el('button',{type:'button',class:chosen.has(code)?'on':''},code);b.onclick=()=>{chosen.has(code)?chosen.delete(code):chosen.add(code);b.classList.toggle('on',chosen.has(code));onChange?.([...chosen]);};wrap.appendChild(b);});return wrap;}
 async function renderCommandCenter(){
  const wrap=el('div',{class:'page commandcenter'}),d=await api('GET','/api/dashboard');

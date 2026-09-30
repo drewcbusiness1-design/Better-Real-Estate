@@ -407,3 +407,25 @@ Regrid address-search responses may keep the canonical address in `properties.he
 - Cost protections remain permanent: server-owned evidence, 24h cache, 30m force-refresh guard, duplicate/in-flight job reuse, lightweight read-only polling, evidence-fingerprint synthesis reuse, no auto research on page load, and quota only for genuinely successful new-property analysis.
 - Cache namespace is `v29.15-complete-intelligence-r5`; older incomplete research must not survive this release.
 - Preserve all unrelated Better Real Estate social/marketplace/team/admin/demo/Founder/affiliate/wallet/membership/route/tutorial/theme rules and recursively preserve this section in every later handoff.
+
+## v29.15 INTERACTION + MOBILE POLISH — AUTHORITATIVE ACCEPTANCE (tutorial v49)
+- Current tutorial / What’s New version is **49**. Preserve every earlier Deal Intelligence, membership, Founder, Demo, affiliate, wallet, social, marketplace, route, dark-mode, QA and user-authority rule.
+
+### MOBILE SCROLLING + ACTION FEEDBACK
+- Mobile scrolling is a permanent sitewide acceptance rule. Any modal, drawer, overlay, panel, admin sheet, form, picker, tutorial, list, table, board, message stream or other surface that can exceed the viewport MUST remain intentionally touch-scrollable on iPhone/Android and must preserve access to every field, control and action. Use dynamic viewport sizing (`100dvh`), safe-area-aware spacing, `overflow-y:auto` / `overflow-x:auto` as appropriate, momentum scrolling, and avoid nested-scroll traps. The Admin Membership Access screenshot where lower fields/actions were below the phone viewport is a permanent regression case.
+- All action buttons must acknowledge a press immediately on mobile and desktop. This includes Send, Follow/Unfollow, Add Friend/Requested/Accept/Cancel, Save/Like, Post, Boost, offers, form submissions and Admin actions. Use a consistent pressed state, an explicit busy/progress state for asynchronous work, temporary disabling when duplicate submission is possible, and a clear success/error state. Optimistic UI is allowed only where safe/reversible.
+- Messaging acceptance is strict: a successful send clears the composer immediately and shows the outgoing message optimistically; a failed send restores the draft instead of losing it. Enter and Send-button paths share the same duplicate-send guard. Polling must not erase an in-flight optimistic message, and sent text must not reappear when the chat rerenders or the user navigates between conversations.
+
+### DUPLICATE SIGNUPS / FOUNDING ACCESS — CURRENT POLICY
+- phone verification is NOT required at this stage. Do not add mandatory SMS/phone verification or a new SMS provider without explicit approval.
+- Multiple-email accounts may be legitimate. If an obvious second/duplicate account receives Founding Member complimentary access, Admin may manually remove Founding status/access from the duplicate while leaving the account itself usable. Do not automatically ban accounts solely for sharing identity signals.
+
+### OFFICIAL BRAND ASSET — PERMANENT
+- `assets/BRE- Logo.png` is the canonical official Better Real Estate logo supplied by the owner. It MUST be carried forward in every future handoff/release package.
+- Never redraw, approximate, stylize, recreate, trace or AI-generate the Better Real Estate logo. Marketing creative should be designed around the exact asset and then use/overlay the exact original logo file.
+
+### LAUNCH MARKETING / ACQUISITION — PERMANENT
+- Every future handoff must preserve the launch-acquisition strategy. Ads and outreach should quickly answer: **Why Better? Why join now? What happens after I post?**
+- For wholesaler acquisition, explain the simple path: **join → post the first property → connect with buyers/investors → build the network → move the deal forward**. Clearly distinguish the experience from letting deals disappear inside generic Facebook groups.
+- Make the first property post feel easy and low-friction. Prefer a specific CTA such as **“Post Your First Property — Free”** over generic platform-awareness copy.
+- Build trust only with truthful, verified signals. Never invent user counts, listings, buyer activity, testimonials, transactions, URLs, screenshots or marketplace traction. Early-stage growth may be part of the story, but it must be represented honestly.
