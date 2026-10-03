@@ -233,6 +233,7 @@ const defaultSettings = () => ({
   tutorialDismissedVersion: 0,
   tutorialCompletedKeys: [],
   tutorialHighestRank: -1,
+  firstLookCompleted: false,
   // Admin-only preference. Undefined on older accounts intentionally behaves
   // as ON so the site owner starts receiving signup notifications immediately.
   notifyOnNewSignup: true
@@ -839,6 +840,7 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (typeof body.notifyOnMatch === 'boolean') next.notifyOnMatch = body.notifyOnMatch;
   if (typeof body.showMembershipLevel === 'boolean') next.showMembershipLevel = body.showMembershipLevel;
   if (typeof body.showActivityStatus === 'boolean') next.showActivityStatus = body.showActivityStatus;
+  if (typeof body.firstLookCompleted === 'boolean') next.firstLookCompleted = body.firstLookCompleted;
   if (Array.isArray(body.quickOptions)) { const allowed=new Set(['compose','dealbuilder','buyercrm','pipeline','buybox','search','messages','liked','admin']); next.quickOptions=[...new Set(body.quickOptions.map(String).filter(x=>allowed.has(x)))].slice(0,6); if(!isAdminUser(req.user)) next.quickOptions=next.quickOptions.filter(x=>x!=='admin'); }
   if (body.tutorialCompletedVersion !== undefined) next.tutorialCompletedVersion = Math.max(0, Number(body.tutorialCompletedVersion)||0);
   if (body.tutorialDismissedVersion !== undefined) next.tutorialDismissedVersion = Math.max(0, Number(body.tutorialDismissedVersion)||0);
@@ -2217,6 +2219,21 @@ function scoreListing(listing, viewer, db) {
   return { score, reasons: reasons.slice(0, 3) };
 }
 
+
+function listingMomentum(db,l){
+  const views=(db.views||[]).filter(x=>x.listingId===l.id).length;
+  const saves=(db.saves||[]).filter(x=>x.listingId===l.id).length;
+  const offers=(db.offers||[]).filter(x=>x.listingId===l.id).length;
+  const inquiries=(db.messages||[]).filter(x=>x.listingId===l.id&&x.toUserId===l.ownerId).length;
+  const shares=(db.shareEvents||[]).filter(x=>x.kind==='property'&&x.targetId===l.id).length;
+  const matches=buyerMatchesForListing(db,l).length;
+  const score=Math.min(100,views+3*saves+5*inquiries+7*offers+2*shares+Math.min(matches,8)*2);
+  const level=score>=30?'active':score>=8?'moving':'quiet';
+  const label=level==='active'?'Active interest':level==='moving'?'Building momentum':'New opportunity';
+  const parts=[]; if(saves)parts.push(`${saves} save${saves===1?'':'s'}`); if(inquiries)parts.push(`${inquiries} conversation${inquiries===1?'':'s'}`); if(offers)parts.push(`${offers} offer${offers===1?'':'s'}`); if(matches)parts.push(`${matches} buyer match${matches===1?'':'es'}`);
+  return {level,label,score,detail:parts.slice(0,2).join(' · ')};
+}
+
 app.get('/api/feed', async (req, res) => {
   const db = await loadDB();
   const viewer = db.users.find(u => u.id === req.session.userId) || null;
@@ -2233,6 +2250,7 @@ app.get('/api/feed', async (req, res) => {
       ...gated, _score: score, matchReasons: reasons,
       ownerAvatar: owner?.avatarUrl || null, ownerVerified: !!owner?.verified,
       saveCount: db.saves.filter(s => s.listingId === l.id).length,
+      momentum: listingMomentum(db,l),
       savedByMe: saved.has(l.id),
       isBoosted: !!(l.boostUntil && new Date(l.boostUntil).getTime() > now),
       isSpotlight: !!(l.spotlightUntil && new Date(l.spotlightUntil).getTime() > now),
@@ -2403,6 +2421,24 @@ app.post('/api/affiliate/withdraw', requireAuth, async(req,res)=>{
   if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });const a=affiliateForUser(req.db,req.user.id);if(!a||!a.termsAcceptedAt)return res.status(403).json({error:'Approved affiliate access required.'});const bal=affiliateBalances(req.db,req.user.id),amount=Math.floor(Number(req.body?.amountCents||bal.available));if(amount<100)return res.status(400).json({error:'Minimum affiliate withdrawal is $1.00.'});if(amount>bal.available)return res.status(400).json({error:'Withdrawal exceeds available affiliate earnings.'});if(!req.user.stripeAccountId)return res.status(400).json({error:'Connect a payout account first.'});const status=await payments.connectAccountStatus(req.user.stripeAccountId);if(!status?.payoutsEnabled)return res.status(400).json({error:'Finish payout verification before withdrawing.'});const transfer=await payments.payout(req.user.stripeAccountId,amount);let left=amount;for(const c of bal.rows.filter(c=>c.status==='available').sort((a,b)=>String(a.availableAt).localeCompare(String(b.availableAt)))){if(left<=0)break;const take=Math.min(left,c.amountCents);if(take===c.amountCents)c.status='paid';else{c.amountCents-=take;req.db.affiliateCommissions.push({...c,id:crypto.randomUUID(),amountCents:take,status:'paid',sourceId:c.sourceId+':partial:'+Date.now()});}c.paidAt=new Date().toISOString();c.transferId=transfer.id;left-=take;}await saveDB(req.db);res.json({ok:true,transferId:transfer.id,amountCents:amount});});
 app.get('/api/admin/affiliates', requireAuth, requireAdmin, async(req,res)=>{const apps=(req.db.affiliateApplications||[]).map(a=>{const b=affiliateBalances(req.db,a.userId);return {...a,metrics:{pending:b.pending,available:b.available,paid:b.paid,reversed:b.reversed,sales:b.rows.length}}});res.json({applications:apps,terms:affiliateTerms(),totals:{clicks:(req.db.affiliateClicks||[]).length,commissions:(req.db.affiliateCommissions||[]).length,pending:(req.db.affiliateCommissions||[]).filter(x=>x.status==='pending').reduce((n,x)=>n+x.amountCents,0),paid:(req.db.affiliateCommissions||[]).filter(x=>x.status==='paid').reduce((n,x)=>n+x.amountCents,0)}});});
 app.post('/api/admin/affiliates/:id/status', requireAuth, requireAdmin, async(req,res)=>{const a=(req.db.affiliateApplications||[]).find(a=>a.id===req.params.id);if(!a)return res.status(404).json({error:'Application not found.'});const status=req.body?.status;if(!['approved','denied','suspended','revoked'].includes(status))return res.status(400).json({error:'Invalid status.'});a.status=status;a.reviewedAt=new Date().toISOString();a.reviewedBy=req.user.id;if(status==='approved'){a.rateBps=AFFILIATE_RATE_BPS;a.termsVersion=affiliateTerms().version;a.termsAcceptedAt=null;}await saveDB(req.db);res.json({application:a});});
+
+
+app.get('/api/listings/:id/network-intelligence', requireAuth, async(req,res)=>{
+  const l=req.db.listings.find(x=>x.id===req.params.id); if(!l)return res.status(404).json({error:'Listing not found.'});
+  if(!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the listing owner/team can view network intelligence.'});
+  const matches=buyerMatchesForListing(req.db,l); const networkIds=new Set((req.db.follows||[]).filter(f=>f.followerId===req.user.id).map(f=>f.followingId));
+  for(const f of (req.db.friendships||[])){if(f.status!=='accepted')continue;if(f.fromUserId===req.user.id)networkIds.add(f.toUserId);if(f.toUserId===req.user.id)networkIds.add(f.fromUserId);}
+  const inNetwork=matches.filter(m=>networkIds.has(m.userId||m.id)).length;
+  const matchCount=matches.length; const summary=inNetwork?`${inNetwork} matching buyer${inNetwork===1?' is':'s are'} already in your network based on stated buying criteria.`:`${matchCount} buyer${matchCount===1?'':'s'} match stated buying criteria for this property.`;
+  res.json({matchCount,inNetwork,summary,momentum:listingMomentum(req.db,l)});
+});
+app.get('/api/onboarding/first-look', requireAuth, async(req,res)=>{
+  const markets=req.user.investmentMarkets||[]; const deals=req.db.listings.filter(l=>l.ownerId!==req.user.id&&listingFreshness(l).availabilityStatus!=='archived'&&(!markets.length||markets.some(m=>String(l.city||'').includes(m)))).length;
+  const people=req.db.users.filter(u=>u.id!==req.user.id&&(!markets.length||(u.investmentMarkets||[]).some(m=>markets.includes(m)))).length;
+  const mine=req.db.listings.filter(l=>l.ownerId===req.user.id); const matches=mine.reduce((n,l)=>n+buyerMatchesForListing(req.db,l).length,0);
+  res.json({complete:!!req.user.settings?.firstLookCompleted,markets,deals,people,matches});
+});
+app.post('/api/onboarding/first-look/complete', requireAuth, async(req,res)=>{req.user.settings={...defaultSettings(),...(req.user.settings||{}),firstLookCompleted:true};await saveDB(req.db);res.json({ok:true});});
 
 /* ============================ SELLER ANALYTICS ============================ */
 app.get('/api/listings/:id/analytics', requireAuth, async (req, res) => {

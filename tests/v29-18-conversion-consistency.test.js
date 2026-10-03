@@ -1,0 +1,14 @@
+const fs = require('fs');
+const assert = require('assert');
+const app = fs.readFileSync('public/app.js', 'utf8');
+const server = fs.readFileSync('server.js', 'utf8');
+assert(app.includes('Free to join · No card required'), 'homepage must say free to join');
+assert(app.includes('Free account · includes 7 days of full access'), 'Free plan must distinguish permanent free account from complimentary access');
+assert(app.includes('Your Better Real Estate account stays free.'), 'FAQ must explain permanent Free plan');
+assert(app.includes('Better Plus (${cents(state.pricing.pro.monthly)}/mo)'), 'FAQ Plus price must derive from live pricing');
+assert(app.includes('Platinum (${cents(state.pricing.platinum.monthly)}/mo)'), 'FAQ must name Platinum');
+assert(app.includes('Wholesale Teams (${cents(state.pricing.wholesale.monthly)}/mo)'), 'FAQ must name Wholesale Teams');
+assert(!app.includes('$29 a month'), 'stale $29 Plus copy must be gone');
+assert(!app.includes('Sellers on Keyline'), 'stale Keyline customer-facing copy must be gone');
+assert(server.includes("pro: { monthly: 3000"), 'checkout Better Plus monthly price remains $30');
+console.log('v29.18 conversion consistency checks passed');
