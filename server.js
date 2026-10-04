@@ -6,7 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const mailer = require('./mailer');
 
-const { loadDB, saveDB } = require('./store');
+const { loadDB, saveDB, appendRecord } = require('./store');
 const { writeImage, readImage, writeDocument, readDocument } = require('./storage');
 const dropship = require('./dropship');
 const cjAdapter = require('./cj-adapter');
@@ -155,7 +155,7 @@ async function requireAuth(req, res, next) {
   if (ensureFirst100FounderProgram(db)) changed = true;
   if (syncOneCompanyMember(db, user)) changed = true;
   const nowMs = Date.now();
-  if (!user.lastActiveAt || nowMs - new Date(user.lastActiveAt).getTime() > 60_000) {
+  if (!user.lastActiveAt || nowMs - new Date(user.lastActiveAt).getTime() > 90_000) {
     user.lastActiveAt = new Date(nowMs).toISOString(); changed = true;
   }
   if (changed) await saveDB(db);
@@ -2095,16 +2095,19 @@ function gateListing(listing, user, db) {
   return { ...rest, freshness: listingFreshness(listing), address: 'Address hidden', notes: null, ownerEmail: null, videoUrl: null, locked: true };
 }
 
+app.post('/api/listings/:id/view', requireAuth, async (req, res) => {
+  // View analytics are intentionally isolated from the property-details read path.
+  // A single analytics write must never make a buyer wait for the page to open.
+  await appendRecord('views', { id: crypto.randomUUID(), listingId: req.params.id, userId: req.user.id, at: new Date().toISOString() });
+  res.json({ ok: true });
+});
+
 app.get('/api/listings/:id', async (req, res) => {
   const db = await loadDB();
   const listing = db.listings.find(l => l.id === req.params.id);
   if (!listing) return res.status(404).json({ error: 'Listing not found.' });
   const viewer = db.users.find(u => u.id === req.session.userId);
 
-  if (viewer && viewer.id !== listing.ownerId) {
-    db.views.push({ id: crypto.randomUUID(), listingId: listing.id, userId: viewer.id, at: new Date().toISOString() });
-    await saveDB(db);
-  }
   const owner = db.users.find(u => u.id === listing.ownerId);
   const gated = gateListing(listing, viewer, db);
   const others = db.listings.filter(l => l.ownerId === listing.ownerId && l.id !== listing.id)
@@ -2270,7 +2273,7 @@ app.get('/api/feed', async (req, res) => {
       demo: !!l.demo
     };
   }).sort((a, b) => b._score - a._score);
-  res.json({ feed, access: accessFor(viewer) });
+  res.json({ feed, access: accessFor(viewer), dashboard: viewer ? dashboardSummary(db, viewer) : null });
 });
 
 /* ============================ PROMOTIONS ============================ */
@@ -2334,7 +2337,18 @@ const cleanStates = xs => [...new Set((Array.isArray(xs)?xs:[]).map(x=>String(x|
 function listingState(l){ const m=String(l?.city||'').toUpperCase().match(/,\s*([A-Z]{2})(?:\s|$)/); return m?m[1]:''; }
 const activityWindowMs = { '24h':86400000, '7d':7*86400000, '30d':30*86400000 };
 function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,roles:Array.isArray(u.roles)?u.roles:[u.role].filter(Boolean),plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
-app.post('/api/activity/heartbeat', requireAuth, async (req,res)=>{ if(isDemoUser(req.user)){req.user.lastActiveAt=new Date().toISOString();await saveDB(req.db);return res.json({ok:true,at:req.user.lastActiveAt,demo:true});} const now=new Date(); req.user.lastActiveAt=now.toISOString(); req.db.activityEvents=req.db.activityEvents||[]; const last=[...req.db.activityEvents].reverse().find(x=>x.userId===req.user.id); if(!last||now-new Date(last.at)>15*60_000)req.db.activityEvents.push({id:crypto.randomUUID(),userId:req.user.id,at:now.toISOString()}); const cutoff=Date.now()-180*86400000; if(req.db.activityEvents.length>50000)req.db.activityEvents=req.db.activityEvents.filter(x=>new Date(x.at).getTime()>=cutoff); await saveDB(req.db); res.json({ok:true,at:req.user.lastActiveAt}); });
+app.post('/api/activity/heartbeat', requireAuth, async (req,res)=>{
+  const now=new Date();
+  if(isDemoUser(req.user)){ return res.json({ok:true,at:req.user.lastActiveAt||now.toISOString(),demo:true}); }
+  req.db.activityEvents=req.db.activityEvents||[];
+  const last=[...req.db.activityEvents].reverse().find(x=>x.userId===req.user.id);
+  let changed=false;
+  if(!last||now-new Date(last.at)>15*60_000){req.db.activityEvents.push({id:crypto.randomUUID(),userId:req.user.id,at:now.toISOString()});changed=true;}
+  const cutoff=Date.now()-180*86400000;
+  if(req.db.activityEvents.length>50000){req.db.activityEvents=req.db.activityEvents.filter(x=>new Date(x.at).getTime()>=cutoff);changed=true;}
+  if(changed) await saveDB(req.db);
+  res.json({ok:true,at:req.user.lastActiveAt||now.toISOString()});
+});
 app.get('/api/notifications', requireAuth, async (req,res)=>{const rows=(req.db.dealNotifications||[]).filter(n=>n.userId===req.user.id).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,60);res.json({notifications:rows,unread:rows.filter(n=>!n.read).length});});
 app.post('/api/notifications/read', requireAuth, async (req,res)=>{for(const n of (req.db.dealNotifications||[]))if(n.userId===req.user.id)n.read=true;await saveDB(req.db);res.json({ok:true});});
 app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
@@ -2367,7 +2381,18 @@ app.get('/api/deal-calendar', requireAuth, async (req,res)=>{ let events=(req.db
 app.post('/api/deal-calendar', requireAuth, async (req,res)=>{ req.db.dealCalendarEvents=req.db.dealCalendarEvents||[]; const b=req.body||{},d=new Date(b.at); if(!Number.isFinite(d.getTime()))return res.status(400).json({error:'Choose a valid date.'}); const row={id:crypto.randomUUID(),userId:req.user.id,companyId:req.user.companyId||null,listingId:String(b.listingId||''),title:String(b.title||'Deal deadline').slice(0,120),at:d.toISOString(),kind:String(b.kind||'follow-up').slice(0,40),createdAt:new Date().toISOString()};req.db.dealCalendarEvents.push(row);await saveDB(req.db);res.json({event:row}); });
 app.delete('/api/deal-calendar/:id', requireAuth, async (req,res)=>{req.db.dealCalendarEvents=(req.db.dealCalendarEvents||[]).filter(x=>!(x.id===req.params.id&&(x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId))));await saveDB(req.db);res.json({ok:true});});
 app.get('/api/market-hubs', requireAuth, async (req,res)=>{ const states={}; for(const l of req.db.listings.filter(x=>listingFreshness(x).availabilityStatus!=='archived')){const m=String(l.city||'').match(/,\s*([A-Z]{2})(?:\s|$)/);if(!m)continue;states[m[1]]=states[m[1]]||{state:m[1],listings:0,buyers:0,investors:0};states[m[1]].listings++;} for(const u of req.db.users)for(const st of (u.investmentMarkets||[])){states[st]=states[st]||{state:st,listings:0,buyers:0,investors:0};states[st].investors++;} for(const u of req.db.users)for(const bb of getBuyBoxes(u))for(const c of (bb.cities||[])){const m=String(c).match(/\b([A-Z]{2})\b/);if(m){states[m[1]]=states[m[1]]||{state:m[1],listings:0,buyers:0,investors:0};states[m[1]].buyers++;}} res.json({markets:Object.values(states).sort((a,b)=>(b.listings+b.buyers+b.investors)-(a.listings+a.buyers+a.investors))}); });
-app.get('/api/dashboard', requireAuth, async (req,res)=>{ const markets=req.user.investmentMarkets||[]; const matched=req.db.listings.filter(l=>listingFreshness(l).availabilityStatus!=='archived'&&markets.some(m=>String(l.city||'').includes(m))).length; const mine=req.db.listings.filter(l=>l.ownerId===req.user.id); const buyerMatches=mine.reduce((n,l)=>n+buyerMatchesForListing(req.db,l).length,0); const pendingOffers=req.db.offers.filter(o=>(o.sellerId===req.user.id||o.buyerId===req.user.id)&&o.status==='pending').length; const upcoming=(req.db.dealCalendarEvents||[]).filter(e=>e.userId===req.user.id&&new Date(e.at)>new Date()).sort((a,b)=>new Date(a.at)-new Date(b.at))[0]||null; const seen=new Set(),recentViewed=[];for(const v of req.db.views.filter(v=>v.userId===req.user.id).sort((a,b)=>new Date(b.at)-new Date(a.at))){if(seen.has(v.listingId))continue;const l=req.db.listings.find(x=>x.id===v.listingId);if(l){seen.add(v.listingId);recentViewed.push({id:l.id,address:l.address,city:l.city,asking:l.asking,photo:l.photos?.[0]||null});if(recentViewed.length>=5)break;}} res.json({matched,buyerMatches,pendingOffers,upcoming,recentViewed}); });
+function dashboardSummary(db,user){
+  const markets=user.investmentMarkets||[];
+  const matched=db.listings.filter(l=>listingFreshness(l).availabilityStatus!=='archived'&&markets.some(m=>String(l.city||'').includes(m))).length;
+  const mine=db.listings.filter(l=>l.ownerId===user.id);
+  const buyerMatches=mine.reduce((n,l)=>n+buyerMatchesForListing(db,l).length,0);
+  const pendingOffers=db.offers.filter(o=>(o.sellerId===user.id||o.buyerId===user.id)&&o.status==='pending').length;
+  const upcoming=(db.dealCalendarEvents||[]).filter(e=>e.userId===user.id&&new Date(e.at)>new Date()).sort((a,b)=>new Date(a.at)-new Date(b.at))[0]||null;
+  const seen=new Set(),recentViewed=[];
+  for(const v of db.views.filter(v=>v.userId===user.id).sort((a,b)=>new Date(b.at)-new Date(a.at))){if(seen.has(v.listingId))continue;const l=db.listings.find(x=>x.id===v.listingId);if(l){seen.add(v.listingId);recentViewed.push({id:l.id,address:l.address,city:l.city,asking:l.asking,photo:l.photos?.[0]||null});if(recentViewed.length>=5)break;}}
+  return {matched,buyerMatches,pendingOffers,upcoming,recentViewed};
+}
+app.get('/api/dashboard', requireAuth, async (req,res)=>res.json(dashboardSummary(req.db,req.user)));
 app.get('/api/team-operations', requireAuth, async (req,res)=>{ if(!req.user.companyId)return res.status(403).json({error:'Join a Team workspace to use shared operations.'}); const members=req.db.users.filter(u=>u.companyId===req.user.companyId).map(u=>({id:u.id,name:u.name,username:u.username})); const deals=(req.db.pipelineDeals||[]).filter(x=>x.companyId===req.user.companyId); const crm=(req.db.buyerCrm||[]).filter(x=>x.companyId===req.user.companyId); const listings=req.db.listings.filter(l=>l.companyId===req.user.companyId); const activity=[...deals.map(d=>({at:d.updatedAt||d.createdAt,text:`Pipeline · ${d.title} · ${d.stage}`})),...crm.map(c=>({at:c.updatedAt||c.createdAt,text:`Buyer CRM · ${c.name} · ${c.status}`})),...listings.map(l=>({at:l.createdAt,text:`Listing posted · ${l.address}`}))].filter(x=>x.at).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,30); res.json({members,deals,activity,analytics:{pipeline:deals.length,buyers:crm.length,listings:listings.length}}); });
 
 

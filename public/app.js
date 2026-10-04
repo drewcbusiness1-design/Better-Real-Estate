@@ -4,7 +4,8 @@ let state = {
   shopCat: 'All', shopQ: '', shopItemId: null, shopEditId: null, shopEditPhotos: [], shopManageQ: '',
   networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0,
   companyId: null, companyInviteToken: null, buyerPortalType: null, buyerPortalId: null,
-  pendingReferral: null, leaderboardPeriod: 'all', postAuthTarget: null, feedMode: 'for-you', searchQ: ''
+  pendingReferral: null, leaderboardPeriod: 'all', postAuthTarget: null, feedMode: 'for-you', searchQ: '',
+  detailPreview: null
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -205,7 +206,7 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   const incomingRef = String(params.get('ref') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
   const incomingAff = String(params.get('aff') || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0,24);
-  if(incomingAff){ state.pendingAffiliate=incomingAff; try{localStorage.setItem('bre_affiliate_code',incomingAff);}catch{} try{await api('GET','/api/affiliate/track/'+encodeURIComponent(incomingAff));}catch{} } else { try{state.pendingAffiliate=localStorage.getItem('bre_affiliate_code')||null;}catch{} }
+  if(incomingAff){ state.pendingAffiliate=incomingAff; try{localStorage.setItem('bre_affiliate_code',incomingAff);}catch{} api('GET','/api/affiliate/track/'+encodeURIComponent(incomingAff)).catch(()=>{}); } else { try{state.pendingAffiliate=localStorage.getItem('bre_affiliate_code')||null;}catch{} }
   if (incomingRef) {
     state.pendingReferral = incomingRef;
     try { localStorage.setItem('bre_referral_code', incomingRef); } catch {}
@@ -258,18 +259,19 @@ async function boot() {
       state.authMode = 'signup';
     } else state.view = requestedView && ROUTED_VIEWS.has(requestedView) ? requestedView : 'home';
   }
-  if (state.user) { await refreshUnread(); const prior=Number(state.user.settings?.tutorialHighestRank??-1), now=TUTORIAL_RANK[tutorialTier()]??0; if(prior>=0 && now>prior) state.launchNewFeatureTutorial=true; const completed=Number(state.user.settings?.tutorialCompletedVersion||0); if(completed>=28 && completed<TUTORIAL_VERSION) state.launchProductUpdateTutorial=true; const dp=state.user?.demoPreview?.type; if(state.user?.demo&&dp&&!sessionStorage.getItem('bre-demo-preview:'+dp)){sessionStorage.setItem('bre-demo-preview:'+dp,'1');if(dp==='onboarding')state.launchTutorialAfterNav=true;if(dp==='whatsnew')state.launchProductUpdateTutorial=true;} }
+  if (state.user) { refreshUnread().then(()=>{ renderTop(); renderTabs(); }).catch(()=>{}); const prior=Number(state.user.settings?.tutorialHighestRank??-1), now=TUTORIAL_RANK[tutorialTier()]??0; if(prior>=0 && now>prior) state.launchNewFeatureTutorial=true; const completed=Number(state.user.settings?.tutorialCompletedVersion||0); if(completed>=28 && completed<TUTORIAL_VERSION) state.launchProductUpdateTutorial=true; const dp=state.user?.demoPreview?.type; if(state.user?.demo&&dp&&!sessionStorage.getItem('bre-demo-preview:'+dp)){sessionStorage.setItem('bre-demo-preview:'+dp,'1');if(dp==='onboarding')state.launchTutorialAfterNav=true;if(dp==='whatsnew')state.launchProductUpdateTutorial=true;} }
   if (!state.verifyToken && !state.resetToken) writeRoute('replace');
   render();
-  if (state.user) api('POST','/api/activity/heartbeat').catch(()=>{}); setInterval(()=>{ if(state.user) api('POST','/api/activity/heartbeat').catch(()=>{}); },60000);
+  if (state.user) api('POST','/api/activity/heartbeat').catch(()=>{}); setInterval(()=>{ if(state.user && !document.hidden) api('POST','/api/activity/heartbeat').catch(()=>{}); },90000);
 }
 async function refreshMe() {
   try { const before=state.user ? (TUTORIAL_RANK[tutorialTier()]??0) : -1; const d = await api('GET', '/api/me'); state.user = d.user; state.access = d.access; state.demoAdminSession = !!d.demoAdminSession; const after=TUTORIAL_RANK[tutorialTier()]??0; if(before>=0 && after>before) state.launchNewFeatureTutorial=true; } catch {}
 }
 async function refreshUnread() {
   if (!state.user) { state.unreadCount = 0; state.friendRequestCount = 0; return 0; }
-  try { const d = await api('GET', '/api/messages/unread-count'); state.unreadCount = Number(d.unreadCount || 0); } catch {}
-  try { const f = await api('GET', '/api/friends/requests'); state.friendRequestCount = Number(f.incoming?.length || 0); } catch {}
+  const [messages, friends] = await Promise.allSettled([api('GET', '/api/messages/unread-count'), api('GET', '/api/friends/requests')]);
+  if (messages.status === 'fulfilled') state.unreadCount = Number(messages.value.unreadCount || 0);
+  if (friends.status === 'fulfilled') state.friendRequestCount = Number(friends.value.incoming?.length || 0);
   return state.unreadCount || 0;
 }
 let viewPollTimer = null;
@@ -282,10 +284,31 @@ function startViewPolling(fn, ms = 5000) {
   }, ms);
 }
 function go(view, extra = {}, options = {}) { Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
-function openListingDetail(listingId, photoIdx = 0) {
-  const id = String(listingId || '').trim();
+function openListingDetail(listingOrId, photoIdx = 0) {
+  const preview = listingOrId && typeof listingOrId === 'object' ? listingOrId : null;
+  const id = String(preview?.id || listingOrId || '').trim();
   if (!id) { toast('This property could not be opened. Please refresh and try again.', 'err'); return; }
+  state.detailPreview = preview ? { ...preview } : null;
   go('detail', { detailId: id, photoIdx: Number.isInteger(photoIdx) ? photoIdx : 0 });
+  // Analytics must never block navigation. Record the view after the detail request has had a head start.
+  if (state.user) setTimeout(() => api('POST', '/api/listings/' + encodeURIComponent(id) + '/view', {}).catch(() => {}), 900);
+}
+function renderDetailPreview(listing) {
+  const wrap = el('div', { class: 'detail detail-preview', 'aria-busy': 'true' });
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => history.length > 1 ? history.back() : go('feed') }, '← Back to feed'));
+  const gal = el('div', { class: 'gallery' });
+  const main = el('div', { class: 'main' });
+  const photo = listing.photos?.[state.photoIdx] || listing.photos?.[0];
+  main.appendChild(photo ? el('img', { src: photo, alt: listing.city || 'Property' }) : el('div', {}, 'No photos on this listing'));
+  gal.appendChild(main); wrap.appendChild(gal);
+  wrap.appendChild(el('div', { class: 'dhead' }, [
+    el('div', {}, [el('h2', {}, listing.locked ? (listing.city?.split(',')[0] || 'Property') + ' — address hidden' : (listing.address || 'Property')), el('div', { class: 'c' }, listing.city || '')]),
+    el('div', { class: 'dprice' }, money(listing.asking))
+  ]));
+  const specs = [listing.beds ? listing.beds + ' bd' : null, listing.baths ? listing.baths + ' ba' : null, listing.sqft ? Number(listing.sqft).toLocaleString() + ' sqft' : null, listing.propertyType].filter(Boolean);
+  if (specs.length) wrap.appendChild(el('div', { class: 'specs' }, specs.map(x => el('span', {}, x))));
+  wrap.appendChild(el('div', { class: 'detail-loading', role: 'status' }, [el('b', {}, 'Opening property…'), el('span', {}, 'Loading the rest of the details.') ]));
+  return wrap;
 }
 function render() {
   stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter();
@@ -362,7 +385,16 @@ async function renderApp() {
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
-  try { app.appendChild(await (views[state.view] || renderHome)()); if(state.user && state.view==='feed') setTimeout(maybeShowFirstLoginPayoff,80); }
+  try {
+    const requestedView = state.view, requestedDetailId = state.detailId;
+    if (requestedView === 'detail' && state.detailPreview?.id === requestedDetailId) app.appendChild(renderDetailPreview(state.detailPreview));
+    const rendered = await (views[requestedView] || renderHome)();
+    // Ignore stale async renders if the user navigated elsewhere while data was loading.
+    if (state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId)) return;
+    app.replaceChildren(rendered);
+    if (requestedView === 'detail') state.detailPreview = null;
+    if(state.user && requestedView==='feed') setTimeout(maybeShowFirstLoginPayoff,80);
+  }
   catch (e) {
     app.appendChild(el('div', { class: 'page' }, el('div', { class: 'empty' }, [
       el('h3', {}, 'Something went wrong'), el('p', {}, e.message),
@@ -626,14 +658,13 @@ async function renderFeed() {
   const wrap = el('div', { class: 'feedwrap' });
   const vb = verifyBanner(); if (vb) wrap.appendChild(vb);
   const tb = trialBar(); if (tb) wrap.appendChild(tb);
-  let dash=null; try{dash=await api('GET','/api/dashboard');}catch{}
-  if(dash) wrap.appendChild(el('div',{class:'feedcommand'},[el('div',{class:'feedcommand-stats'},[miniMetric(dash.matched,'Market matches'),miniMetric(dash.buyerMatches,'Buyer matches'),miniMetric(dash.pendingOffers,'Pending offers'),miniMetric(dash.upcoming?new Date(dash.upcoming.at).toLocaleDateString():'—','Next deadline')]) ]));
   wrap.appendChild(el('div', { class: 'feedhead' }, [
     el('div',{class:'feedmode'},[el('button',{class:state.feedMode==='for-you'?'active':'',onclick:()=>{state.feedMode='for-you';render();}},'For You'),el('button',{class:state.feedMode==='following'?'active':'',onclick:()=>{state.feedMode='following';render();}},'Following')]),
     el('div', {class:'feedtools'}, [el('button', { class: 'filterbtn', onclick: () => go('search') }, 'Search'),el('button', { class: 'filterbtn', onclick: () => go('saved') }, 'Liked'),el('button', { class: 'filterbtn', onclick: () => go('savedsearches') }, 'Deal alerts')])
   ]));
-  const { feed, access } = await api('GET', '/api/feed?mode='+encodeURIComponent(state.feedMode));
+  const { feed, access, dashboard: dash } = await api('GET', '/api/feed?mode='+encodeURIComponent(state.feedMode));
   state.access = access || state.access;
+  if(dash) wrap.insertBefore(el('div',{class:'feedcommand'},[el('div',{class:'feedcommand-stats'},[miniMetric(dash.matched,'Market matches'),miniMetric(dash.buyerMatches,'Buyer matches'),miniMetric(dash.pendingOffers,'Pending offers'),miniMetric(dash.upcoming?new Date(dash.upcoming.at).toLocaleDateString():'—','Next deadline')]) ]), wrap.firstChild);
   if (!feed.length) {
     wrap.appendChild(el('div', { class: 'empty' }, [
       el('h3', {}, state.feedMode==='following'?'Your network is quiet. For now.':'Quiet in here. Let’s fix that.'),
@@ -688,7 +719,7 @@ function propertyCard(l) {
       sx = null;
     }, { passive: true });
   }
-  imgEl.onclick = () => openListingDetail(l.id, idx);
+  imgEl.onclick = () => openListingDetail(l, idx);
 
   const specs = [];
   if (l.beds) specs.push(l.beds + ' bd');
@@ -732,7 +763,7 @@ function propertyCard(l) {
         saveBtn,
         el('button', { onclick: e => { e.stopPropagation(); shareNative({ kind: 'property', targetId: l.id, title: `${l.city} property on Better Real Estate`, text: `${money(l.asking)} · ${l.propertyType || 'Investment property'}` }); } }, 'Share'),
         el('button', { title:'Hide this property and improve recommendations', onclick: async e => { e.stopPropagation(); await api('POST','/api/feed/feedback',{listingId:l.id,kind:'hide'}); toast('Hidden from your feed','ok'); render(); } }, 'Not interested'),
-        el('button', { class: 'primary', onclick: e => { e.stopPropagation(); openListingDetail(l.id, idx); } }, l.locked ? '🔒 Unlock' : 'View details')
+        el('button', { class: 'primary', onclick: e => { e.stopPropagation(); openListingDetail(l, idx); } }, l.locked ? '🔒 Unlock' : 'View details')
       ])
     ])
   ]);
@@ -921,7 +952,11 @@ async function renderDetail() {
   ]));
   wrap.appendChild(shareStrip({ kind: 'property', targetId: listing.id, title: `${listing.city} property on Better Real Estate`, text: `${money(listing.asking)} · ${listing.propertyType || 'Investment property'}` }));
   if (state.user && state.user.id === listing.ownerId) {
-    try { const ni=await api('GET','/api/listings/'+encodeURIComponent(listing.id)+'/network-intelligence'); if(ni.matchCount>0) wrap.appendChild(el('div',{class:'buyer-match-moment'},[el('div',{},[el('div',{class:'eyebrow'},'BUYER MATCH'),el('h3',{},ni.matchCount===1?'You may have found your buyer.':`You may have found ${ni.matchCount} buyers.`),el('p',{},ni.summary)]),el('button',{class:'btn-primary',onclick:()=>go('network',{networkTab:'buyers'})},'Review matches')])); } catch {}
+    const intelligenceSlot=el('div',{class:'buyer-match-slot'}); wrap.appendChild(intelligenceSlot);
+    api('GET','/api/listings/'+encodeURIComponent(listing.id)+'/network-intelligence').then(ni=>{
+      if(state.view!=='detail'||state.detailId!==listing.id||!intelligenceSlot.isConnected||ni.matchCount<=0)return;
+      intelligenceSlot.replaceChildren(el('div',{class:'buyer-match-moment'},[el('div',{},[el('div',{class:'eyebrow'},'BUYER MATCH'),el('h3',{},ni.matchCount===1?'You may have found your buyer.':`You may have found ${ni.matchCount} buyers.`),el('p',{},ni.summary)]),el('button',{class:'btn-primary',onclick:()=>go('network',{networkTab:'buyers'})},'Review matches')]));
+    }).catch(()=>{});
   }
 
   const cells = [
@@ -2844,7 +2879,7 @@ async function renderMessages() {
   startViewPolling(async () => {
     if (state.view !== 'messages') return;
     await paint();
-  }, 7000);
+  }, 10000);
   return wrap;
 }
 function formatChatTime(iso) {
@@ -2937,7 +2972,7 @@ async function renderChat() {
   startViewPolling(async () => {
     if (state.view !== 'chat' || !state.chatUserId || sendingMessage) return;
     await syncChat();
-  }, 3000);
+  }, 6000);
   return wrap;
 }
 

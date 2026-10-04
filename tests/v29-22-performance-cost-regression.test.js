@@ -1,0 +1,13 @@
+const fs=require('fs'),assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8'),server=fs.readFileSync('server.js','utf8');
+assert(app.includes("dashboard: dash"),'Feed must consume dashboard from the feed response.');
+assert(!app.includes("dash=await api('GET','/api/dashboard')"),'Feed must not block on a separate dashboard request.');
+assert(app.includes("api('GET','/api/listings/'+encodeURIComponent(listing.id)+'/network-intelligence').then"),'Owner buyer intelligence must hydrate after base detail render.');
+assert(!app.includes("const ni=await api('GET','/api/listings/'+encodeURIComponent(listing.id)+'/network-intelligence')"),'Detail render must not await buyer intelligence.');
+assert(app.includes("Promise.allSettled([api('GET', '/api/messages/unread-count'), api('GET', '/api/friends/requests')])"),'Header counters should load concurrently.');
+assert(app.includes("!document.hidden") && app.includes("},90000)"),'Heartbeat should skip hidden tabs and avoid one-minute polling.');
+assert(server.includes('function dashboardSummary(db,user)'),'Dashboard summary should be reusable in the feed response.');
+assert(server.includes('dashboard: viewer ? dashboardSummary(db, viewer) : null'),'Feed should bundle dashboard summary.');
+assert(server.includes('if(changed) await saveDB(req.db);'),'Heartbeat should not force a broad DB save on every ping.');
+assert(app.includes('}, 10000);') && app.includes('}, 6000);'),'Message polling should use the reduced-cost cadence.');
+console.log('v29.22 performance + Netlify-cost regression: PASS');

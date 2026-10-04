@@ -6,7 +6,7 @@ assert(server.includes('function buyBoxHasBuyerIntent(bb)'), 'buyer intent truth
 assert(server.includes('bb.updatedAt || bb.public === true'), 'buyer intent must require saved/published or explicit criteria');
 assert(server.includes("u.demo !== true"), 'demo users must not inflate buyer matches');
 assert(server.includes('buyBoxHasBuyerIntent(bb) && buyBoxMatchesListing(bb, listing)'), 'match count must use buyer intent plus listing criteria');
-assert(app.includes('function openListingDetail(listingId, photoIdx = 0)'), 'guarded detail navigation helper missing');
-assert(app.includes("openListingDetail(l.id, idx)"), 'feed property detail action not wired to guarded navigation');
+assert(app.includes('function openListingDetail('), 'guarded detail navigation helper missing');
+assert(app.includes("openListingDetail(l, idx)") || app.includes("openListingDetail(l.id, idx)"), 'feed property detail action not wired to guarded navigation');
 assert(app.includes("'/api/listings/' + encodeURIComponent(state.detailId)"), 'detail API must safely resolve the selected listing id');
 console.log('v29.20 buyer-match truth + property-details regression: PASS');

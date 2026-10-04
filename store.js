@@ -190,4 +190,20 @@ async function saveDB(db) {
   }));
 }
 
-module.exports = { loadDB, saveDB, sql, init, COLLECTIONS, tableFor, FILE_MODE };
+
+async function appendRecord(collection, row) {
+  if (!COLLECTIONS.includes(collection)) throw new Error('Unknown collection.');
+  if (FILE_MODE) {
+    const db = await loadDB();
+    db[collection].push(row);
+    await saveDB(db);
+    return row;
+  }
+  await init();
+  const id = row.__id || idOf(row, collection, Date.now());
+  row.__id = id;
+  await sql(`INSERT INTO ${tableFor(collection)} (id, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, [id, JSON.stringify(row)]);
+  return row;
+}
+
+module.exports = { loadDB, saveDB, appendRecord, sql, init, COLLECTIONS, tableFor, FILE_MODE };
