@@ -31,11 +31,16 @@ assert.equal(manual.grantPlan,'pro','Founder bonus must not overwrite manual gra
 assert.equal(manual.grantReason,'Existing grant');
 const founderDays=(new Date(first.founderPlatinumUntil)-new Date(first.founderPlatinumStartedAt))/86400000;
 assert(Math.abs(founderDays-14)<0.01,'Founder Platinum must last 14 days');
-// Deleting an awarded account must not reopen a slot.
+// Deleting an awarded account returns the slot and compacts surviving ranks.
 db.users=db.users.filter(u=>u.id!=='u5');
 const newcomer={id:'u106',role:'buyer',name:'User 106',email:'u106@example.test',createdAt:new Date().toISOString()};db.users.push(newcomer);
-assert.equal(ensureFirst100FounderProgram(db),false);
-assert.equal(db.founderAwards.length,100);assert(!newcomer.founderLaunchPosition,'deleted Founder slot must not recycle');
+assert.equal(ensureFirst100FounderProgram(db),true);
+const activeFounderAwards=db.founderAwards.filter(a=>!a.voidedAt);
+assert.equal(activeFounderAwards.length,100,'deleted Founder slot must return to the active pool');
+assert.equal(users.find(u=>u.id==='u6').founderLaunchPosition,5,'surviving Founder ranks must compact after deletion');
+assert.equal(users.find(u=>u.id==='u101').founderLaunchPosition,100,'next qualifying signup must fill the returned spot');
+assert(!newcomer.founderLaunchPosition,'a later signup must not jump ahead of earlier qualifying users');
+assert(db.founderAwards.some(a=>a.voidedAt&&a.formerUserId==='u5'),'deleted Founder must leave a tombstone to prevent reclaiming the benefit');
 // Grant / extend / replace behavior.
 const target={id:'grant-user',role:'buyer',plan:'free'};const grantDb={membershipGrants:[],users:[target]};
 let g=grantMembership(grantDb,target,{tier:'pro',days:14,reason:'Test',grantedBy:'admin',mode:'replace'});

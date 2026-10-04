@@ -101,19 +101,30 @@ async function init() {
   if (!sql) throw new Error('Database not configured. See store.js.');
   if (initPromise) return initPromise;
   initPromise = (async () => {
-    for (const c of COLLECTIONS) {
-      const t = tableFor(c);
-      await sql(`CREATE TABLE IF NOT EXISTS ${t} (
-        id text PRIMARY KEY,
-        data jsonb NOT NULL,
-        updated_at timestamptz NOT NULL DEFAULT now()
-      )`);
+    // A cold Netlify function used to run 50+ sequential CREATE TABLE calls
+    // before serving a request. Discover the existing schema once, create only
+    // genuinely missing collections, and build the few hot indexes in parallel.
+    const existingRows = await sql(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`);
+    const existing = new Set((existingRows || []).map(r => r.tablename));
+    const missing = COLLECTIONS.filter(c => !existing.has(tableFor(c)));
+    if (missing.length) {
+      await Promise.all(missing.map(c => {
+        const t = tableFor(c);
+        return sql(`CREATE TABLE IF NOT EXISTS ${t} (
+          id text PRIMARY KEY,
+          data jsonb NOT NULL,
+          updated_at timestamptz NOT NULL DEFAULT now()
+        )`);
+      }));
     }
-    // Indexes on the lookups that actually run on every request.
-    await sql(`CREATE INDEX IF NOT EXISTS idx_users_email ON ${tableFor('users')} ((data->>'email'))`);
-    await sql(`CREATE INDEX IF NOT EXISTS idx_listings_owner ON ${tableFor('listings')} ((data->>'ownerId'))`);
-    await sql(`CREATE INDEX IF NOT EXISTS idx_tokens_token ON ${tableFor('tokens')} ((data->>'token'))`);
-    await sql(`CREATE INDEX IF NOT EXISTS idx_saves_listing ON ${tableFor('saves')} ((data->>'listingId'))`);
+    const indexRows = await sql(`SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`);
+    const existingIndexes = new Set((indexRows || []).map(r => r.indexname));
+    const indexSql = [];
+    if(!existingIndexes.has('idx_users_email')) indexSql.push(sql(`CREATE INDEX IF NOT EXISTS idx_users_email ON ${tableFor('users')} ((data->>'email'))`));
+    if(!existingIndexes.has('idx_listings_owner')) indexSql.push(sql(`CREATE INDEX IF NOT EXISTS idx_listings_owner ON ${tableFor('listings')} ((data->>'ownerId'))`));
+    if(!existingIndexes.has('idx_tokens_token')) indexSql.push(sql(`CREATE INDEX IF NOT EXISTS idx_tokens_token ON ${tableFor('tokens')} ((data->>'token'))`));
+    if(!existingIndexes.has('idx_saves_listing')) indexSql.push(sql(`CREATE INDEX IF NOT EXISTS idx_saves_listing ON ${tableFor('saves')} ((data->>'listingId'))`));
+    if(indexSql.length) await Promise.all(indexSql);
   })();
   return initPromise;
 }
@@ -142,17 +153,26 @@ function fileLoad() {
 async function loadDB() {
   if (FILE_MODE) return fileLoad();
   await init();
-  const db = {};
-  await Promise.all(COLLECTIONS.map(async c => {
-    const rows = await sql(`SELECT id, data FROM ${tableFor(c)}`);
-    db[c] = rows.map(r => {
-      const o = r.data;
-      Object.defineProperty(o, '__id', { value: r.id, enumerable: false, writable: true });
-      return o;
-    });
-  }));
+  const db = {}; COLLECTIONS.forEach(c => { db[c] = []; });
+  // One database round trip instead of one SELECT per collection. This is the
+  // hot-path fix for intermittent multi-second page loads on serverless cold starts.
+  const union = COLLECTIONS.map(c => `SELECT '${c}' AS collection, id, data FROM ${tableFor(c)}`).join(' UNION ALL ');
+  const rows = await sql(union);
+  for (const r of (rows || [])) {
+    const o = r.data;
+    Object.defineProperty(o, '__id', { value: r.id, enumerable: false, writable: true });
+    db[r.collection].push(o);
+  }
   db.__snapshot = {};
-  for (const c of COLLECTIONS) db.__snapshot[c] = new Set(db[c].map(o => o.__id));
+  db.__snapshotData = {};
+  for (const c of COLLECTIONS) {
+    db.__snapshot[c] = new Set();
+    db.__snapshotData[c] = new Map();
+    for (const o of db[c]) {
+      db.__snapshot[c].add(o.__id);
+      db.__snapshotData[c].set(o.__id, JSON.stringify(o));
+    }
+  }
   return db;
 }
 
@@ -168,24 +188,39 @@ async function saveDB(db) {
     const rows = db[c] || [];
     const t = tableFor(c);
     const seen = new Set();
+    const beforeIds = db.__snapshot?.[c] || new Set();
+    const beforeData = db.__snapshotData?.[c] || new Map();
+    const writes = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const id = row.__id || idOf(row, c, i);
       row.__id = id;
       seen.add(id);
-      await sql(
+      const serialized = JSON.stringify(row);
+      if (beforeData.get(id) === serialized) continue;
+      writes.push(sql(
         `INSERT INTO ${t} (id, data, updated_at) VALUES ($1, $2, now())
          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
-        [id, JSON.stringify(row)]
-      );
+        [id, serialized]
+      ));
     }
-    // Delete anything that was loaded but is no longer present.
-    const before = db.__snapshot?.[c];
-    if (before) {
-      for (const oldId of before) {
-        if (!seen.has(oldId)) await sql(`DELETE FROM ${t} WHERE id = $1`, [oldId]);
-      }
+    for (const oldId of beforeIds) {
+      if (!seen.has(oldId)) writes.push(sql(`DELETE FROM ${t} WHERE id = $1`, [oldId]));
+    }
+    if (writes.length) await Promise.all(writes);
+
+    // Refresh the in-memory snapshot so a second save in the same request only
+    // persists changes made since the first save.
+    db.__snapshot = db.__snapshot || {};
+    db.__snapshotData = db.__snapshotData || {};
+    db.__snapshot[c] = new Set();
+    db.__snapshotData[c] = new Map();
+    for (const row of rows) {
+      const id = row.__id;
+      if (!id) continue;
+      db.__snapshot[c].add(id);
+      db.__snapshotData[c].set(id, JSON.stringify(row));
     }
   }));
 }

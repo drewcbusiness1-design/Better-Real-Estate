@@ -4,7 +4,7 @@ assert(app.includes('Create Demo Account'));
 assert(app.includes('Start Preview'));
 assert(app.includes('Enter Demo'));
 assert(app.includes('Reset Preview'));
-assert(app.includes('Preview ready:'));
+assert(app.includes("await api('POST',`/api/admin/demo-accounts/${pvUser.value}/enter`)") ,'Start Preview must enter the selected demo instead of only arming it');
 assert(app.includes("pvUser.appendChild(el('option',{value:''}"));
 assert(server.includes("/api/admin/demo-accounts/:id/enter"));
 assert(server.includes("/api/demo/return-admin"));

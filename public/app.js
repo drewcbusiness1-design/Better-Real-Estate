@@ -2,7 +2,7 @@ let state = {
   view: 'home', user: null, authMode: 'signup', pricing: null, access: null,
   detailId: null, profileId: null, photoIdx: 0, composePhotos: [], shopPhotos: [],
   shopCat: 'All', shopQ: '', shopItemId: null, shopEditId: null, shopEditPhotos: [], shopManageQ: '',
-  networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0,
+  networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0, notificationSummary: { profile:0, destinations:{} },
   companyId: null, companyInviteToken: null, buyerPortalType: null, buyerPortalId: null,
   pendingReferral: null, leaderboardPeriod: 'all', postAuthTarget: null, feedMode: 'for-you', searchQ: '',
   detailPreview: null
@@ -262,18 +262,25 @@ async function boot() {
   if (state.user) { refreshUnread().then(()=>{ renderTop(); renderTabs(); }).catch(()=>{}); const prior=Number(state.user.settings?.tutorialHighestRank??-1), now=TUTORIAL_RANK[tutorialTier()]??0; if(prior>=0 && now>prior) state.launchNewFeatureTutorial=true; const completed=Number(state.user.settings?.tutorialCompletedVersion||0); if(completed>=28 && completed<TUTORIAL_VERSION) state.launchProductUpdateTutorial=true; const dp=state.user?.demoPreview?.type; if(state.user?.demo&&dp&&!sessionStorage.getItem('bre-demo-preview:'+dp)){sessionStorage.setItem('bre-demo-preview:'+dp,'1');if(dp==='onboarding')state.launchTutorialAfterNav=true;if(dp==='whatsnew')state.launchProductUpdateTutorial=true;} }
   if (!state.verifyToken && !state.resetToken) writeRoute('replace');
   render();
-  if (state.user) api('POST','/api/activity/heartbeat').catch(()=>{}); setInterval(()=>{ if(state.user && !document.hidden) api('POST','/api/activity/heartbeat').catch(()=>{}); },90000);
+  let heartbeatInFlight=false;
+  const sendHeartbeat=async()=>{if(!state.user||document.hidden||heartbeatInFlight)return;heartbeatInFlight=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);try{const res=await fetch('/api/activity/heartbeat',{method:'POST',credentials:'include',signal:controller.signal});if(res.ok){const data=await res.json().catch(()=>null);if(data?.notifications){const before=JSON.stringify(state.notificationSummary||{});applyNotificationSummary(data.notifications);if(before!==JSON.stringify(state.notificationSummary||{})){renderTop();renderTabs();}}}}catch{}finally{clearTimeout(timer);heartbeatInFlight=false;}};
+  if(state.user) sendHeartbeat(); setInterval(sendHeartbeat,90000);
 }
 async function refreshMe() {
   try { const before=state.user ? (TUTORIAL_RANK[tutorialTier()]??0) : -1; const d = await api('GET', '/api/me'); state.user = d.user; state.access = d.access; state.demoAdminSession = !!d.demoAdminSession; const after=TUTORIAL_RANK[tutorialTier()]??0; if(before>=0 && after>before) state.launchNewFeatureTutorial=true; } catch {}
 }
+function applyNotificationSummary(summary){
+  state.notificationSummary = summary || {profile:0,destinations:{}};
+  state.unreadCount = Number(summary?.destinations?.messages || 0);
+  state.friendRequestCount = Number(summary?.destinations?.network || 0);
+}
 async function refreshUnread() {
-  if (!state.user) { state.unreadCount = 0; state.friendRequestCount = 0; return 0; }
-  const [messages, friends] = await Promise.allSettled([api('GET', '/api/messages/unread-count'), api('GET', '/api/friends/requests')]);
-  if (messages.status === 'fulfilled') state.unreadCount = Number(messages.value.unreadCount || 0);
-  if (friends.status === 'fulfilled') state.friendRequestCount = Number(friends.value.incoming?.length || 0);
+  if (!state.user) { applyNotificationSummary({profile:0,destinations:{}}); return 0; }
+  try { applyNotificationSummary(await api('GET','/api/notification-summary')); } catch {}
   return state.unreadCount || 0;
 }
+function notificationCountFor(view){ return Number(state.notificationSummary?.destinations?.[view] || 0); }
+function notificationBadge(count, className='navcount'){ const n=Number(count||0); return n>0?el('span',{class:className},n>99?'99+':String(n)):null; }
 let viewPollTimer = null;
 function stopViewPolling() { if (viewPollTimer) { clearInterval(viewPollTimer); viewPollTimer = null; } }
 function startViewPolling(fn, ms = 5000) {
@@ -364,7 +371,8 @@ function renderTabs() {
   items.forEach(([v, ic, label]) => {
     const active = state.view === v || (v === 'shop' && ['shopitem','sellitem','shopmanage','shopedit'].includes(state.view));
     const icon = el('span', { class: 'ic' }, iconSvg(ic, 21));
-    if (v === 'network' && state.friendRequestCount > 0) icon.appendChild(el('span', { class: 'tabalert' }));
+    if (v === 'network' && state.friendRequestCount > 0) icon.appendChild(notificationBadge(state.friendRequestCount,'msgbadge tab-msgbadge'));
+    if (v === 'me' && Number(state.notificationSummary?.profile||0)>0) icon.appendChild(notificationBadge(state.notificationSummary.profile,'msgbadge tab-msgbadge'));
     tabs.appendChild(el('button', {
       class: active ? 'active' : '', onclick: () => go(v)
     }, [icon, el('span', {}, label)]));
@@ -385,10 +393,13 @@ async function renderApp() {
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
+  let routeLoadTimer=null;
   try {
     const requestedView = state.view, requestedDetailId = state.detailId;
     if (requestedView === 'detail' && state.detailPreview?.id === requestedDetailId) app.appendChild(renderDetailPreview(state.detailPreview));
+    else routeLoadTimer=setTimeout(()=>{if(state.view===requestedView&&!app.firstChild)app.appendChild(el('div',{class:'route-loading',role:'status','aria-live':'polite'},[el('span',{class:'loading-wheel','aria-hidden':'true'}),el('span',{},'Loading…')]));},220);
     const rendered = await (views[requestedView] || renderHome)();
+    clearTimeout(routeLoadTimer); routeLoadTimer=null;
     // Ignore stale async renders if the user navigated elsewhere while data was loading.
     if (state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId)) return;
     const preserveDetailScroll = requestedView === 'detail' ? window.scrollY : null;
@@ -400,6 +411,8 @@ async function renderApp() {
     if(state.user && requestedView==='feed') setTimeout(maybeShowFirstLoginPayoff,80);
   }
   catch (e) {
+    if(routeLoadTimer)clearTimeout(routeLoadTimer);
+    app.innerHTML='';
     app.appendChild(el('div', { class: 'page' }, el('div', { class: 'empty' }, [
       el('h3', {}, 'Something went wrong'), el('p', {}, e.message),
       el('button', { class: 'btn-ghost', style: 'margin-top:18px', onclick: () => render() }, 'Try again')
@@ -936,18 +949,6 @@ function showClosingCelebration(listing) {
     el('button',{class:'btn-primary',onclick:()=>{o.remove();downloadStoryCard({flyer:{headline:'DEAL CLOSED',facts:[listing.city||'',money(listing.asking||0),'BetterRealEstate.org']},url:shareUrl('property',listing.id)},listing);}},'Create closing share card'),
     el('button',{class:'btn-ghost',onclick:()=>o.remove()},'Back to the deal')
   ])); document.body.appendChild(o);
-}
-function downloadProfileCard(user) {
-  const c=document.createElement('canvas');c.width=1080;c.height=1350;const x=c.getContext('2d');
-  x.fillStyle='#0b0b0c';x.fillRect(0,0,c.width,c.height);x.fillStyle='#f4b51c';x.fillRect(0,0,18,c.height);
-  x.fillStyle='#fff';x.font='700 42px Arial';x.fillText('BetterRealEstate',72,105);x.fillStyle='#f4b51c';x.font='700 28px Arial';x.fillText('MAKE BETTER YOUR STANDARD.',72,150);
-  x.fillStyle='#fff';x.font='700 72px Arial';x.fillText(String(user.name||'Better member').slice(0,24),72,350);
-  x.fillStyle='#b8b8b8';x.font='500 36px Arial';x.fillText(roleLabel(user),72,415);
-  const markets=(user.investmentMarkets||[]).slice(0,6).join('  •  ');if(markets){x.fillStyle='#fff';x.font='600 30px Arial';x.fillText(markets,72,500);}
-  x.strokeStyle='#343434';x.lineWidth=2;x.strokeRect(72,590,936,420);x.fillStyle='#f4b51c';x.font='700 26px Arial';x.fillText('REAL ESTATE NETWORK',112,660);
-  x.fillStyle='#fff';x.font='700 44px Arial';x.fillText('Deals. Buyers. Connections.',112,735);x.fillStyle='#b8b8b8';x.font='500 30px Arial';x.fillText('View my profile and connect on Better.',112,800);
-  x.fillStyle='#fff';x.font='700 34px Arial';x.fillText('BetterRealEstate.org',72,1210);x.fillStyle='#b8b8b8';x.font='500 24px Arial';x.fillText('Profile information shown is provided by this member.',72,1260);
-  const a=document.createElement('a');a.download=`better-profile-${String(user.username||user.name||'member').toLowerCase().replace(/[^a-z0-9]+/g,'-')}.png`;a.href=c.toDataURL('image/png');a.click();
 }
 async function maybeShowFirstLoginPayoff() {
   if(!state.user || state.user.settings?.firstLookCompleted) return;
@@ -3108,8 +3109,7 @@ function openAdminAccessModal(u,onDone=()=>{}){
 /* ================= PROFILES ================= */
 async function renderMe() {
   const wrap = el('div', { class: 'page' });
-  const d = await api('GET', '/api/users/' + state.user.id + '/listings');
-  const w = await api('GET', '/api/wallet');
+  const [d,w] = await Promise.all([api('GET', '/api/users/' + state.user.id + '/listings'),api('GET', '/api/wallet')]);
   const mineHeader = el('div', { class: 'profilehero' }, [
     avatarNode(state.user, 'profile'),
     el('div', { class: 'profileherobody' }, [
@@ -3119,7 +3119,7 @@ async function renderMe() {
       state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
       state.user.investmentMarkets?.length ? el('div',{class:'profile-markets'},state.user.investmentMarkets.map(x=>el('span',{},x))) : null,
       state.user.bio ? el('p', { class: 'profilebio' }, state.user.bio) : null,
-      el('div',{class:'profile-actions'},[el('button', { class: 'btn-ghost profileeditbtn', onclick: () => go('settings') }, state.user.avatarUrl ? 'Edit profile' : 'Add profile photo'),el('button',{class:'btn-ghost',onclick:async()=>{const url=location.origin+'/s/profile/'+encodeURIComponent(state.user.username||state.user.id);try{await navigator.clipboard.writeText(url);toast('Public profile link copied','ok')}catch{prompt('Copy public profile link',url);}}},'Copy public profile'),el('button',{class:'btn-ghost',onclick:()=>downloadProfileCard(state.user)},'Share profile card')])
+      el('div',{class:'profile-actions'},[el('button', { class: 'btn-ghost profileeditbtn profile-action-equal', onclick: () => go('settings') }, state.user.avatarUrl ? 'Edit profile' : 'Add profile photo'),el('button',{class:'btn-ghost profile-action-equal',onclick:async()=>{const url=location.origin+'/s/profile/'+encodeURIComponent(state.user.username||state.user.id);try{await navigator.clipboard.writeText(url);toast('Public profile link copied','ok')}catch{prompt('Copy public profile link',url);}}},'Copy public profile')])
     ])
   ]);
   wrap.appendChild(mineHeader);
@@ -3144,7 +3144,7 @@ async function renderMe() {
   ];
   if(state.access?.wholesale||state.user.companyId)groups[0][1].push(['Company workspace','companyworkspace']);
   if(state.user.role==='admin')groups.push(['Administration',[['Admin command center','admin'],['Admin — Affiliates','affiliate'],['Admin — Email Center','emailcenter'],['Admin — Membership grants','memberships'],['Admin — suppliers','suppliers'],['Admin — fulfilment queue','fulfilment'],['Admin — reports','reports']]]);
-  groups.forEach(([title,items])=>{const g=el('section',{class:'profile-toolgroup'},[el('div',{class:'eyebrow'},title)]);items.forEach(([t,v])=>g.appendChild(el('button',{class:'profile-tool',onclick:()=>go(v)},[el('span',{},t),el('b',{},'→')])));toolgroups.appendChild(g);});
+  groups.forEach(([title,items])=>{const g=el('section',{class:'profile-toolgroup'},[el('div',{class:'eyebrow'},title)]);items.forEach(([t,v])=>{const count=notificationCountFor(v);g.appendChild(el('button',{class:'profile-tool',onclick:()=>go(v)},[el('span',{},t),el('span',{class:'profile-tool-tail'},[notificationBadge(count,'msgbadge profile-row-badge'),el('b',{},'→')]) ]));});toolgroups.appendChild(g);});
   wrap.appendChild(toolgroups);
 
   // referral growth dashboard
@@ -3216,7 +3216,6 @@ async function renderProfile() {
   wrap.appendChild(profileHero);
   if(credibility) wrap.appendChild(el('div',{class:'credibility-row'},[credibility.accountSince?el('span',{},'Member since '+new Date(credibility.accountSince).toLocaleDateString(undefined,{month:'short',year:'numeric'})):null,el('span',{},`${credibility.verifiedClosings||0} verified closing${credibility.verifiedClosings===1?'':'s'}`),credibility.responseRate!==null?el('span',{},`${credibility.responseRate}% response rate`):null].filter(Boolean)));
   wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${roleLabel(owner)}${owner.location ? ' · ' + owner.location : ''}` }));
-  wrap.appendChild(el('button',{class:'btn-ghost profile-card-share',onclick:()=>downloadProfileCard(owner)},'Create shareable profile card'));
 
   if (state.user && state.user.id !== owner.id) {
     const actions = el('div', { class: 'profileactions' });
@@ -4084,7 +4083,7 @@ async function renderAffiliateCenter(){
   return wrap;
  }
  const d=await api('GET','/api/affiliate/me');wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER AFFILIATES'),el('h2',{},'Affiliate center'),el('div',{class:'sub'},'Earn a 30% one-time cash commission on a qualifying referred customer’s first eligible paid membership transaction.')]),el('div',{class:'affiliate-rate'},[el('strong',{},'30%'),el('span',{},'one-time commission')]) ]));
- if(state.access?.adminUnlimited){try{const ad=await api('GET','/api/admin/affiliates');const panel=el('section',{class:'hub-panel affiliate-admin'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'ADMIN'),el('h3',{},'Affiliate approvals')]),el('span',{class:'sub'},`${ad.applications.length} applications · ${cents(ad.totals.pending)} pending commissions`)])]);if(!ad.applications.length)panel.appendChild(el('div',{class:'hub-empty'},'No affiliate applications yet.'));ad.applications.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).forEach(x=>panel.appendChild(el('div',{class:'affiliate-admin-row'},[el('div',{class:'grow'},[el('b',{},x.name+' · '+x.status),el('span',{},x.channels||x.audience||x.email),el('small',{},`${x.metrics.sales} sales · ${cents(x.metrics.paid)} paid`)]),el('div',{class:'affiliate-admin-actions'},['approved','denied','suspended','revoked'].filter(st=>st!==x.status).slice(0,2).map(st=>el('button',{class:st==='approved'?'btn-primary':'btn-ghost',onclick:async()=>{await api('POST','/api/admin/affiliates/'+x.id+'/status',{status:st});toast('Affiliate '+st,'ok');render();}},st.charAt(0).toUpperCase()+st.slice(1))))])));wrap.appendChild(panel);}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));}}
+ if(state.access?.adminUnlimited){try{const ad=await api('GET','/api/admin/affiliates');const panel=el('section',{class:'hub-panel affiliate-admin'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'ADMIN'),el('h3',{},'Affiliate approvals')]),el('span',{class:'sub'},`${ad.applications.length} applications · ${cents(ad.totals.pending)} pending commissions`)])]);if(!ad.applications.length)panel.appendChild(el('div',{class:'hub-empty'},'No affiliate applications yet.'));const affiliateActions=x=>{if(x.status==='pending')return [['approved','Approve','btn-primary'],['denied','Deny','btn-ghost']];if(x.status==='approved')return [['suspended','Suspend','btn-ghost'],['revoked','Terminate','dangerbtn']];if(x.status==='suspended')return [['approved','Resume','btn-primary'],['revoked','Terminate','dangerbtn']];if(x.status==='denied')return [['approved','Approve','btn-primary']];return [];};ad.applications.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).forEach(x=>panel.appendChild(el('div',{class:'affiliate-admin-row'},[el('div',{class:'grow'},[el('b',{},x.name+' · '+x.status),el('span',{},x.channels||x.audience||x.email),el('small',{},`${x.metrics.sales} sales · ${cents(x.metrics.paid)} paid`)]),el('div',{class:'affiliate-admin-actions'},affiliateActions(x).map(([status,label,cls])=>el('button',{class:cls,onclick:async()=>{await api('POST','/api/admin/affiliates/'+x.id+'/status',{status});toast(`Affiliate ${label.toLowerCase()} action completed`,'ok');await refreshUnread();render();}},label))) ])));wrap.appendChild(panel);}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));}}
  if(!d.application){const card=el('section',{class:'affiliate-hero'},[el('h3',{},'Apply to become a Better affiliate'),el('p',{},'Tell us how you plan to introduce Better Real Estate to your audience. Every application is reviewed before affiliate links are activated.'),el('button',{class:'btn-primary',onclick:()=>openFormModal('Affiliate application',[{key:'audience',label:'Your audience',type:'textarea',placeholder:'Who do you reach and approximately how?'},{key:'channels',label:'Channels',placeholder:'Instagram, YouTube, REIA, newsletter…'},{key:'why',label:'Why Better Real Estate?',type:'textarea',placeholder:'How would you promote the platform responsibly?'}],'Submit application',async v=>{await api('POST','/api/affiliate/apply',v);toast('Affiliate application submitted','ok');render();})},'Request affiliate access')]);wrap.appendChild(card);return wrap;}
  const a=d.application;wrap.appendChild(el('div',{class:'affiliate-status '+a.status},[el('div',{},[el('small',{},'APPLICATION STATUS'),el('b',{},a.status.charAt(0).toUpperCase()+a.status.slice(1))]),a.status==='approved'?el('span',{},'Admin approved'):el('span',{},a.status==='pending'?'Waiting for admin review':'Contact support if you have questions') ]));if(a.status!=='approved')return wrap;
  if(!a.termsAcceptedAt||a.termsVersion!==d.terms.version||Number(a.rateBps)!==Number(d.terms.rateBps)){wrap.appendChild(el('section',{class:'terms-card'},[el('div',{class:'eyebrow'},'ACTION REQUIRED'),el('h3',{},'Review your affiliate terms'),el('p',{},d.terms.summary),el('div',{class:'affiliate-terms-list'},['Commission is paid once per qualifying referred customer, on their first eligible paid membership transaction.','Renewals, later billing cycles, cancellations and later resubscriptions, upgrades and downgrades do not create another commission.','Commissions remain pending for 3 days before becoming available.','Refunds, disputes, chargebacks, fraud or ineligible transactions may reverse the related commission.','Self-referrals, duplicate or fake accounts, tracking manipulation and other artificial commission activity are prohibited.','Cash affiliate earnings are separate from Better Credits. Better Credits cannot be withdrawn.','Payouts require secure Stripe Connect onboarding. Better Real Estate never stores full bank or debit-card credentials.','Affiliates must make required affiliate disclosures and are responsible for applicable taxes and lawful promotion.','Future material commission changes require affirmative in-platform acceptance before they apply to future earnings; legitimately earned commissions are not silently rewritten.'].map(x=>el('div',{class:'affiliate-term-item'},[el('span',{class:'affiliate-term-check'},'✓'),el('span',{},x)]))),el('div',{class:'terms-line'},[el('b',{},d.terms.ratePct+'% one-time commission'),el('span',{},d.terms.holdDays+'-day hold · renewals do not earn another commission')]),el('button',{class:'btn-primary',onclick:async()=>{await api('POST','/api/affiliate/accept-terms',{version:d.terms.version});toast('Affiliate terms accepted','ok');render();}},'Agree & activate affiliate link') ]));return wrap;}
@@ -4142,7 +4141,7 @@ async function renderCommandCenter(){
  const actions=el('div',{class:'command-actions'});[['Deal pipeline','pipeline'],['Deal calendar','dealcalendar'],['Saved searches','savedsearches'],['Market Hubs','markethubs'],['Buyer CRM','buyercrm'],['Liked properties','saved']].forEach(([t,v])=>actions.appendChild(el('button',{onclick:()=>go(v)},t)));wrap.appendChild(actions);
  if(d.upcoming)wrap.appendChild(el('div',{class:'attention-card'},[el('span',{class:'eyebrow'},'NEXT UP'),el('b',{},d.upcoming.title),el('span',{},new Date(d.upcoming.at).toLocaleString())]));
  if(d.recentViewed?.length){wrap.appendChild(el('div',{class:'sectiontitle'},'Recently viewed'));const rv=el('div',{class:'recent-strip'});d.recentViewed.forEach(x=>rv.appendChild(el('button',{class:'recent-card',onclick:()=>go('detail',{detailId:x.id})},[x.photo?el('img',{src:x.photo}):el('div',{class:'recent-placeholder'},'BRE'),el('div',{},[el('b',{},x.address),el('span',{},x.city+' · '+money(x.asking))])])));wrap.appendChild(rv);}
- try{const n=await api('GET','/api/notifications');if(n.notifications.length){wrap.appendChild(el('div',{class:'sectiontitle'},`Property updates${n.unread?' · '+n.unread+' new':''}`));const box=el('div',{class:'notification-list'});n.notifications.slice(0,8).forEach(x=>box.appendChild(el('button',{class:'notification-row',onclick:()=>go('detail',{detailId:x.listingId})},[el('b',{},x.title),el('span',{},x.body),el('small',{},new Date(x.at).toLocaleString())])));wrap.appendChild(box);if(n.unread)api('POST','/api/notifications/read').catch(()=>{});}}catch{}
+ try{const n=await api('GET','/api/notifications');if(n.notifications.length){wrap.appendChild(el('div',{class:'sectiontitle'},`Property updates${n.unread?' · '+n.unread+' new':''}`));const box=el('div',{class:'notification-list'});n.notifications.slice(0,8).forEach(x=>box.appendChild(el('button',{class:'notification-row',onclick:()=>go('detail',{detailId:x.listingId})},[el('b',{},x.title),el('span',{},x.body),el('small',{},new Date(x.at).toLocaleString())])));wrap.appendChild(box);if(n.unread)api('POST','/api/notifications/read').then(()=>refreshUnread().then(()=>{renderTop();renderTabs();})).catch(()=>{});}}catch{}
  return wrap;
 }
 async function renderUniversalSearch(){
@@ -4217,12 +4216,12 @@ async function renderAdmin() {
   demoCard.append(demoHead,demoGrid,el('div',{class:'demo-action-row'},[createDemo]),dStatus);wrap.appendChild(demoCard);
 
   const previewCard=el('div',{class:'card demo-preview-card'});
-  const previewHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'SAFE EXPERIENCE PREVIEW'),el('h3',{},'Preview the real user experience'),el('p',{class:'sub'},'Choose a demo account and an experience. Start Preview arms the real user flow, then Enter Demo lets you view it immediately without knowing the demo password.')]),el('span',{class:'demo-admin-badge'},'PREVIEW')]);
+  const previewHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'SAFE EXPERIENCE PREVIEW'),el('h3',{},'Preview the real user experience'),el('p',{class:'sub'},'Choose a demo account and an experience. Start Preview immediately enters that demo experience. You can return to Admin from the top navigation.')]),el('span',{class:'demo-admin-badge'},'PREVIEW')]);
   const previewGrid=el('div',{class:'demo-preview-form'}),pvUser=el('select',{'aria-label':'Demo account'}),pvType=el('select',{'aria-label':'Experience'}),pvPosition=el('input',{type:'number',min:'1',max:'100',value:'7','aria-label':'Simulated Founder position'}),pvRun=el('button',{class:'btn-primary'},'Start Preview'),pvClear=el('button',{class:'btn-ghost'},'Reset Preview'),pvEnter=el('button',{class:'btn-ghost'},'Enter Demo'),pvStatus=el('div',{class:'demo-preview-summary','aria-live':'polite'});
   pvType.append(el('option',{value:'founder'},'First 100 Founder welcome'),el('option',{value:'onboarding'},'New-user onboarding'),el('option',{value:'whatsnew'},'What’s New tutorial'));
   const updatePreviewControls=()=>{const has=!!pvUser.value;pvRun.disabled=pvClear.disabled=pvEnter.disabled=!has;const founder=pvType.value==='founder';pvPosition.closest?.('.demo-field')?.classList.toggle('is-hidden',!founder);pvPosition.style.display=founder?'block':'none';};
   pvType.onchange=updatePreviewControls;pvUser.onchange=()=>{pvStatus.innerHTML='';updatePreviewControls();};
-  pvRun.onclick=async()=>{if(!pvUser.value)return;pvRun.disabled=true;try{const r=await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:pvType.value,position:Number(pvPosition.value||7)});const label=pvType.options[pvType.selectedIndex]?.text||'Preview';pvStatus.innerHTML='';pvStatus.append(el('b',{},`Preview ready: ${label}${r.demoPreview?.position?` · Founder #${r.demoPreview.position}`:''}`),el('span',{},'Enter Demo to see the experience exactly as that user will see it. You can return to Admin from the top navigation.'));toast('Demo preview ready','ok');}catch(e){pvStatus.textContent=e.message;}finally{pvRun.disabled=false;updatePreviewControls();}};
+  pvRun.onclick=async()=>{if(!pvUser.value)return;await withButtonBusy(pvRun,async()=>{try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:pvType.value,position:Number(pvPosition.value||7)});const entered=await api('POST',`/api/admin/demo-accounts/${pvUser.value}/enter`);state.user=entered.user;state.access=entered.access;state.demoAdminSession=true;state.launchTutorialAfterNav=false;state.launchProductUpdateTutorial=false;go('feed',{}, {replace:true});}catch(e){pvStatus.textContent=e.message;pvStatus.className='demo-feedback error';}});};
   pvClear.onclick=async()=>{if(!pvUser.value)return;try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:'none'});pvStatus.innerHTML='';pvStatus.append(el('b',{},'Preview reset'),el('span',{},'The selected demo account is back to its normal demo state.'));toast('Demo preview reset','ok');}catch(e){pvStatus.textContent=e.message;}};
   pvEnter.onclick=async()=>{if(!pvUser.value)return;if(!confirm('Enter this demo account now? You can return to Admin using the “Return to Admin” button in the top navigation.'))return;try{const r=await api('POST',`/api/admin/demo-accounts/${pvUser.value}/enter`);state.user=r.user;state.access=r.access;state.demoAdminSession=true;state.launchTutorialAfterNav=false;state.launchProductUpdateTutorial=false;go('feed',{}, {replace:true});}catch(e){toast(e.message,'err');}};
   previewGrid.append(field('Demo account',pvUser,'Only controlled Demo accounts appear here.'),field('Experience',pvType),field('Founder position',pvPosition,'Used only for the Founder welcome.'));
@@ -5058,8 +5057,8 @@ async function renderReports() {
       ]),
       el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;align-items:center' }, [
         noteInput,
-        el('button', { onclick: async () => { await api('POST', `/api/admin/reports/${r.id}/resolve`, { status: 'resolved', note: noteInput.value }); toast('Marked resolved', 'ok'); render(); } }, 'Resolve'),
-        el('button', { onclick: async () => { await api('POST', `/api/admin/reports/${r.id}/resolve`, { status: 'dismissed', note: noteInput.value }); toast('Dismissed', 'ok'); render(); } }, 'Dismiss')
+        el('button', { onclick: async () => { await api('POST', `/api/admin/reports/${r.id}/resolve`, { status: 'resolved', note: noteInput.value }); await refreshUnread(); toast('Marked resolved', 'ok'); renderTop();renderTabs();render(); } }, 'Resolve'),
+        el('button', { onclick: async () => { await api('POST', `/api/admin/reports/${r.id}/resolve`, { status: 'dismissed', note: noteInput.value }); await refreshUnread(); toast('Dismissed', 'ok'); renderTop();renderTabs();render(); } }, 'Dismiss')
       ])
     ]));
   });

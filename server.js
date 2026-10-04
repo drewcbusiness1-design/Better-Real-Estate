@@ -154,10 +154,8 @@ async function requireAuth(req, res, next) {
   let changed = ensureUsername(db, user);
   if (ensureFirst100FounderProgram(db)) changed = true;
   if (syncOneCompanyMember(db, user)) changed = true;
-  const nowMs = Date.now();
-  if (!user.lastActiveAt || nowMs - new Date(user.lastActiveAt).getTime() > 90_000) {
-    user.lastActiveAt = new Date(nowMs).toISOString(); changed = true;
-  }
+  // Activity timestamps are owned by the heartbeat endpoint. Updating them in
+  // every authenticated request caused unrelated page loads to become writes.
   if (changed) await saveDB(db);
   req.user = user; req.db = db; next();
 }
@@ -369,31 +367,60 @@ function demoPlanAccess(user) {
 function ensureFirst100FounderProgram(db) {
   db.founderAwards = db.founderAwards || [];
   const awards = db.founderAwards;
-  const existingUsers = new Set(awards.map(a => a.userId));
+  const usersById = new Map((db.users || []).map(u => [u.id, u]));
+  const now = new Date();
   let changed = false;
-  const ordered = (db.users || []).filter(founderProgramEligible).slice().sort((a,b) => {
+
+  // Preserve a tombstone for deleted Founder accounts so their spot returns to
+  // the pool but the same identity cannot delete/re-register to claim it again.
+  for (const award of awards) {
+    if (award.voidedAt) continue;
+    if (!usersById.has(award.userId)) {
+      award.voidedAt = now.toISOString();
+      award.voidReason = award.voidReason || 'account-deleted';
+      award.voidedEmailLower = String(award.userEmail || '').trim().toLowerCase() || null;
+      award.formerUserId = award.formerUserId || award.userId;
+      changed = true;
+    }
+  }
+  const blockedEmails = new Set(awards.filter(a => a.voidedAt).map(a => String(a.voidedEmailLower || a.userEmail || '').trim().toLowerCase()).filter(Boolean));
+  const activeAwards = awards.filter(a => !a.voidedAt && usersById.has(a.userId));
+  const awardedIds = new Set(activeAwards.map(a => a.userId));
+  const ordered = (db.users || []).filter(u => founderProgramEligible(u) && !blockedEmails.has(String(u.email || '').trim().toLowerCase())).slice().sort((a,b) => {
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : Number.MAX_SAFE_INTEGER, tb = b.createdAt ? new Date(b.createdAt).getTime() : Number.MAX_SAFE_INTEGER;
     return ta - tb || String(a.id).localeCompare(String(b.id));
   });
-  let nextPosition = Math.max(0, ...awards.map(a => Number(a.position || 0))) + 1;
+
+  // Fill any spots returned by deleted/spam accounts using original qualifying
+  // signup order. Deleted accounts do not consume one of the current 100 spots.
   for (const user of ordered) {
-    if (awards.length >= FOUNDER_PROGRAM_LIMIT) break;
-    if (existingUsers.has(user.id)) continue;
-    const now = new Date();
-    const position = nextPosition++;
+    if (activeAwards.length >= FOUNDER_PROGRAM_LIMIT) break;
+    if (awardedIds.has(user.id)) continue;
     const until = new Date(now.getTime() + FOUNDER_PLATINUM_DAYS * 86400000);
-    awards.push({
-      id: `founder100-${position}`, position, userId: user.id, userName: user.name, userEmail: user.email,
+    const award = {
+      id: `founder100-${crypto.randomUUID()}`, position: 0, userId: user.id, userName: user.name, userEmail: user.email,
       signupAt: user.createdAt || null, awardedAt: now.toISOString(), platinumStartsAt: now.toISOString(), platinumUntil: until.toISOString()
-    });
-    existingUsers.add(user.id);
+    };
+    awards.push(award); activeAwards.push(award); awardedIds.add(user.id);
     if (!user.foundingMember) { user.foundingMember = true; user.foundingMemberAt = now.toISOString(); user.foundingMemberSource = 'first100'; }
-    user.founderLaunchPosition = position;
     user.founderPlatinumStartedAt = now.toISOString();
     user.founderPlatinumUntil = until.toISOString();
     user.founderLaunchNoticeSeenAt = null;
     changed = true;
   }
+
+  // Compact the live ranks as if deleted Founder accounts had never occupied a
+  // position. Signup/award order remains deterministic and surviving users move
+  // down automatically (e.g. #18 -> #16 after two earlier deletions).
+  activeAwards.sort((a,b) => {
+    const ta = new Date(a.signupAt || a.awardedAt || 0).getTime(), tb = new Date(b.signupAt || b.awardedAt || 0).getTime();
+    return ta - tb || String(a.userId).localeCompare(String(b.userId));
+  });
+  activeAwards.forEach((award, i) => {
+    const position = i + 1, user = usersById.get(award.userId);
+    if (Number(award.position || 0) !== position) { award.position = position; changed = true; }
+    if (user && Number(user.founderLaunchPosition || 0) !== position) { user.founderLaunchPosition = position; changed = true; }
+  });
   return changed;
 }
 
@@ -2337,17 +2364,29 @@ const cleanStates = xs => [...new Set((Array.isArray(xs)?xs:[]).map(x=>String(x|
 function listingState(l){ const m=String(l?.city||'').toUpperCase().match(/,\s*([A-Z]{2})(?:\s|$)/); return m?m[1]:''; }
 const activityWindowMs = { '24h':86400000, '7d':7*86400000, '30d':30*86400000 };
 function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,roles:Array.isArray(u.roles)?u.roles:[u.role].filter(Boolean),plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
+function notificationSummaryFor(db,user){
+  const messages=(db.messages||[]).filter(m=>m.toUserId===user.id&&!m.read).length;
+  const network=(db.friendRequests||[]).filter(r=>r.status==='pending'&&r.toUserId===user.id).length;
+  const savedsearches=(db.dealNotifications||[]).filter(n=>n.userId===user.id&&!n.read).length;
+  const admin=isAdminUser(user);
+  const affiliate=admin?(db.affiliateApplications||[]).filter(a=>a.status==='pending').length:0;
+  const reports=admin?(db.reports||[]).filter(r=>r.status==='open').length:0;
+  const destinations={messages,network,savedsearches,affiliate,reports};
+  const profile=Object.values(destinations).reduce((n,x)=>n+Number(x||0),0);
+  return {total:profile,profile,destinations};
+}
 app.post('/api/activity/heartbeat', requireAuth, async (req,res)=>{
-  const now=new Date();
-  if(isDemoUser(req.user)){ return res.json({ok:true,at:req.user.lastActiveAt||now.toISOString(),demo:true}); }
+  const now=new Date(), nowIso=now.toISOString();
+  if(isDemoUser(req.user)){ return res.json({ok:true,at:req.user.lastActiveAt||nowIso,demo:true,notifications:notificationSummaryFor(req.db,req.user)}); }
   req.db.activityEvents=req.db.activityEvents||[];
-  const last=[...req.db.activityEvents].reverse().find(x=>x.userId===req.user.id);
   let changed=false;
-  if(!last||now-new Date(last.at)>15*60_000){req.db.activityEvents.push({id:crypto.randomUUID(),userId:req.user.id,at:now.toISOString()});changed=true;}
+  if(!req.user.lastActiveAt || now-new Date(req.user.lastActiveAt)>90_000){req.user.lastActiveAt=nowIso;changed=true;}
+  const last=[...req.db.activityEvents].reverse().find(x=>x.userId===req.user.id);
+  if(!last||now-new Date(last.at)>15*60_000){req.db.activityEvents.push({id:crypto.randomUUID(),userId:req.user.id,at:nowIso});changed=true;}
   const cutoff=Date.now()-180*86400000;
   if(req.db.activityEvents.length>50000){req.db.activityEvents=req.db.activityEvents.filter(x=>new Date(x.at).getTime()>=cutoff);changed=true;}
   if(changed) await saveDB(req.db);
-  res.json({ok:true,at:req.user.lastActiveAt||now.toISOString()});
+  res.json({ok:true,at:req.user.lastActiveAt||nowIso,notifications:notificationSummaryFor(req.db,req.user)});
 });
 app.get('/api/notifications', requireAuth, async (req,res)=>{const rows=(req.db.dealNotifications||[]).filter(n=>n.userId===req.user.id).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,60);res.json({notifications:rows,unread:rows.filter(n=>!n.read).length});});
 app.post('/api/notifications/read', requireAuth, async (req,res)=>{for(const n of (req.db.dealNotifications||[]))if(n.userId===req.user.id)n.read=true;await saveDB(req.db);res.json({ok:true});});
@@ -2365,7 +2404,7 @@ app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
   const marketCounts={}; for(const u of activeUsers) for(const m of (u.markets||[])) marketCounts[m]=(marketCounts[m]||0)+1;
   res.json({preset,start:new Date(start).toISOString(),end:new Date(end).toISOString(),activeNow,activeUsers,metrics:{activeNow:activeNow.length,uniqueActive:activeUsers.length,returning:activeUsers.filter(u=>new Date(u.createdAt||0).getTime()<start).length,signups:signups.length,profilesCompleted:req.db.users.filter(u=>!isDemoUser(u)&&(u.bio||u.avatarUrl||(u.investmentMarkets||[]).length)).length,engaged:req.db.users.filter(u=>!isDemoUser(u)&&(req.db.listings.some(l=>l.ownerId===u.id)||req.db.messages.some(m=>m.fromUserId===u.id)||req.db.saves.some(x=>x.userId===u.id))).length,paid:req.db.users.filter(u=>!isDemoUser(u)&&(isPro(u)||isPlatinum(u)||isWholesale(u))).length,listings:listings.length,messages:messages.length,dealBuilderRuns:analyses.length},plans:req.db.users.filter(u=>!isDemoUser(u)).reduce((o,u)=>{const p=actualPlanLabel(u);o[p]=(o[p]||0)+1;return o;},{}),markets:Object.entries(marketCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([state,count])=>({state,count}))});
 });
-app.get('/api/admin/user-inspector', requireAuth, requireAdmin, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(); const awards=req.db.founderAwards||[]; const users=req.db.users.filter(u=>!q||[u.name,u.email,u.username].some(v=>String(v||'').toLowerCase().includes(q))).slice(0,40).map(u=>{ const award=awards.find(a=>a.userId===u.id)||null; return {...safeActivityUser(u),listings:req.db.listings.filter(l=>l.ownerId===u.id).length,saves:req.db.saves.filter(s=>s.userId===u.id).length,messages:req.db.messages.filter(m=>m.fromUserId===u.id||m.toUserId===u.id).length,paidPlan:u.plan||'free',paidPlanUntil:u.planUntil||null,grant:membershipGrantSummary(u),access:accessFor(u),founderAward:award}; }); res.json({users}); });
+app.get('/api/admin/user-inspector', requireAuth, requireAdmin, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(); const awards=req.db.founderAwards||[]; const users=req.db.users.filter(u=>!q||[u.name,u.email,u.username].some(v=>String(v||'').toLowerCase().includes(q))).slice().sort((a,b)=>{const ta=new Date(a.createdAt||0).getTime(),tb=new Date(b.createdAt||0).getTime();return tb-ta||String(b.id).localeCompare(String(a.id));}).slice(0,40).map(u=>{ const award=awards.find(a=>a.userId===u.id&&!a.voidedAt)||null; return {...safeActivityUser(u),listings:req.db.listings.filter(l=>l.ownerId===u.id).length,saves:req.db.saves.filter(s=>s.userId===u.id).length,messages:req.db.messages.filter(m=>m.fromUserId===u.id||m.toUserId===u.id).length,paidPlan:u.plan||'free',paidPlanUntil:u.planUntil||null,grant:membershipGrantSummary(u),access:accessFor(u),founderAward:award}; }); res.json({users}); });
 app.patch('/api/me/markets', requireAuth, async (req,res)=>{ req.user.investmentMarkets=cleanStates(req.body?.states); await saveDB(req.db); res.json({states:req.user.investmentMarkets}); });
 app.post('/api/feed/feedback', requireAuth, async (req,res)=>{ const listingId=String(req.body?.listingId||''),kind=['hide','less'].includes(req.body?.kind)?req.body.kind:null; if(!listingId||!kind)return res.status(400).json({error:'Choose valid feedback.'}); req.db.feedFeedback=req.db.feedFeedback||[]; req.db.feedFeedback=req.db.feedFeedback.filter(f=>!(f.userId===req.user.id&&f.listingId===listingId)); req.db.feedFeedback.push({id:crypto.randomUUID(),userId:req.user.id,listingId,kind,at:new Date().toISOString()}); await saveDB(req.db); res.json({ok:true}); });
 app.patch('/api/saves/:listingId/notifications', requireAuth, async (req,res)=>{ const row=req.db.saves.find(s=>s.userId===req.user.id&&s.listingId===req.params.listingId); if(!row)return res.status(404).json({error:'Save the property first.'}); row.notifyChanges=req.body?.enabled!==false; await saveDB(req.db); res.json({enabled:row.notifyChanges}); });
@@ -3371,6 +3410,8 @@ app.get('/api/messages/unread-count', requireAuth, async (req, res) => {
   res.json({ unreadCount: req.db.messages.filter(m => m.toUserId === req.user.id && !m.read).length });
 });
 
+app.get('/api/notification-summary', requireAuth, async (req,res)=>{res.json(notificationSummaryFor(req.db,req.user));});
+
 // Backward-compatible flat inbox for older clients.
 app.get('/api/messages', requireAuth, async (req, res) => {
   const mine = req.db.messages.filter(m => m.toUserId === req.user.id || m.fromUserId === req.user.id).map(m => {
@@ -3437,7 +3478,7 @@ app.get('/api/admin/memberships', requireAuth, requireAdmin, async (req, res) =>
       createdAt: u.createdAt || null,
       verified: !!u.verified,
       verificationPending: !!u.verificationPending,
-      founderAward: (req.db.founderAwards || []).find(a => a.userId === u.id) || null
+      founderAward: (req.db.founderAwards || []).find(a => a.userId === u.id && !a.voidedAt) || null
     }));
   const history = (req.db.membershipGrants || [])
     .slice()
@@ -3449,7 +3490,7 @@ app.get('/api/admin/memberships', requireAuth, requireAdmin, async (req, res) =>
       return { ...g, userName: u?.name || 'Deleted account', userEmail: u?.email || null, grantedByName: admin?.name || (g.grantedBy ? 'Admin' : null) };
     });
   const monthly = leaderboardRows(req.db, 'month');
-  const founderAwards = (req.db.founderAwards || []).slice().sort((a,b)=>Number(a.position||0)-Number(b.position||0));
+  const founderAwards = (req.db.founderAwards || []).filter(a=>!a.voidedAt&&req.db.users.some(u=>u.id===a.userId)).slice().sort((a,b)=>Number(a.position||0)-Number(b.position||0));
   res.json({ users, history, monthlyLeader: monthly[0] || null, founderProgram:{limit:FOUNDER_PROGRAM_LIMIT,claimed:founderAwards.length,remaining:Math.max(0,FOUNDER_PROGRAM_LIMIT-founderAwards.length),awards:founderAwards} });
 });
 
@@ -3584,6 +3625,8 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req,res)=>{
   const activeOrder=(req.db.orders||[]).find(o=>(o.buyerId===target.id||o.sellerId===target.id)&&!['shipped','delivered','cancelled','refunded'].includes(String(o.shipStatus||o.status||'').toLowerCase()));
   if(activeOrder)return res.status(409).json({error:'This account has an active marketplace order and cannot be deleted yet.'});
   const id=target.id;
+  const founderAward=(req.db.founderAwards||[]).find(a=>a.userId===id&&!a.voidedAt);
+  if(founderAward){founderAward.voidedAt=new Date().toISOString();founderAward.voidReason='admin-account-deletion';founderAward.voidedEmailLower=String(target.email||founderAward.userEmail||'').trim().toLowerCase()||null;founderAward.formerUserId=id;}
   const ownedListingIds=new Set((req.db.listings||[]).filter(l=>l.ownerId===id).map(l=>l.id));
   const touches=(x)=>x&&[x.userId,x.fromUserId,x.toUserId,x.ownerId,x.buyerId,x.sellerId,x.referrerId,x.affiliateUserId,x.followerId,x.followingId,x.byUserId,x.aboutUserId,x.grantedBy,x.invitedBy].includes(id);
   for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','promotions','alerts','tokens','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms','membershipGrants','reviews']){
@@ -3595,6 +3638,7 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req,res)=>{
   req.db.companyInvites=(req.db.companyInvites||[]).filter(x=>x.invitedBy!==id&&String(x.email||'').toLowerCase()!==String(target.email||'').toLowerCase());
   for(const o of (req.db.offers||[])){if(o.buyerId===id){o.buyerId='deleted:admin';o.buyerName='Deleted account';}if(o.sellerId===id)o.sellerId='deleted:admin';}
   req.db.users=req.db.users.filter(u=>u.id!==id);
+  ensureFirst100FounderProgram(req.db);
   await saveDB(req.db);
   res.json({ok:true});
 });

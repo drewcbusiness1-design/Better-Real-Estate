@@ -1216,3 +1216,19 @@ button{transition:transform .12s ease,opacity .15s ease,background-color .18s ea
 .page>.card+ .sectiontitle,.page>.dsection+ .sectiontitle{margin-top:30px}.card>label+input,.card>label+textarea,.card>label+select{margin-top:6px}
 @media(max-width:620px){.property-share-bar{align-items:stretch}.property-share-bar>div{flex-basis:100%}.property-share-bar button{flex:1}.property-share-card{padding:17px;border-radius:17px}.property-share-actions{display:grid;grid-template-columns:1fr 1fr}.property-share-actions .btn-primary{grid-column:1/-1}.property-share-actions button{width:100%}}
 .settings-inline-loading{padding:15px 16px;color:var(--ink-soft);font-size:12.5px}.settings-async-card{min-height:48px}
+
+/* =====================================================================
+   v29.25 — performance feedback + notification hierarchy polish
+   ===================================================================== */
+.route-loading{min-height:42vh;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--ink-soft);font-size:13px}
+.loading-wheel{width:18px;height:18px;border:2px solid color-mix(in srgb,var(--ink-soft) 32%,transparent);border-top-color:var(--accent);border-radius:50%;animation:bre-action-spin .72s linear infinite;flex:0 0 auto}
+#tabbar .ic{position:relative}
+.tab-msgbadge{top:-7px!important;right:-10px!important;border-color:var(--surface)!important;z-index:2}
+.profile-tool-tail{display:inline-flex;align-items:center;justify-content:flex-end;gap:2px;min-width:34px;position:relative}
+.profile-row-badge{position:relative!important;inset:auto!important;margin-right:-1px;border-color:var(--card)!important;flex:0 0 auto}
+.profile-tool-tail>b{font-size:16px;line-height:1}
+.profile-action-equal{min-width:158px;min-height:42px;display:inline-flex;align-items:center;justify-content:center;margin-top:12px!important;padding:8px 13px!important}
+.lockoverlay>a{margin-bottom:10px;display:inline-block}
+@media(max-width:560px){.profile-action-equal{flex:1 1 158px}}
+.networkloading,.settings-inline-loading{display:flex;align-items:center;justify-content:center;gap:9px}
+.networkloading::before,.settings-inline-loading::before{content:'';width:15px;height:15px;border:2px solid color-mix(in srgb,var(--ink-soft) 28%,transparent);border-top-color:var(--accent);border-radius:50%;animation:bre-action-spin .72s linear infinite;flex:0 0 auto}
