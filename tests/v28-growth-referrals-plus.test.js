@@ -1,6 +1,6 @@
 const assert=require('assert');const fs=require('fs');
 const server=fs.readFileSync('server.js','utf8'),client=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),store=fs.readFileSync('store.js','utf8'),social=fs.readFileSync('social.js','utf8'),pkg=require('../package.json'),lock=require('../package-lock.json');
-assert.equal(pkg.version,'2.9.22');assert.equal(lock.version,'2.9.22');
+assert.equal(pkg.version,'2.9.23');assert.equal(lock.version,'2.9.23');
 assert.ok(server.includes("label: 'Better Plus'"),'$30 plan must display as Better Plus');
 assert.ok(server.includes("plusToolAllowance(req.user, 'listingAi', 2)"),'Plus AI listing quota missing');
 assert.ok(server.includes("plusToolAllowance(req.user, 'dispoAi', 3)"),'Plus Better Dispo quota missing');

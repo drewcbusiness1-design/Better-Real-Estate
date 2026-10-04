@@ -391,8 +391,12 @@ async function renderApp() {
     const rendered = await (views[requestedView] || renderHome)();
     // Ignore stale async renders if the user navigated elsewhere while data was loading.
     if (state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId)) return;
+    const preserveDetailScroll = requestedView === 'detail' ? window.scrollY : null;
     app.replaceChildren(rendered);
-    if (requestedView === 'detail') state.detailPreview = null;
+    if (requestedView === 'detail') {
+      state.detailPreview = null;
+      if (preserveDetailScroll !== null && preserveDetailScroll > 0) requestAnimationFrame(() => window.scrollTo({ top: preserveDetailScroll, behavior: 'auto' }));
+    }
     if(state.user && requestedView==='feed') setTimeout(maybeShowFirstLoginPayoff,80);
   }
   catch (e) {
@@ -938,7 +942,12 @@ async function renderDetail() {
     const th = el('div', { class: 'thumbs' });
     listing.photos.forEach((p, i) => {
       const t = el('img', { src: p, class: i === state.photoIdx ? 'on' : '' });
-      t.onclick = () => { state.photoIdx = i; render(); };
+      t.onclick = () => {
+        state.photoIdx = i;
+        main.replaceChildren(el('img', { src: p }));
+        th.querySelectorAll('img').forEach((img, idx) => img.classList.toggle('on', idx === i));
+        writeRoute('replace');
+      };
       th.appendChild(t);
     });
     gal.appendChild(th);
@@ -1087,16 +1096,20 @@ async function renderDetail() {
           slots.forEach(slot => {
             const when = new Date(slot.at).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
             const actions=[];
-            if (sh.canManage) actions.push(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{if(!confirm('Remove this showing time?'))return;await api('DELETE',`/api/listings/${listing.id}/showings/${slot.id}`);render();}},'Remove'));
-            else if (!slot.booked) actions.push(el('button',{class:'btn-primary compactbtn',onclick:async()=>{try{await api('POST',`/api/listings/${listing.id}/showings/${slot.id}/book`);toast('Showing reserved','ok');render();}catch(e){toast(e.message,'err')}}},'Reserve'));
+            if (sh.canManage) actions.push(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{if(!confirm('Remove this showing time?'))return;try{await api('DELETE',`/api/listings/${listing.id}/showings/${slot.id}`);const fresh=await api('GET',`/api/listings/${listing.id}/showings`);drawSlots((fresh.slots||[]).filter(x=>new Date(x.at)>new Date()));toast('Showing window removed','ok');}catch(e){toast(e.message,'err')}}},'Remove'));
+            else if (!slot.booked) actions.push(el('button',{class:'btn-primary compactbtn',onclick:async()=>{try{await api('POST',`/api/listings/${listing.id}/showings/${slot.id}/book`);const fresh=await api('GET',`/api/listings/${listing.id}/showings`);drawSlots((fresh.slots||[]).filter(x=>new Date(x.at)>new Date()));toast('Showing reserved','ok');}catch(e){toast(e.message,'err')}}},'Reserve'));
             list.appendChild(el('div',{class:'showingrow'},[el('div',{class:'grow'},[el('b',{},when),slot.note?el('div',{class:'hint'},slot.note):null,slot.booked?el('div',{class:'hint'},sh.canManage ? `Reserved${slot.bookedName ? ' by '+slot.bookedName : ''}` : 'Reserved'):null]),...actions]));
           });
         };
         drawSlots(future); sec.appendChild(list);
         if (sh.canManage) {
-          const dt=el('input',{type:'datetime-local'}), note=el('input',{placeholder:'Access note (optional)'}), add=el('button',{class:'btn-primary'},'Add showing window');
-          add.onclick=async()=>{try{if(!dt.value)throw new Error('Choose a date and time.');await api('POST','/api/listings/'+listing.id+'/showings',{at:new Date(dt.value).toISOString(),note:note.value});toast('Showing window added','ok');render();}catch(e){toast(e.message,'err')}};
-          sec.appendChild(el('div',{class:'showingadd'},[dt,note,add]));
+          const toggle=el('button',{class:'btn-ghost compactbtn showing-toggle'},'+ Add access window');
+          const dt=el('input',{type:'datetime-local'}), note=el('input',{placeholder:'Access note (optional)'}), add=el('button',{class:'btn-primary'},'Add window');
+          const form=el('div',{class:'showingadd is-collapsed'},[dt,note,add]);
+          toggle.onclick=()=>{const open=form.classList.toggle('is-open');form.classList.toggle('is-collapsed',!open);toggle.textContent=open?'Cancel':'+ Add access window';if(open)dt.focus();};
+          add.onclick=async()=>{try{if(!dt.value)throw new Error('Choose a date and time.');await withButtonBusy(add,async()=>{await api('POST','/api/listings/'+listing.id+'/showings',{at:new Date(dt.value).toISOString(),note:note.value});const fresh=await api('GET',`/api/listings/${listing.id}/showings`);drawSlots((fresh.slots||[]).filter(x=>new Date(x.at)>new Date()));dt.value='';note.value='';form.classList.remove('is-open');form.classList.add('is-collapsed');toggle.textContent='+ Add access window';toast('Showing window added','ok');});}catch(e){toast(e.message,'err')}};
+          sec.appendChild(el('div',{class:'showing-actions'},toggle));
+          sec.appendChild(form);
         }
         wrap.appendChild(sec);
       }
@@ -2756,7 +2769,7 @@ async function renderNetwork() {
       } catch (e) { host.innerHTML = ''; host.appendChild(el('div', { class: 'errmsg' }, e.message)); }
     };
     q.oninput = () => { clearTimeout(timer); timer = setTimeout(load, 220); };
-    await load();
+    load();
     return wrap;
   }
 
@@ -2822,7 +2835,7 @@ async function renderNetwork() {
   };
   q.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 260); };
   role.onchange = load;
-  await load();
+  load();
   return wrap;
 }
 
@@ -4190,6 +4203,7 @@ async function renderAdmin() {
       if(u.founderAward)details.push(`First 100 · #${u.founderAward.position}`);
       const actions=el('div',{class:'inspector-actions'});
       if(u.role!=='admin')actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:()=>openAdminAccessModal(u,loadInspector)},'Manage access'));
+      if(u.role!=='admin' && !u.demo)actions.appendChild(el('button',{class:'dangerbtn compactbtn',onclick:async()=>{const typed=prompt(`Permanently delete ${u.name} (${u.email})? This is intended for spam/abusive accounts. Type DELETE USER to confirm.`);if(typed!=='DELETE USER')return;try{await api('DELETE',`/api/admin/users/${u.id}`,{confirmation:'DELETE USER'});toast('Account permanently deleted','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Delete account'));
       if(u.demo){
         actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{try{const r=await api('POST',`/api/admin/demo-accounts/${u.id}/enter`);state.user=r.user;state.access=r.access;state.demoAdminSession=true;go('feed',{}, {replace:true});}catch(e){toast(e.message,'err')}}},'Enter demo'));
         actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:()=>openFormModal('Reset demo password',[{key:'password',label:'New demo password',type:'password',placeholder:'At least 6 characters'}],'Reset password',async v=>{await api('POST',`/api/admin/demo-accounts/${u.id}/password`,{password:v.password});toast('Demo password reset','ok');})},'Reset password'));
@@ -4297,7 +4311,7 @@ function pageFaq() {
     ['How does the marketplace fee work?', 'Listing an item is free. When it sells, Better Real Estate keeps 7% and the rest lands in your wallet. You can withdraw once your balance clears $20.'],
     ['Are listings verified?', 'Sellers can pay for verification, which puts a badge on their profile after an admin reviews them. That verifies the person, not the property. Nobody inspects the houses. Treat every listing as unverified information from a stranger until you have confirmed it yourself — pull the county record, check title, and walk the property.'],
     ['Can I sell appliances or electronics?', 'No. Users cannot list anything mains-powered or battery-powered — that means appliances, HVAC equipment, power tools, light fixtures, electrical parts and consumer electronics. Anything electrical needs a UL or ETL listing to be sold legally in the US, and there is no way to verify that on a private listing. Uncertified electrical goods are a genuine fire risk, not a paperwork technicality. Furniture, plumbing fixtures, cabinet and door hardware, flooring, doors, windows, countertops and hand tools are all welcome. Electrical goods sold through the Better Real Estate shop come from suppliers who have provided certification documents to us in writing.'],
-    ['How do I delete my account?', 'Email drewcbusiness1@gmail.com and it will be handled. Account self-deletion is on the build list.']
+    ['How do I delete my account?', 'You can permanently delete your own account from Settings. For security, Better asks for your password and a typed confirmation before deletion. Active marketplace obligations or a remaining seller-wallet balance may need to be resolved first.']
   ]);
 }
 

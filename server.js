@@ -3572,6 +3572,33 @@ app.post('/api/admin/demo-accounts/:id/password', requireAuth, requireAdmin, asy
   const password=String(req.body?.password||''); if(password.length<6)return res.status(400).json({error:'Demo password must be at least 6 characters.'});
   user.passwordHash=bcrypt.hashSync(password,10); user.demoPasswordResetAt=new Date().toISOString(); user.demoPasswordResetBy=req.user.id; await saveDB(req.db); res.json({ok:true});
 });
+app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req,res)=>{
+  const target=req.db.users.find(u=>u.id===req.params.id);
+  if(!target)return res.status(404).json({error:'Account not found.'});
+  if(target.role==='admin')return res.status(403).json({error:'Admin accounts cannot be deleted from User Inspector.'});
+  if(target.id===req.user.id)return res.status(403).json({error:'You cannot delete your own Admin account here.'});
+  if(isDemoUser(target))return res.status(400).json({error:'Use Delete demo for controlled demo accounts.'});
+  if(String(req.body?.confirmation||'').trim().toUpperCase()!=='DELETE USER')return res.status(400).json({error:'Type DELETE USER to confirm.'});
+  if(target.stripeSubscriptionId)return res.status(409).json({error:'This account has a subscription record. Resolve billing before deleting it.'});
+  if(balanceOf(req.db,target.id)>0)return res.status(409).json({error:'This account has a seller-wallet balance. Resolve it before deletion.'});
+  const activeOrder=(req.db.orders||[]).find(o=>(o.buyerId===target.id||o.sellerId===target.id)&&!['shipped','delivered','cancelled','refunded'].includes(String(o.shipStatus||o.status||'').toLowerCase()));
+  if(activeOrder)return res.status(409).json({error:'This account has an active marketplace order and cannot be deleted yet.'});
+  const id=target.id;
+  const ownedListingIds=new Set((req.db.listings||[]).filter(l=>l.ownerId===id).map(l=>l.id));
+  const touches=(x)=>x&&[x.userId,x.fromUserId,x.toUserId,x.ownerId,x.buyerId,x.sellerId,x.referrerId,x.affiliateUserId,x.followerId,x.followingId,x.byUserId,x.aboutUserId,x.grantedBy,x.invitedBy].includes(id);
+  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','promotions','alerts','tokens','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms','membershipGrants','reviews']){
+    req.db[c]=(req.db[c]||[]).filter(x=>!touches(x)&&!ownedListingIds.has(x.listingId));
+  }
+  req.db.views=(req.db.views||[]).filter(x=>x.userId!==id&&!ownedListingIds.has(x.listingId));
+  req.db.listings=(req.db.listings||[]).filter(x=>x.ownerId!==id);
+  req.db.shopItems=(req.db.shopItems||[]).filter(x=>x.sellerId!==id);
+  req.db.companyInvites=(req.db.companyInvites||[]).filter(x=>x.invitedBy!==id&&String(x.email||'').toLowerCase()!==String(target.email||'').toLowerCase());
+  for(const o of (req.db.offers||[])){if(o.buyerId===id){o.buyerId='deleted:admin';o.buyerName='Deleted account';}if(o.sellerId===id)o.sellerId='deleted:admin';}
+  req.db.users=req.db.users.filter(u=>u.id!==id);
+  await saveDB(req.db);
+  res.json({ok:true});
+});
+
 app.delete('/api/admin/demo-accounts/:id', requireAuth, requireAdmin, async (req,res)=>{
   const idx=req.db.users.findIndex(u=>u.id===req.params.id&&isDemoUser(u)); if(idx<0)return res.status(404).json({error:'Demo account not found.'});
   const user=req.db.users[idx]; if(String(req.body?.confirmation||'').trim().toUpperCase()!=='DELETE DEMO')return res.status(400).json({error:'Type DELETE DEMO to confirm.'});

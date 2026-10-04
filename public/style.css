@@ -1183,3 +1183,20 @@ button{transition:transform .12s ease,opacity .15s ease,background-color .18s ea
 .detail-preview .gallery,.detail-preview .dhead,.detail-preview .specs{animation:none}
 .detail-loading{margin:16px 0 28px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .detail-loading span{color:var(--ink-soft)}
+
+/* v29.23 detail stability + presentation polish */
+.dgrid{align-items:stretch}
+.dcell{min-height:88px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12px 10px}
+.dcell .l{margin:0 0 5px;line-height:1.2}
+.dcell .v{line-height:1.22;overflow-wrap:anywhere;text-align:center}
+.showingpanel{border:1px solid var(--line);border-radius:14px;padding:18px!important;background:var(--surface)!important}
+.showingpanel .sectioneyebrow{margin-bottom:5px}
+.showingpanel>h3{margin:0 0 4px}
+.showinglist{margin-top:10px}
+.showingpanel .showinglist>.hint{padding:10px 0;margin:0}
+.showing-actions{display:flex;justify-content:flex-start;margin-top:10px}
+.showing-toggle{margin:0!important}
+.showingadd{overflow:hidden;transition:max-height .18s ease,opacity .18s ease,margin .18s ease}
+.showingadd.is-collapsed{max-height:0;opacity:0;margin-top:0;pointer-events:none}
+.showingadd.is-open{max-height:160px;opacity:1;margin-top:10px}
+@media(max-width:760px){.dcell{min-height:78px}.showingpanel{padding:15px!important}.showingadd.is-open{max-height:280px}}

@@ -1,0 +1,18 @@
+const fs=require('fs'),assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8'), css=fs.readFileSync('public/style.css','utf8'), server=fs.readFileSync('server.js','utf8');
+assert(!app.includes("t.onclick = () => { state.photoIdx = i; render(); };"),'photo thumbnails must not full-render details');
+assert(app.includes("main.replaceChildren(el('img', { src: p }))"),'photo thumbnail swaps main image in place');
+assert(css.includes('.dcell{min-height:88px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center'),'property fact cards centered');
+assert(app.includes("'+ Add access window'"),'property access uses compact disclosure');
+assert(app.includes("drawSlots((fresh.slots||[]).filter"),'showing actions update locally');
+assert(!app.includes("Account self-deletion is on the build list"),'obsolete deletion FAQ removed');
+assert(app.includes('You can permanently delete your own account from Settings'),'FAQ reflects self-delete');
+assert(server.includes("app.delete('/api/admin/users/:id'"),'admin real-user delete endpoint exists');
+assert(server.includes("target.role==='admin'"),'admin deletion protected');
+assert(server.includes("balanceOf(req.db,target.id)>0"),'wallet safeguard exists');
+assert(app.includes("Type DELETE USER to confirm"),'admin UI requires typed destructive confirmation');
+const network=app.slice(app.indexOf('async function renderNetwork()'),app.indexOf('async function renderDemandInsights()'));
+assert(network.includes('load();\n    return wrap;'),'buyer network loads after shell renders');
+assert(network.includes('role.onchange = load;\n  load();\n  return wrap;'),'discover network loads after shell renders');
+assert(app.includes('preserveDetailScroll'),'detail hydration preserves scroll');
+console.log('v29.23 detail stability + network + admin deletion regression: PASS');
