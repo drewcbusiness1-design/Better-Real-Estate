@@ -765,7 +765,7 @@ function propertyCard(l) {
       l.momentum?.label ? el('div',{class:'deal-momentum '+(l.momentum.level||'quiet')},[el('span',{class:'momentum-dot'},''),el('b',{},l.momentum.label),el('span',{},l.momentum.detail||'')]) : null,
       el('div', { class: 'actions' }, [
         saveBtn,
-        el('button', { onclick: e => { e.stopPropagation(); shareNative({ kind: 'property', targetId: l.id, title: `${l.city} property on Better Real Estate`, text: `${money(l.asking)} · ${l.propertyType || 'Investment property'}` }); } }, 'Share'),
+        el('button', { onclick: e => { e.stopPropagation(); openPropertyShare(l); } }, 'Share'),
         el('button', { title:'Hide this property and improve recommendations', onclick: async e => { e.stopPropagation(); await api('POST','/api/feed/feedback',{listingId:l.id,kind:'hide'}); toast('Hidden from your feed','ok'); render(); } }, 'Not interested'),
         el('button', { class: 'primary', onclick: e => { e.stopPropagation(); openListingDetail(l, idx); } }, l.locked ? '🔒 Unlock' : 'View details')
       ])
@@ -810,6 +810,42 @@ async function shareNative({ kind = 'join', targetId = '', title = 'Better Real 
   await copyTextValue(url, 'Share link copied');
   trackShare(kind, targetId, 'copy');
   return true;
+}
+function propertyShareCaption(listing) {
+  const locationLabel = [listing.city, listing.state].filter(Boolean).join(', ') || listing.city || 'Investment property';
+  const lines = [`Investment Opportunity — ${locationLabel}`];
+  if (Number(listing.asking) > 0) lines.push(`Asking Price: ${money(listing.asking)}`);
+  if (Number(listing.arv) > 0) lines.push(`Estimated ARV: ${money(listing.arv)}`);
+  if (listing.rehab !== null && listing.rehab !== undefined && Number(listing.rehab) > 0) lines.push(`Estimated Repairs: ${money(listing.rehab)}`);
+  const specs = [listing.beds ? `${listing.beds} Beds` : '', listing.baths ? `${listing.baths} Baths` : '', listing.sqft ? `${Number(listing.sqft).toLocaleString()} Sq Ft` : ''].filter(Boolean);
+  if (specs.length) lines.push(specs.join(' | '));
+  if (listing.propertyType) lines.push(`Property Type: ${listing.propertyType}`);
+  if (listing.contractDeadline) lines.push(`Deal Deadline: ${listing.contractDeadline}`);
+  lines.push('', 'Looking to connect with buyers interested in this property. View the full deal, photos, property information, and connect directly through Better Real Estate.', '', shareUrl('property', listing.id));
+  return lines.join('\n');
+}
+function openPropertyShare(listing) {
+  const caption = propertyShareCaption(listing);
+  const url = shareUrl('property', listing.id);
+  const overlay = el('div', { class:'property-share-overlay', onclick:e=>{ if(e.target===overlay) overlay.remove(); } });
+  const text = el('textarea', { class:'property-share-copy', readonly:'readonly', rows:'12' }); text.value = caption;
+  const card = el('div', { class:'property-share-card', role:'dialog', 'aria-modal':'true', 'aria-label':'Share property' }, [
+    el('div',{class:'property-share-head'},[el('div',{},[el('div',{class:'eyebrow'},'READY TO POST'),el('h3',{},'Share this property'),el('p',{class:'hint'},'A professional post is prepared from this listing’s actual information. Edit it after pasting anywhere you share deals.')]),el('button',{class:'property-share-close','aria-label':'Close',onclick:()=>overlay.remove()},'×')]),
+    text
+  ]);
+  const actions=el('div',{class:'property-share-actions'});
+  actions.appendChild(el('button',{class:'btn-primary',onclick:async()=>{await copyTextValue(caption,'Property post copied');trackShare('property',listing.id,'caption-copy');}},'Copy ready-to-post caption'));
+  actions.appendChild(el('button',{class:'btn-ghost',onclick:async()=>{if(navigator.share){try{await navigator.share({title:`${locationLabelForShare(listing)} property on Better Real Estate`,text:caption,url});trackShare('property',listing.id,'native');return;}catch(e){if(e?.name==='AbortError')return;}}await copyTextValue(caption,'Property post copied');}},'Open share sheet'));
+  [['Facebook','facebook'],['LinkedIn','linkedin'],['X','x']].forEach(([label,ch])=>actions.appendChild(el('button',{class:'btn-ghost',onclick:async()=>{await copyTextValue(caption,'Post copied — paste it into '+label);socialShareWindow(ch,'property',listing.id,`${locationLabelForShare(listing)} property on Better Real Estate`,caption);}},label)));
+  card.appendChild(actions); card.appendChild(el('div',{class:'property-share-note'},'The direct link opens this exact property so interested people can view the deal and connect on Better Real Estate.'));
+  overlay.appendChild(card); document.body.appendChild(overlay); text.focus(); text.select();
+}
+function locationLabelForShare(listing) { return [listing.city, listing.state].filter(Boolean).join(', ') || listing.city || 'Investment'; }
+function propertyShareBar(listing) {
+  const bar=el('div',{class:'property-share-bar'},[el('div',{},[el('b',{},'Share this deal'),el('span',{},'Ready-to-post property copy and a direct listing link.')])]);
+  bar.appendChild(el('button',{class:'btn-primary',onclick:()=>openPropertyShare(listing)},'Prepare post'));
+  bar.appendChild(el('button',{class:'btn-ghost',onclick:async()=>{await copyTextValue(shareUrl('property',listing.id),'Property link copied');trackShare('property',listing.id,'copy');}},'Copy link'));
+  return bar;
 }
 function socialShareWindow(channel, kind, targetId, title, text = '') {
   const url = shareUrl(kind, targetId);
@@ -959,7 +995,7 @@ async function renderDetail() {
     el('div', {}, [el('h2', {}, listing.address), el('div', { class: 'c' }, listing.city), listing.freshness ? el('div', { class: 'freshnessline' }, [el('span', { class: 'freshnesspill' + (listing.freshness.needsConfirmation ? ' warn' : '') }, listing.freshness.needsConfirmation ? 'Needs seller confirmation' : `Confirmed ${listing.freshness.confirmedDaysAgo === 0 ? 'today' : listing.freshness.confirmedDaysAgo + 'd ago'}`), listing.contractDeadline ? el('span', {}, `Deadline ${listing.contractDeadline}`) : null]) : null]),
     el('div', { class: 'dprice' }, money(listing.asking))
   ]));
-  wrap.appendChild(shareStrip({ kind: 'property', targetId: listing.id, title: `${listing.city} property on Better Real Estate`, text: `${money(listing.asking)} · ${listing.propertyType || 'Investment property'}` }));
+  wrap.appendChild(propertyShareBar(listing));
   if (state.user && state.user.id === listing.ownerId) {
     const intelligenceSlot=el('div',{class:'buyer-match-slot'}); wrap.appendChild(intelligenceSlot);
     api('GET','/api/listings/'+encodeURIComponent(listing.id)+'/network-intelligence').then(ni=>{
@@ -3328,7 +3364,7 @@ async function renderBuyBox() {
   return wrap;
 }
 
-async function renderSettings() {
+function renderSettings() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Settings'));
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Profile'));
@@ -3476,15 +3512,18 @@ async function renderSettings() {
   [['deals','Deals'],['messages','Messages'],['offers','Offers'],['pipeline','Pipeline'],['referrals','Referrals'],['social','Social'],['savedSearches','Saved searches'],['marketing','Marketing']].forEach(([key,label])=>nbox.appendChild(toggleRow(label,'Control in-app and email attention for this category.',np[key]!==false,async on=>{np[key]=on;const r=await api('PATCH','/api/me/settings',{notificationPrefs:np});state.user.settings=r.settings;})));
   wrap.appendChild(nbox);
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Email preferences'));
-  const ep = await api('GET', '/api/email-preferences').catch(() => ({ marketingOptIn: false, marketingConfigured: false }));
-  const ebox = el('div', { class: 'card' });
-  ebox.appendChild(toggleRow('Product & activity emails', 'New listings, marketplace updates and occasional reminders. Never more than once every 48 hours. Transactional emails such as receipts and password resets are separate.', ep.marketingOptIn === true, async on => {
-    const r = await api('PATCH', '/api/email-preferences', { marketingOptIn: on });
-    ep.marketingOptIn = r.marketingOptIn;
-    toast(on ? 'Marketing emails turned on' : 'Marketing emails turned off', 'ok');
-  }));
-  ebox.appendChild(el('div', { class: 'hint', style: 'padding:0 16px 14px' }, 'You can also unsubscribe from the link in any marketing email.'));
-  wrap.appendChild(ebox);
+  const emailPrefsHost = el('div', { class:'card settings-async-card' }, el('div',{class:'settings-inline-loading'},'Loading email preference…'));
+  wrap.appendChild(emailPrefsHost);
+  api('GET', '/api/email-preferences').then(ep => {
+    if (!emailPrefsHost.isConnected || state.view !== 'settings') return;
+    emailPrefsHost.innerHTML = '';
+    emailPrefsHost.appendChild(toggleRow('Product & activity emails', 'New listings, marketplace updates and occasional reminders. Never more than once every 48 hours. Transactional emails such as receipts and password resets are separate.', ep.marketingOptIn === true, async on => {
+      const r = await api('PATCH', '/api/email-preferences', { marketingOptIn: on });
+      ep.marketingOptIn = r.marketingOptIn;
+      toast(on ? 'Marketing emails turned on' : 'Marketing emails turned off', 'ok');
+    }));
+    emailPrefsHost.appendChild(el('div', { class: 'hint', style: 'padding:0 16px 14px' }, 'You can also unsubscribe from the link in any marketing email.'));
+  }).catch(() => { if (emailPrefsHost.isConnected) emailPrefsHost.replaceChildren(el('div',{class:'hint',style:'padding:14px 16px'},'Email preferences are temporarily unavailable. The rest of Settings is ready to use.')); });
 
   wrap.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%;margin-top:20px', onclick: async () => {
     await api('POST', '/api/logout'); state.user = null; go('home');
@@ -4110,7 +4149,7 @@ async function renderUniversalSearch(){
  const wrap=el('div',{class:'page universal-search'});wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Search'),el('div',{class:'sub'},'Find properties and people. Filter deals, then save the criteria as an alert.')]),el('button',{class:'btn-ghost',onclick:()=>go('savedsearches')},'Saved searches')]));
  const q=el('input',{placeholder:'Address, city, property type, person…',value:state.searchQ||''}),st=el('select');st.appendChild(el('option',{value:''},'All states'));STATE_CODES.forEach(x=>st.appendChild(el('option',{value:x},x)));const max=el('input',{type:'number',placeholder:'Max price'}),type=el('select');['','Single Family','Multi Family','Condo','Townhouse','Land','Commercial'].forEach(x=>type.appendChild(el('option',{value:x},x||'All property types')));const goBtn=el('button',{class:'btn-primary'},'Search');
  wrap.appendChild(el('div',{class:'searchbar-pro'},[q,st,max,type,goBtn]));const host=el('div');wrap.appendChild(host);
- const load=async()=>{state.searchQ=q.value;host.innerHTML='<div class="networkloading">Searching…</div>';try{const r=await api('GET',`/api/search?q=${encodeURIComponent(q.value)}&state=${encodeURIComponent(st.value)}&maxPrice=${encodeURIComponent(max.value)}&type=${encodeURIComponent(type.value)}`);host.innerHTML='';host.appendChild(el('div',{class:'search-section-head'},[el('h3',{},`Properties · ${r.listings.length}`),el('button',{class:'btn-ghost',onclick:()=>openFormModal('Save this search',[{key:'name',label:'Alert name',value:'My deal alert',placeholder:'e.g. Philadelphia flips under $200k'}],'Save alert',async v=>{if(!v.name.trim())throw new Error('Name your alert.');await api('POST','/api/saved-searches',{name:v.name,query:q.value,states:st.value?[st.value]:[],propertyTypes:type.value?[type.value]:[],maxPrice:max.value,alerts:true});toast('Deal alert saved','ok');})},'Save search + alert')]));const grid=el('div',{class:'search-property-grid'});r.listings.forEach(l=>grid.appendChild(propertyCard(l)));if(!r.listings.length)grid.appendChild(el('div',{class:'empty'},[el('h3',{},'No exact match yet.'),el('p',{},'Broaden the search or save it as a Deal Alert so Better can keep watch.') ]));host.appendChild(grid);host.appendChild(el('h3',{class:'search-section-head'},`People · ${r.people.length}`));const people=el('div',{class:'peoplegrid'});r.people.forEach(u=>people.appendChild(personCard(u)));host.appendChild(people);if(r.companies?.length){host.appendChild(el('h3',{class:'search-section-head'},`Companies · ${r.companies.length}`));const cg=el('div',{class:'search-chip-grid'});r.companies.forEach(c=>cg.appendChild(el('button',{class:'search-entity-chip',onclick:()=>go('company',{companyId:c.id})},[el('b',{},c.name),el('span',{},(c.markets||[]).join(' · ')||'Company workspace')] )));host.appendChild(cg);}if(r.buyers?.length){host.appendChild(el('h3',{class:'search-section-head'},`Buyers · ${r.buyers.length}`));const bg=el('div',{class:'buyerdemandgrid'});r.buyers.forEach(x=>bg.appendChild(buyerDemandCard(x)));host.appendChild(bg);}if(r.markets?.length){host.appendChild(el('h3',{class:'search-section-head'},'Markets'));host.appendChild(el('div',{class:'search-chip-grid'},r.markets.map(m=>el('button',{class:'search-entity-chip',onclick:()=>{q.value=m;st.value=m;load();}},m))));}}catch(e){host.innerHTML='';host.appendChild(el('div',{class:'errmsg'},e.message));}};goBtn.onclick=load;q.onkeydown=e=>{if(e.key==='Enter')load();};await load();return wrap;
+ const load=async()=>{state.searchQ=q.value;host.innerHTML='<div class="networkloading">Searching…</div>';try{const r=await api('GET',`/api/search?q=${encodeURIComponent(q.value)}&state=${encodeURIComponent(st.value)}&maxPrice=${encodeURIComponent(max.value)}&type=${encodeURIComponent(type.value)}`);host.innerHTML='';host.appendChild(el('div',{class:'search-section-head'},[el('h3',{},`Properties · ${r.listings.length}`),el('button',{class:'btn-ghost',onclick:()=>openFormModal('Save this search',[{key:'name',label:'Alert name',value:'My deal alert',placeholder:'e.g. Philadelphia flips under $200k'}],'Save alert',async v=>{if(!v.name.trim())throw new Error('Name your alert.');await api('POST','/api/saved-searches',{name:v.name,query:q.value,states:st.value?[st.value]:[],propertyTypes:type.value?[type.value]:[],maxPrice:max.value,alerts:true});toast('Deal alert saved','ok');})},'Save search + alert')]));const grid=el('div',{class:'search-property-grid'});r.listings.forEach(l=>grid.appendChild(propertyCard(l)));if(!r.listings.length)grid.appendChild(el('div',{class:'empty'},[el('h3',{},'No exact match yet.'),el('p',{},'Broaden the search or save it as a Deal Alert so Better can keep watch.') ]));host.appendChild(grid);host.appendChild(el('h3',{class:'search-section-head'},`People · ${r.people.length}`));const people=el('div',{class:'peoplegrid'});r.people.forEach(u=>people.appendChild(personCard(u)));host.appendChild(people);if(r.companies?.length){host.appendChild(el('h3',{class:'search-section-head'},`Companies · ${r.companies.length}`));const cg=el('div',{class:'search-chip-grid'});r.companies.forEach(c=>cg.appendChild(el('button',{class:'search-entity-chip',onclick:()=>go('company',{companyId:c.id})},[el('b',{},c.name),el('span',{},(c.markets||[]).join(' · ')||'Company workspace')] )));host.appendChild(cg);}if(r.buyers?.length){host.appendChild(el('h3',{class:'search-section-head'},`Buyers · ${r.buyers.length}`));const bg=el('div',{class:'buyerdemandgrid'});r.buyers.forEach(x=>bg.appendChild(buyerDemandCard(x)));host.appendChild(bg);}if(r.markets?.length){host.appendChild(el('h3',{class:'search-section-head'},'Markets'));host.appendChild(el('div',{class:'search-chip-grid'},r.markets.map(m=>el('button',{class:'search-entity-chip',onclick:()=>{q.value=m;st.value=m;load();}},m))));}}catch(e){host.innerHTML='';host.appendChild(el('div',{class:'errmsg'},e.message));}};goBtn.onclick=load;q.onkeydown=e=>{if(e.key==='Enter')load();};load();return wrap;
 }
 async function renderSavedSearches(){
  const wrap=el('div',{class:'page saved-searches-page'});wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Saved searches & deal alerts'),el('div',{class:'sub'},'Keep your best search criteria and see how many live properties match right now.')]),el('button',{class:'btn-primary',onclick:()=>go('search')},'Create from search')]));const r=await api('GET','/api/saved-searches');if(!r.searches.length){wrap.appendChild(el('div',{class:'empty'},[el('h3',{},'No deal alerts yet'),el('p',{},'Search for a market or deal type, then save the search to start tracking it.') ]));return wrap;}const list=el('div',{class:'saved-search-list'});r.searches.forEach(x=>list.appendChild(el('div',{class:'saved-search-card'},[el('div',{class:'grow'},[el('b',{},x.name),el('span',{},[x.query,...(x.states||[]),...(x.propertyTypes||[])].filter(Boolean).join(' · ')||'Any matching property'),el('small',{},`${x.matchCount} live match${x.matchCount===1?'':'es'} · ${x.alerts?'Alerts on':'Alerts off'}`)]),el('button',{onclick:()=>{state.searchQ=x.query||'';go('search');}},'View matches'),el('button',{class:'btn-ghost',onclick:async()=>{if(confirm('Delete this saved search?')){await api('DELETE','/api/saved-searches/'+x.id);render();}}},'Delete')] )));wrap.appendChild(list);return wrap;
