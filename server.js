@@ -1429,9 +1429,22 @@ function buyBoxMatchesListing(bb, listing) {
   if (Number(bb.minSpread || 0) > 0 && spread < Number(bb.minSpread)) return false;
   return true;
 }
+function buyBoxHasBuyerIntent(bb) {
+  if (!bb || bb.active === false) return false;
+  // Every new account receives an unconstrained default buy box. That placeholder
+  // is not buyer intent and must never turn the platform user count into a
+  // property-specific "buyer matches" number. A match requires criteria the
+  // buyer actually saved/published.
+  const hasLocation = (Array.isArray(bb.states) && bb.states.some(Boolean)) || (Array.isArray(bb.cities) && bb.cities.some(Boolean));
+  const hasType = Array.isArray(bb.propertyTypes) && bb.propertyTypes.some(Boolean);
+  const hasNumbers = Number(bb.minPrice || 0) > 0 || Number(bb.maxPrice || 2000000) < 2000000 || Number(bb.minArv || 0) > 0 || Number(bb.maxArv || 0) > 0 || Number(bb.minBeds || 0) > 0 || Number(bb.minBaths || 0) > 0 || Number(bb.minSpread || 0) > 0;
+  const hasStrategy = String(bb.strategy || '').trim().length > 0;
+  const hasRehabPreference = !!bb.rehabTolerance && bb.rehabTolerance !== 'any';
+  return !!bb.updatedAt || bb.public === true || hasLocation || hasType || hasNumbers || hasStrategy || hasRehabPreference;
+}
 function buyerMatchesForListing(db, listing) {
-  return (db.users || []).filter(u => u.id !== listing.ownerId && String(u.buyingStatus || 'active') !== 'paused').map(u => {
-    const boxes = getBuyBoxes(u).filter(bb => buyBoxMatchesListing(bb, listing));
+  return (db.users || []).filter(u => u.id !== listing.ownerId && u.demo !== true && String(u.buyingStatus || 'active') !== 'paused').map(u => {
+    const boxes = getBuyBoxes(u).filter(bb => buyBoxHasBuyerIntent(bb) && buyBoxMatchesListing(bb, listing));
     return boxes.length ? { user: u, boxes } : null;
   }).filter(Boolean);
 }

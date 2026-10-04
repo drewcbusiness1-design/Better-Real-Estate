@@ -282,6 +282,11 @@ function startViewPolling(fn, ms = 5000) {
   }, ms);
 }
 function go(view, extra = {}, options = {}) { Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
+function openListingDetail(listingId, photoIdx = 0) {
+  const id = String(listingId || '').trim();
+  if (!id) { toast('This property could not be opened. Please refresh and try again.', 'err'); return; }
+  go('detail', { detailId: id, photoIdx: Number.isInteger(photoIdx) ? photoIdx : 0 });
+}
 function render() {
   stopViewPolling(); renderTop(); renderTabs(); renderApp(); renderFooter();
   const founderWelcomePending=!!(((state.user?.founderLaunchPosition&&!state.user?.founderLaunchNoticeSeenAt)||(demoFounderPreview()&&!demoFounderPreviewDismissed()))&&!state.founderWelcomeOpen&&!state.founderWelcomeScheduled);
@@ -683,7 +688,7 @@ function propertyCard(l) {
       sx = null;
     }, { passive: true });
   }
-  imgEl.onclick = () => go('detail', { detailId: l.id, photoIdx: 0 });
+  imgEl.onclick = () => openListingDetail(l.id, idx);
 
   const specs = [];
   if (l.beds) specs.push(l.beds + ' bd');
@@ -727,7 +732,7 @@ function propertyCard(l) {
         saveBtn,
         el('button', { onclick: e => { e.stopPropagation(); shareNative({ kind: 'property', targetId: l.id, title: `${l.city} property on Better Real Estate`, text: `${money(l.asking)} · ${l.propertyType || 'Investment property'}` }); } }, 'Share'),
         el('button', { title:'Hide this property and improve recommendations', onclick: async e => { e.stopPropagation(); await api('POST','/api/feed/feedback',{listingId:l.id,kind:'hide'}); toast('Hidden from your feed','ok'); render(); } }, 'Not interested'),
-        el('button', { class: 'primary', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, l.locked ? '🔒 Unlock' : 'View details')
+        el('button', { class: 'primary', onclick: e => { e.stopPropagation(); openListingDetail(l.id, idx); } }, l.locked ? '🔒 Unlock' : 'View details')
       ])
     ])
   ]);
@@ -885,7 +890,8 @@ async function maybeShowFirstLoginPayoff() {
 
 /* ================= DETAIL ================= */
 async function renderDetail() {
-  const d = await api('GET', '/api/listings/' + state.detailId);
+  if (!state.detailId) throw new Error('This property link is missing its listing ID. Return to the feed and open it again.');
+  const d = await api('GET', '/api/listings/' + encodeURIComponent(state.detailId));
   const { listing, owner, otherListings, reviews } = d;
   state.access = d.access || state.access;
   const wrap = el('div', { class: 'detail' });
