@@ -1,0 +1,16 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const s=fs.readFileSync('public/app.js','utf8'),events={},keys={},classes=()=>({add(){},remove(){}});
+let redraws=0;
+const tiles=[0,1,2].map(i=>({dataset:{photoIndex:String(i)},classList:classes(),getBoundingClientRect:()=>({left:i*120,top:0,width:112,height:180}),cloneNode:()=>({style:{},setAttribute(){},remove(){}})}));
+const handle={closest:()=>tiles[2],setPointerCapture(){},releasePointerCapture(){}};
+const preview={isConnected:true,addEventListener:(k,f)=>events[k]=f,getBoundingClientRect:()=>({left:0,right:352,top:0,bottom:180}),querySelectorAll:selector=>selector==='.property-photo-tile'?tiles:[],querySelector:()=>({classList:classes(),focus(){}})};
+const status={textContent:''},context={state:{composePhotos:['a','b','c']},document:{body:{appendChild(){}},addEventListener:(k,f)=>keys[k]=f,removeEventListener:k=>delete keys[k]},requestAnimationFrame:()=>1,cancelAnimationFrame(){},innerHeight:900,window:{scrollBy(){}}};
+vm.createContext(context);vm.runInContext(s.slice(s.indexOf('function reorderPropertyPhotos'),s.indexOf('async function api('))+s.slice(s.indexOf('function wirePropertyPhotoDrag'),s.indexOf('async function renderCompose()')),context);
+context.wirePropertyPhotoDrag(preview,status,()=>redraws++);
+const start=()=>{context.state.composePhotos=['a','b','c'];events.pointerdown({target:{closest:()=>handle},button:0,isPrimary:true,pointerId:1,clientX:280,clientY:130,preventDefault(){}});events.pointermove({pointerId:1,clientX:50,clientY:50,preventDefault(){}});assert.deepEqual([...context.state.composePhotos],['a','b','c']);};
+start();events.pointerup({pointerId:1,clientX:50,clientY:50});assert.deepEqual([...context.state.composePhotos],['c','a','b']);assert.equal(redraws,1);assert.equal(keys.keydown,undefined);
+start();events.pointercancel();assert.deepEqual([...context.state.composePhotos],['a','b','c']);
+start();keys.keydown({key:'Escape',preventDefault(){}});assert.deepEqual([...context.state.composePhotos],['a','b','c']);
+start();events.pointerup({pointerId:1,clientX:700,clientY:50});assert.deepEqual([...context.state.composePhotos],['a','b','c']);assert.equal(redraws,1);
+start();events.lostpointercapture();assert.deepEqual([...context.state.composePhotos],['a','b','c']);assert.equal(keys.keydown,undefined);
+console.log('v29.37 drag drop commit, Escape, outside drop and pointer cancellation: PASS');

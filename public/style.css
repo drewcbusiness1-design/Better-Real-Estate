@@ -1368,3 +1368,13 @@ html.better-guide-open,body.better-guide-open{overflow:hidden}
  #topbar .navlinks{gap:3px}
  #topbar .demo-return-btn{flex:1 0 100%}
 }
+
+/* v29.37: contained gestures and pointer/touch photo ordering. */
+.mascot-thumb{display:none}
+.better-mascot-rig[data-gesture="thumbsup"] .mascot-thumb{display:block}
+.better-mascot-rig[data-gesture="thumbsup"] .mascot-paw-left>ellipse,.better-mascot-rig[data-gesture="thumbsup"] .mascot-paw-left>circle,.better-mascot-rig[data-gesture="thumbsup"] .mascot-paw-left>path:not(.mascot-thumb){display:none}
+.property-photo-handle{display:block;width:100%;min-height:44px;border:0;background:transparent;color:inherit;text-align:left;touch-action:none;cursor:grab;font:inherit;font-size:11px;font-weight:700}
+.property-photo-handle:focus-visible{outline:2px solid var(--accent,#E8590C);outline-offset:-3px}
+.property-photo-tile.is-dragging{opacity:.35}
+.property-photo-tile.is-drop-target{outline:3px solid var(--accent,#E8590C);outline-offset:2px}
+.property-photo-drag-ghost{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;position:fixed;width:112px;z-index:10000;pointer-events:none;opacity:.9;box-shadow:0 8px 24px #0005;transform:rotate(-3deg)}

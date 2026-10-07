@@ -1,0 +1,675 @@
+# Better Real Estate --- Master Seamless Handoff
+
+**Handoff date:** October 7, 2026\
+**Purpose:** Continue Better Real Estate in a new chat without making
+the user reconstruct product history, release rules, current mascot
+behavior, property editing, Deal Intelligence rules, deployment
+workflow, or saved future work.
+
+## 1. Resume point — read this first
+
+Read this full handoff before doing or answering anything on every future turn. This is the user's explicit permanent instruction.
+
+Latest delivered candidate: **v29.37 — Gestures + Photo Drag**, package **2.9.37**, folder **Better-Real-Estate-v29.37-Gestures-Photo-Drag**. Local verification passed; this is not a claim of deployment or live verification.
+
+Latest user-confirmed good deployed baseline: **v29.36 — Page Interaction**, GitHub main commit **af0dafb**. The user ran the full test/syntax gate, pushed successfully, and said “its good thanks.” Earlier two push failures were GitHub Internal Server Errors, resolved on retry; do not recreate commits or force-push for that error.
+
+v29.37 starts from accepted v29.36 and implements both explicitly requested changes:
+- Real raised-arm multi-step waves on mascot greeting/Guide opening and confirmed friend actions.
+- Visible shaped thumbs up for confirmed follows, likes/saves and sent messages; two-arm celebrations with bounce/tail movement on lessons, listing success and major deal milestones.
+- Fixed contained header stage beside Settings, no clipping/overlap, animation settings and reduced motion preserved.
+- Mouse/touch photo dragging by each photo's label in property creation/editing, insertion feedback and drag ghost; first photo is cover. Drop commits local order; Save persists to the same property. Escape, pointer cancellation and outside drops leave order unchanged. Keyboard arrow controls retained.
+- Tutorial/What's New version **59** covers both features.
+
+No server/schema/auth/provider/API/dependency changes. Original logo assets preserved byte for byte. No extra mascot polling or AI calls.
+
+Do not rebuild already delivered work. If v29.37 is confirmed good, use it next; if a regression is reported, fix that candidate while protecting accepted v29.36 behavior.
+
+Deployment paths are mandatory: release extraction **~/Downloads/Better Real Estate/Better-Real-Estate-v29.37-Gestures-Photo-Drag/**; live Git repo **~/Downloads/Better-Real-Estate**. Do not change these paths. Exact install/test/commit/push commands are in RELEASE-v29.37.md. Include the normal git status/add/commit/push flow after local checks pass.
+
+Sections below preserve the complete inherited product rules and historical context. References to older mascot versions describe their original milestones, not the current resume baseline.
+
+## 2. What Better Real Estate is
+
+Better Real Estate is a real-estate-only social marketplace/network for
+wholesalers, investors, buyers, sellers and funders. The product
+combines off-market property posting/distribution, a social feed,
+networking, buyer criteria/matching, messaging, Deal Intelligence,
+company/team workspaces, pipeline/CRM concepts, referrals/affiliates,
+marketplace/shop functionality, admin operations and education.
+
+Core positioning: - real-estate network/ecosystem rather than a generic
+SaaS dashboard; - help a user **join → post a property → connect with
+buyers → move the deal forward**; - answer "why join now?" and "what
+happens after I post?" in launch/growth work; - differentiate from
+generic Facebook groups through structured deal distribution,
+buyer/network tools and workflow; - never fabricate liquidity, buyer
+matches, user counts, listings, closings, testimonials or transaction
+volume.
+
+Domain: `BetterRealEstate.org`.
+
+## 3. Brand and visual continuity --- absolute
+
+Core visual language is charcoal/black + warm orange/amber/gold, with
+warm off-white/light surfaces. Blue is not the general brand color; it
+is specifically appropriate for the Team plan accent. The product should
+remain clean, premium, restrained, modern and real-estate oriented
+rather than looking like a fishing site, generic blue SaaS product, or
+childish game.
+
+The official Better Real Estate logo is the exact supplied asset
+**`BRE- Logo.png`**. It contains the stylized B/house mark,
+BetterRealEstate wordmark and "Make better your standard." tagline.
+
+Permanent logo rule: - never redraw, approximate, stylize, recolor,
+recreate, retype, stretch or AI-generate the logo; - if the logo is
+needed, use the exact supplied asset; - keep the canonical logo in every
+future Better Real Estate release/handoff package; - never put a
+fake/AI-generated Better mark on the mascot; - if an image background is
+generated, generate the background first and overlay the exact logo
+separately; - if the exact asset cannot be located, ask rather than
+recreating it.
+
+For advertising/marketing, use actual product UI/screenshots when
+showing the product. Do not invent fake dashboards, fake listing data,
+fake URLs or fake platform activity.
+
+## 4. Permanent build/release rules --- highest priority
+
+The user has now made this permanent:
+
+**Review/check the Better Real Estate rules at least THREE separate
+times on every future build, patch or release before sending a ZIP.**
+
+Three is the minimum. More checks are appropriate for risky or visual
+changes. The three reviews should be meaningful gates, not three copies
+of the same statement:
+
+1.  **Pre-build rule review:** confirm requested scope, protected
+    baseline, user-authority constraints, branding, tutorial
+    requirements, provider/API rules and acceptance criteria before
+    editing.
+2.  **Mid-build/integration rule review:** inspect whether
+    implementation is drifting from the request, breaking protected
+    behavior, adding unapproved providers/dependencies, creating UI
+    regressions or violating mobile/performance rules.
+3.  **Pre-package release rule review:** verify the finished
+    implementation, regression suite, visual behavior,
+    tutorial/onboarding, integration, ZIP contents and all protected
+    rules before packaging/delivery.
+
+Do not send a ZIP under any circumstances if the requested behavior,
+visual result, integration or QA is not good.
+
+Other permanent release rules: - start from the latest confirmed-good
+baseline; - preserve approved UI and all existing functionality unless
+the user explicitly asks to replace it; - "my way, not your way": never
+silently substitute APIs, data providers, dependencies, architecture or
+product behavior; - assistant owns integration quality; do not make the
+user debug/revert avoidable mistakes; - new/changed UI must match the
+existing design system exactly across light/dark, desktop/mobile,
+spacing, typography, icons, borders, radii, glass/transparency and
+states; - every added/changed feature requires tutorial/onboarding
+consideration in the same release, plus "What's New" where
+appropriate; - never claim a test, visual check, production check or
+verification passed unless it was actually performed; - minimize Netlify
+compute/bandwidth/function calls and external/API cost; cache, debounce
+and batch where appropriate; avoid unnecessary polling/background
+jobs; - no fabricated trust/activity data; - no unapproved API/provider
+introduction.
+
+### Mandatory pre-ZIP QA
+
+Before any future ZIP, perform the applicable full gate: - full
+`npm test`; - `node --check server.js`; -
+`node --check public/app.js`; - `node --check store.js`; -
+`git diff --check`; - ZIP integrity test; - version/package
+verification; - regression/static integration tracing; - authenticated
+routes and session/auth checks; - API authorization; - membership
+gating/quotas; - DB/schema compatibility; - undefined/mismatched
+functions, IDs and listeners; - loading/error/empty states; -
+duplicate-action prevention; - desktop/mobile responsive behavior; -
+light/dark behavior; - edge cases; - visual inspection for changed UI; -
+tutorial/onboarding/What's New coverage; - exact logo preservation when
+branding is involved.
+
+A green syntax check alone is not release QA.
+
+## 5. Permanent mobile and interaction rules
+
+Every scrollable surface --- modal, drawer, panel, form, list, table,
+picker, tutorial, admin sheet or similar --- must be intentionally
+touch-scrollable on mobile, respect safe areas, use appropriate viewport
+sizing, and never trap or clip content.
+
+Every meaningful action must provide immediate visible/tactile state: -
+pressed/active state; - loading/progress where appropriate; - temporary
+duplicate prevention; - success/error feedback; - consistent
+desktop/mobile behavior.
+
+Messaging regression rule: - successful send clears the composer
+immediately; - failed send preserves the draft; - Enter/send must work
+correctly; - duplicate sends must be prevented; - stale composer text
+must not survive navigation incorrectly.
+
+## 6. Current Better mascot --- v29.35 authoritative behavior
+
+The accepted mascot architecture began in v29.33 and must not regress.
+
+### Physical/visual architecture
+
+The mascot is a single coherent articulated inline SVG character
+permanently contained in his header home beside Settings. He is not: - a
+photographic cut-part puppet; - a slideshow of pose images; - a static
+image being bounced/transformed; - a floating character under the
+header; - a speech-bubble assistant; - a collection of visibly detached
+body parts.
+
+He remains clipped/contained by the intended header stage and must not
+cover Settings or other controls.
+
+The accepted character has a golden-retriever identity, black sunglasses
+and restrained black/gold styling. Do not put a fake Better logo on him.
+
+### Continuous life system
+
+The dog is an event-driven character with a continuous local life loop.
+Normal idle behavior includes: - subtle breathing; - head/gaze
+orientation; - ear motion; - tail motion; - small weight/posture
+shifts; - randomized quiet idle variation; - occasional paw/body
+motion; - natural return/settle behavior.
+
+Movement should be smooth and spring/easing based rather than twitching
+or teleporting. Pointer/cursor attention is deliberately weaker than
+meaningful product events and should not cause frantic pixel-for-pixel
+chasing.
+
+### Physical behavior vocabulary
+
+The current vocabulary includes: - neutral/rest; - look/watch; - perk; -
+lean; - paw; - tutorial point; - stand; - settle; - tail/ear
+reactions; - breathing/posture motion.
+
+Active behaviors should transition back through settle rather than
+snapping instantly to neutral.
+
+### Facial/emotional states from v29.34
+
+Current expression states include: - **neutral/content** --- normal
+browsing/rest; - **curious** --- something has his attention; -
+**focused** --- directing attention toward meaningful work/tutorial
+targets; - **alert** --- stronger perk/attention; - **happy** ---
+positive acknowledgement; - **joy** --- stronger celebration; -
+**concerned** --- failure/error/negative event; - **sleepy** --- genuine
+quiet/inactivity state.
+
+Expression is intended to work together with head, ears, posture, tail
+and body behavior rather than merely changing a mouth shape.
+
+### Contextual/event behavior
+
+Meaningful site state can temporarily override autonomous idle: -
+successes can trigger happy/positive reactions; - larger milestones can
+trigger joy/celebration; - errors/failures can trigger concerned
+behavior; - tutorial targets can cause focus/look/point behavior; -
+Better Guide interaction can produce acknowledgement/attention; -
+property publication/update can trigger appropriate success behavior; -
+notifications can draw attention; - idle behavior resumes after the
+event and settle transition.
+
+### v29.35 situational awareness
+
+v29.35 advances the dog from isolated reactions to local situational
+awareness **without adding API calls, endpoints, AI calls, dependencies
+or network polling**.
+
+Current situational awareness includes: - reuse of notification
+summary/heartbeat state that Better already fetches; - occasional
+attention toward unread Messages/profile activity rather than creating a
+new polling system; - genuine inactivity can move him into a
+sleepy/settled state; - returning from inactivity wakes/perks him up; -
+while the user is actively working, he can occasionally focus toward the
+current work surface without constantly chasing the pointer; - pipeline
+progression can trigger positive reactions; - **Closed** is treated as a
+stronger milestone celebration; - **Dead** is treated as a
+concerned/negative reaction; - existing v29.34 expressions, property
+editing, Guide/course behavior, reduced-motion behavior and fixed header
+home remain protected.
+
+### Mascot priority model
+
+Future mascot work should preserve this priority concept: 1. meaningful
+product/site event; 2. tutorial/Guide direction; 3. situational
+awareness such as unread activity/current work; 4. user/pointer
+attention; 5. autonomous idle.
+
+Higher-value events temporarily override lower-value idle/pointer
+behavior. After the event, the dog returns smoothly to normal life.
+
+### Reduced motion
+
+Reduced-motion preferences must remain respected. Do not force
+continuous expressive animation on users requesting reduced motion.
+
+### Mascot cost/resource rule
+
+Basic mascot life must remain deterministic/local. Do not add runtime AI
+calls merely to decide how the dog should look, react or idle. Do not
+add wasteful network polling for awareness when existing local/app state
+can drive it.
+
+## 7. Property post editing --- v29.34 protected feature
+
+Property owners have **Edit property** on their property detail page.
+Editing reuses the property form, preloads the existing post and updates
+that post rather than creating a duplicate.
+
+Current edit coverage includes: - photos; - price; - ARV; - rehab; -
+beds; - baths; - square footage; - year; - property type; - situation; -
+timeline; - deadline; - video; - notes; - JV setting.
+
+The server has authenticated update handling with owner/admin
+authorization and validation. Preserve the existing listing identity and
+browser-history behavior. Editing must remain smooth on desktop/mobile
+with correct scrolling, immediate save feedback, duplicate prevention
+and clear errors.
+
+Do not regress back to "edit" creating a second listing.
+
+## 8. Better Guide + free wholesaling course --- protected
+
+Preserve the Guide/course system introduced in v29.27: - Better Guide
+control/panel; - contextual deterministic help; - searchable help; -
+platform tutorial replay; - free wholesaling course shortcut; -
+support/contact routing; - next-step guidance based on course/account
+state; - progress center; - paid advanced contextual workflow card; -
+free `learn` route; - knowledge checks; - account-saved progress; -
+completion milestone wording **"Wholesaling Foundations --- Completed"**
+rather than certification/license; - education disclaimer; - tutorial
+integration; - mobile/accessibility; - no runtime AI call for basic
+Guide/course/tutorial behavior.
+
+Course modules: 1. Wholesaling Foundations 2. Choose a Market 3. Find
+Real Opportunities 4. Seller Discovery 5. Analyze the Property 6. Build
+the Offer 7. Contracts & Due Diligence 8. Build Your Buyer Network 9.
+Dispositions in Better 10. Manage Buyer Interest 11. From Contract to
+Closing 12. Build a Repeatable Business
+
+Relevant persisted settings historically include: -
+`guideContextTips: true` - `guideAnimations: true` -
+`guideCourseCompleted: []` - `guideCourseQuizPassed: []` -
+`guideCourseLastModule: 'foundations'`
+
+v29.35 advanced the tutorial version to **57**. Future feature releases
+must continue the tutorial/onboarding rule rather than silently adding
+functionality with no education path.
+
+## 9. Deal Intelligence --- permanent accuracy and source policy
+
+Correctness is more important than speed or completeness.
+
+### Property truth before valuation
+
+Before a precise valuation, establish that Better has the correct
+subject property/parcel. Bedrooms, bathrooms, living area, year built,
+property type and parcel identity must not be promoted as verified from
+a single weak/conflicting source.
+
+Required behavior: - exact-address/property-match scoring; - preserve
+per-field provenance; - cross-check independent sources; - keep
+source-specific raw evidence; - identify duplicate/outlier/conflicting
+evidence; - if credible sources disagree, mark the field
+conflicting/unresolved; - withhold disputed facts from verified subject
+facts and valuation/AI inputs; - blank/conflicting is better than
+confidently wrong; - valuation confidence must fall when
+identity/facts/comps are weak; - do not let a precise ARV outrun
+uncertain property identity.
+
+### Valuation/comps
+
+Prefer transparent, recent, nearby **sold** comps with visible
+reasoning: - distance; - recency; - similarity; - price per square foot
+where appropriate; - bed/bath/property-type similarity; - comp list and
+why each was selected; - evidence strength/confidence; - explicit
+insufficient-data state.
+
+Repairs should remain available where possible even if valuation is
+incomplete.
+
+Investor-grade output should clearly distinguish: - subject facts; -
+confidence; - comps; - ARV; - repair estimate; - asking price; -
+MAO/all-in/spread where supported; - risks; - limitations; -
+provenance; - deterministic reasoning.
+
+AI may explain supported deterministic facts/math. It must not invent
+missing property facts, comps or precision.
+
+### Data-source policy
+
+Allowed/preferred direction: - existing approved Regrid integration as
+optional corroboration, not unquestioned truth; - authorized MLS feeds
+where licensed/configured; - RESO Web API/Data Dictionary standards; -
+MLS Grid where authorized; - Zillow Group Bridge/authorized Zillow
+relationship only; - local MLS where licensed; - public record/property
+APIs and legally/technically accessible assessor/public sources.
+
+Do **not** scrape Zillow or protected MLS sites. Do not silently
+introduce a new provider such as RentCast. Multiple sources are
+preferred over making one weak source primary.
+
+One provider failure should not kill the entire analysis if other valid
+evidence is available.
+
+Cost matters: avoid burning credits through redundant calls. Cache/reuse
+evidence, batch intelligently and only invoke expensive research when it
+adds value.
+
+## 10. Product state that must not regress
+
+Important existing product behavior: - plans ordered **Platinum → Team →
+Pro → Free**; - Team plan uses blue accent; Platinum uses gold; - Team
+is a company workspace with limited seats and separate member logins; -
+account controls include username change, password change and permanent
+account deletion with confirmation; - browser Back/Forward/refresh
+preserves route/view/state; - Follow is separate from Friends; - friend
+requests/friends/chat/user search/profile pictures remain; - real-estate
+listings, shop/CJ products, admin/user listing flows, detail pages and
+post editing remain; - admin account retains unlimited access; -
+homepage wording is **"Free to join · No card required."** - multi-role
+identity supports Buyer/Investor, Seller/Wholesaler and Lender/Funder;
+roles are multi-select; Admin is never a public signup role; - Network
+filters/public role display should use the full role set while legacy
+role compatibility is preserved; - notification bubbles/aggregation
+remain consistent across profile-related areas; - Founder
+deletion/rank-collapse behavior remains: deleted accounts relinquish
+Founder slots/ranks and later ranks collapse as if the deleted account
+never existed; - duplicate-looking signups do not automatically require
+phone verification; admin can remove Founder designation from a
+duplicate without harming the primary account; - affiliate admin actions
+remain contextual: pending → Deny; approved → Suspend; Terminate where
+appropriate; do not display nonsensical "Denied" or "Suspended" action
+buttons.
+
+## 11. Plans, credits, wallets, affiliate and Founder rules
+
+Preserve separation between different value systems: - Better Credits
+are non-withdrawable platform credit; - affiliate earnings are
+cash/affiliate wallet; - marketplace seller proceeds are withdrawable
+seller cash; - do not merge these ledgers conceptually or technically.
+
+Saved referral direction: - \$1 non-withdrawable Better Credit per
+qualifying referral reward; - usable for memberships/eligible
+purchases; - no cash-out/transfer/negative totals; - credits can offset
+membership cost according to approved product rules.
+
+Affiliate program direction: - application + admin
+approve/deny/suspend; - dashboard for
+performance/earnings/payouts/fraud/audit; - unique link + cookie
+attribution; - **one-time 30% commission on the first eligible paid
+membership transaction only**; - no recurring commission; - 3-day
+Pending → Available hold; - affiliate wallet is cash and separate from
+Better Credits.
+
+Seller proceeds: - seller proceeds are withdrawable cash; - Seller
+Wallet states include Pending/Available/Paid/Refund/Chargeback/Fees; -
+separate from Better Credits.
+
+Admin membership grants: - grant/replace/extend/revoke complimentary
+access from User Inspector; - show paid plan, complimentary plan,
+reason, start/expiration and remaining time; - complimentary access must
+remain separate from paid subscription truth.
+
+First 100 Founders: - first 100 by signup order can receive Founding
+Member status if not already; - complimentary Platinum period is **2
+weeks**; - tracked separately; - auto-expires; - must not overwrite paid
+subscription; - admin can see signup position, Founder status and grant
+dates; - no duplicate awards.
+
+## 12. Admin/demo protected behavior
+
+Preserve controlled Demo/Preview behavior and Admin User Inspector
+work: - Demo/Preview layouts must not overflow/cut off; - consistent
+widths/spacing/hierarchy; - working selects; - clear Create Demo Account
+/ Preview Experience states; - clear start/enter/exit preview; - demo
+account deletion requires confirmation; - delete only demo-specific
+data; - block deletion while impersonating; - never affect real users,
+analytics, referrals, affiliates, seller proceeds or billing; - User
+Inspector actions must remain responsive and not overflow on
+desktop/mobile.
+
+Relevant row actions historically include: - Manage access - Reset
+demo - Convert to real - Grant founding - Delete Demo - Reset Demo
+Password - Enter Demo
+
+## 13. Dark-mode/UI audit rule
+
+Future UI work must consider the whole product, not just the edited
+card. Protect readable contrast and correct surfaces across
+routes/components including: - tutorials/toasts/cards/tables/forms/empty
+states; - Admin/Demo/Inspector; - affiliate/referral/wallet/payout; -
+shop/product/feed/search/network/messages/profile/settings/plans; - Deal
+Intelligence/deal tools; - pipeline/CRM/buy boxes/deal alerts/deal
+rooms/market hubs.
+
+No clipped labels, awkward wrapping, invisible borders, broken
+glass/transparency, low-contrast icons or light-mode-only assumptions.
+
+## 14. CJ/shop integration constraints
+
+Preserve the existing CJ integration direction: - hide CJ
+branding/labels from user-facing product experience; - internal product
+detail experience; - import title/price/images; - correct image-removal
+behavior; - shipping/in-stock handling should not expose ugly
+supplier/internal wording; - supplier references should not leak into
+polished customer-facing copy; - edit after posting remains supported; -
+do not break existing CJ routing/integration while working on unrelated
+features.
+
+## 15. Email/notifications
+
+Preserve: - transactional vs marketing separation; - marketing
+opt-in/unsubscribe; - marketing cadence safeguards; - unread-message
+reminder default historically 1 hour and user-adjustable; - admin signup
+alert toggle; - business email branding from v29.26; - production email
+configuration/secrets remain server-side.
+
+Known production email direction: - `partners@betterrealestate.org` for
+appropriate business communication; - automated notifications use the
+configured notifications sender; - Resend outbound and ImprovMX inbound
+were part of the operational setup; - domain/DNS/MAIL_FROM must be
+verified in production rather than assumed.
+
+Never expose secrets in client JS, logs, screenshots or handoff files.
+
+## 16. Launch/growth rules
+
+Future marketing must answer: - why join now? - what happens after I
+post? - why use Better instead of only a Facebook group?
+
+Show the real path: **join → list property → connect with buyers → move
+deal forward.**
+
+Use truthful product activity only. No inflated user counts, fake buyer
+demand, fake transactions, fake testimonials or invented urgency.
+
+The user prefers short, attention-grabbing, non-spammy outreach. For
+wholesaler acquisition, "free to use" and a clear first-property action
+can be useful when accurate.
+
+## 17. Saved future roadmap --- not automatically approved for immediate build
+
+These are saved product directions/ideas. Do not implement them merely
+because they appear here; use them when the user asks for the next
+relevant bundle.
+
+-   AI property-analysis quotas: Pro 5/day; Platinum/Premium unlimited;
+    Team unlimited.
+-   Admin verification controls inside Membership Grants.
+-   User setting to show/hide membership level publicly.
+-   Shop/Profile bottom-nav icon refresh with clean minimal outlines
+    matching stroke/size.
+-   Plus-plan limited daily allowances for premium tools, remaining
+    usage/reset display and pricing copy.
+-   Quick Options center expansion: AI Deal Builder, Buyer CRM,
+    Pipeline, Buy Boxes, Saved Searches/Deal Alerts, Referral Center,
+    Deal Rooms, Market Hubs, liked/watched, Profile edit, Plans, Verify
+    ID; remove redundant Messages/Search.
+-   Saved Searches + Deal Alerts.
+-   expanded Buy Boxes + automatic matching.
+-   Private Deal Rooms.
+-   Deal Pipeline + buyer CRM.
+-   Market Hubs.
+-   multi-state/market profile preferences.
+-   Admin Activity/Analytics: Active Now, unique active users
+    24h/7d/30d/custom, funnel/feature/market analytics, user inspector.
+-   further Deal Intelligence accuracy/evidence improvements using
+    authorized sources.
+-   continue improving mascot situational awareness only if it remains
+    useful, restrained and local/resource-efficient.
+
+## 18. Completed items --- do not re-open as "pending"
+
+Treat these as already completed unless a regression is reported: -
+browser Back/Forward/refresh route persistence; -
+username/password/delete-account controls; - Wholesale Team plan and
+plan order/accent; - multi-role signup/profile identity; - property
+detail navigation fixes; - false buyer-match count fix; -
+performance/slowness work through v29.25; - business email branding
+v29.26; - Better Guide/free course v29.27; - accepted coherent header
+mascot architecture v29.33; - mascot expressions/contextual reactions
+v29.34; - property post editing v29.34; - mascot situational awareness
+v29.35.
+
+Do not treat old failed mascot architectures as viable baselines.
+
+## 19. Release history relevant to continuation
+
+High-level recent sequence: - v29.15 --- major Deal Intelligence
+production/multi-source/property-truth work; - v29.16 --- multi-role
+identity; - v29.17+ --- Better moments/polish; - v29.20 ---
+buyer-truth/details fixes; - v29.21 --- instant details; - v29.22 ---
+performance/cost regression protection; - v29.23 ---
+detail/network/admin polish; - v29.24 --- conservative cleanup/property
+sharing; - v29.25 --- performance/notifications/stability; - v29.26 ---
+business email branding; - v29.27 --- Better Guide + learning; -
+v29.28--v29.32 --- mascot iterations; several were not visually
+acceptable as final architecture; - v29.33 --- accepted coherent
+inline-SVG header living character; - v29.34 --- contextual facial
+expressions + property post editing; - v29.35 --- situational awareness
+using existing state/local interaction without new polling/API/AI.
+
+The user explicitly said v29.33 was "much better." Preserve that
+architectural direction.
+
+## 20. Deployment and local workflow
+
+The user opens/extracts releases under:
+
+`~/Downloads/Better Real Estate/`
+
+The live Git repo is:
+
+`~/Downloads/Better-Real-Estate`
+
+GitHub origin:
+
+`https://github.com/drewcbusiness1-design/Better-Real-Estate.git`
+
+Netlify deploys from GitHub push.
+
+### Standard future install/test gate
+
+``` bash
+cd ~/Downloads
+
+rsync -av \
+  --exclude='.git' \
+  --exclude='.env' \
+  "Better Real Estate/<release-folder>/" \
+  Better-Real-Estate/
+
+cd Better-Real-Estate
+
+echo "=== VERSION ==="
+node -p "require('./package.json').version"
+
+echo "=== TESTS ==="
+npm test
+
+echo "=== SYNTAX ==="
+node --check server.js
+node --check public/app.js
+node --check store.js
+
+echo "=== DIFF CHECK ==="
+git diff --check
+
+echo "=== STATUS ==="
+git status --short
+```
+
+Do not push until this gate passes and changed visuals/behaviors have
+been inspected.
+
+Before giving commit/push instructions, inspect/ask for
+`git status --short` if there is any possibility of unrelated or
+unsynced work. Do not casually recommend force-push.
+
+Normal deployment after the local gate:
+
+``` bash
+cd ~/Downloads/Better-Real-Estate
+git status --short
+git add -A
+git commit -m "<release-specific message>"
+git push origin main
+```
+
+After Netlify reports deploy complete, hard-refresh with:
+
+`Cmd + Shift + R`
+
+Do not claim production verification until the live result has actually
+been checked.
+
+## 21. Technical continuity
+
+Current app is Node/Express with Netlify/serverless deployment and a
+static frontend under `public/`. Major project areas/files include: -
+`server.js` - `store.js` - `storage.js` - `mailer.js` -
+`communications.js` - `marketing.js` - `ai.js` - `payments.js` -
+`social.js` - `dealIntelligence.js` - `dealSources.js` -
+`dealResearchCache.js` - `dealResearchJobs.js` - `public/app.js` -
+`public/style.css` - `netlify.toml` - `tests/`
+
+Production uses a real database configuration; local test warnings may
+fall back to local development storage. Do not confuse a local fallback
+warning with production database truth.
+
+Preserve existing environment-variable guidance. Do not invent or expose
+secrets.
+
+## 22. Working style for the next chat
+
+The user wants direct, practical execution: - completed work rather than
+repeated planning; - precise commands; - meaningful bundled releases
+rather than tiny deployments; - professional, clean copy; - minimal
+unnecessary emojis; - no patronizing language; - no defensive
+explanation when a visual/build is wrong; - best solution upfront; - no
+false claims of verification.
+
+If a build is visually wrong, treat it as failed and fix it from the
+latest confirmed-good baseline rather than arguing that it technically
+works.
+
+## 23. Immediate next-chat instruction
+
+Read the full handoff before doing or answering anything. Use section 1 for the current baseline and release status. Perform all three rule reviews for every build. Keep inherited product behavior, exact branding, local mascot architecture, mobile interaction, tutorial coverage and mandatory QA. Do not silently build deferred roadmap ideas. Do not claim production verification without checking it.
+
+# End of handoff
+
+This file is intended to carry the project forward without losing the
+accepted baseline, current mascot system, property editing, Deal
+Intelligence standards, branding, QA rules, deployment workflow, product
+state, saved roadmap or the user's working preferences.

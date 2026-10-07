@@ -380,7 +380,7 @@ function createBetterMascotRig({variant='header',label='Better mascot',hidden=fa
       <path d="M48 76 Q52 84 56 77 Q60 86 64 77 Q68 84 72 76" fill="#f3bd69" opacity=".9"/>
       <ellipse cx="42" cy="141" rx="15" ry="6" fill="#bd6b24"/><ellipse cx="78" cy="141" rx="15" ry="6" fill="#bd6b24"/>
     </g>
-    <g class="mascot-arm-left"><path d="M38 83 C32 94 30 108 34 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-left"><ellipse cx="34" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M28 121 Q34 117 40 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="30" cy="124" r="1.4" fill="#5d3824"/><circle cx="34" cy="126" r="1.5" fill="#5d3824"/><circle cx="38" cy="124" r="1.4" fill="#5d3824"/></g></g>
+    <g class="mascot-arm-left"><path d="M38 83 C32 94 30 108 34 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-left"><path class="mascot-thumb" d="M27 122 L25 112 Q25 105 29 107 L33 117 L39 117 Q43 118 42 123 L40 128 L30 128 Z" fill="url(#breFurLight)" stroke="#bd863b" stroke-width="1.5"/><ellipse cx="34" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M28 121 Q34 117 40 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="30" cy="124" r="1.4" fill="#5d3824"/><circle cx="34" cy="126" r="1.5" fill="#5d3824"/><circle cx="38" cy="124" r="1.4" fill="#5d3824"/></g></g>
     <g class="mascot-arm-right"><path d="M82 83 C88 94 90 108 86 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-right"><ellipse cx="86" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M80 121 Q86 117 92 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="82" cy="124" r="1.4" fill="#5d3824"/><circle cx="86" cy="126" r="1.5" fill="#5d3824"/><circle cx="90" cy="124" r="1.4" fill="#5d3824"/></g></g>
     <g class="mascot-head">
       <g class="mascot-ear-left"><path d="M34 34 C20 29 14 41 17 56 C19 69 25 78 32 76 C39 73 40 61 38 48 Z" fill="#b96622"/><path d="M30 39 C23 41 22 55 28 67" fill="none" stroke="#d98531" stroke-width="3" stroke-linecap="round"/></g>
@@ -415,7 +415,7 @@ function mascotSpringStep(rig,dt){
   mascotApply(rig);
 }
 function mascotReturnHome(rig,delay=0){
-  const go=()=>{if(!rig?.isConnected||!rig._mascot)return;rig.dataset.posture='sit';mascotSetTarget(rig,mascotNeutral(),'idle');rig._mascot.nextIdle=performance.now()+6000+Math.random()*5000;};
+  const go=()=>{if(!rig?.isConnected||!rig._mascot)return;rig.dataset.posture='sit';delete rig.dataset.gesture;mascotSetTarget(rig,mascotNeutral(),'idle');rig._mascot.nextIdle=performance.now()+6000+Math.random()*5000;};
   if(delay)setTimeout(go,delay);else go();
 }
 function mascotIdleSequence(rig,now){
@@ -447,6 +447,15 @@ function mascotLifeFrame(rig,ts){
 }
 function mascotPerform(rig,name='ack',duration=1250,side=0){
   if(!rig||rig.classList.contains('motion-off')||!rig._mascot)return;const m=rig._mascot,token=++m.actionToken;m.sequenceUntil=performance.now()+duration+250;
+  rig.dataset.gesture=name;
+  if(['wave','thumbsup','celebrate'].includes(name)){
+    duration=name==='celebrate'?2400:name==='wave'?2100:1900;m.sequenceUntil=performance.now()+duration+250;
+    const base=name==='celebrate'?{armLR:78,armRR:-78,headY:-2,tailR:10}:{armLR:82,pawLR:-70,headR:-3,tailR:8};
+    const steps=name==='wave'?[{t:0,p:base},{t:650,p:{...base,armLR:104,pawLR:-88}},{t:1100,p:base},{t:1550,p:{...base,armLR:104,pawLR:-88}}]:name==='celebrate'?[{t:0,p:base},{t:600,p:{...base,rootY:-3,armLR:98,armRR:-98,tailR:-10}},{t:1200,p:base},{t:1800,p:{...base,rootY:-3,armLR:98,armRR:-98,tailR:-10}}]:[{t:0,p:base},{t:850,p:{...base,headY:-2,torsoY:-1}}];
+    mascotExpression(rig,name==='celebrate'?'joy':'happy',duration+250);
+    steps.forEach(step=>setTimeout(()=>{if(rig.isConnected&&m.actionToken===token)mascotSetTarget(rig,{...mascotNeutral(),...step.p},name==='celebrate'?'celebrate':'react');},step.t));
+    clearTimeout(m._behaviorTimer);m._behaviorTimer=setTimeout(()=>{if(rig.isConnected&&m.actionToken===token)mascotReturnHome(rig);},duration);return;
+  }
   const plans={
     ack:{headY:-1.2,headR:side*2.2,torsoY:-.45,tailR:7,earL:-2,earR:-2},
     curious:{headR:-6,headX:-.8,earL:-5,earR:3,torsoR:-.7},
@@ -461,7 +470,7 @@ function mascotPerform(rig,name='ack',duration=1250,side=0){
   rig.dataset.posture=name==='stand'?'stand':name==='settle'?'settle':'sit';mascotSetTarget(rig,{...mascotNeutral(),...(plans[name]||plans.ack)},name==='celebrate'?'celebrate':'react');
   clearTimeout(m._behaviorTimer);m._behaviorTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},duration);
 }
-function playBetterMascotBehavior(rig,kind='ack',duration=1000){if(performance.now()<Number(rig?._mascot?.eventUntil||0)&&kind!=='celebrate')return;const map={celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);}
+function playBetterMascotBehavior(rig,kind='ack',duration=1000){if(performance.now()<Number(rig?._mascot?.eventUntil||0)&&kind!=='celebrate')return;const map={wave:'wave',thumbsup:'thumbsup',celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);}
 function wireBetterMascotRig(rig){
   const motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;mascotSetTarget(rig,mascotNeutral(),'idle');
   if(motionOff){rig.classList.add('motion-off');Object.assign(rig._mascot.current,mascotNeutral());mascotApply(rig);return rig;}
@@ -509,8 +518,8 @@ function renderTop() {
   nav.appendChild(el('button', {
     class:'better-guide-trigger',
     title:'Open Better Guide', 'aria-label':'Open Better Guide',
-    onpointerenter:e=>playBetterMascotBehavior(e.currentTarget.querySelector('.better-mascot-rig'),'curious',720),
-    onclick:e=>{const rig=e.currentTarget.querySelector('.better-mascot-rig');playBetterMascotBehavior(rig,'ack',620);setTimeout(()=>openBetterGuide(),95);}
+    onpointerenter:e=>{const rig=e.currentTarget.querySelector('.better-mascot-rig'),now=performance.now();if(now-Number(rig._mascot.lastGreeting||-10000)>7000){rig._mascot.lastGreeting=now;playBetterMascotBehavior(rig,'wave',2100);}},
+    onclick:e=>{const rig=e.currentTarget.querySelector('.better-mascot-rig');playBetterMascotBehavior(rig,'wave',2100);setTimeout(()=>openBetterGuide(),95);}
   }, el('span',{class:'better-mascot-stage','aria-hidden':'true'},createBetterMascotRig({variant:'header',hidden:true,label:'Better mascot'}))));
 }
 
@@ -2653,7 +2662,7 @@ function betterGuideNextStep(){
 }
 function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');const trigger=document.querySelector('.better-guide-trigger');trigger?.classList.remove('is-open');trigger?.focus?.({preventScroll:true});}
 function reactBetterMascot(kind='ack',expression=null){
-  document.querySelectorAll('.better-mascot-rig').forEach(rig=>{const now=performance.now();if(now<Number(rig._mascot?.eventUntil||0)&&kind!=='celebrate')return;playBetterMascotBehavior(rig,kind,kind==='celebrate'?1250:760);if(rig._mascot)rig._mascot.eventUntil=now+(kind==='celebrate'?1500:1000);if(expression)mascotExpression(rig,expression,kind==='celebrate'?1600:1050);});
+  document.querySelectorAll('.better-mascot-rig').forEach(rig=>{const now=performance.now();if(now<Number(rig._mascot?.eventUntil||0)&&kind!=='celebrate')return;playBetterMascotBehavior(rig,kind,kind==='celebrate'?2400:kind==='wave'?2100:kind==='thumbsup'?1900:760);if(rig._mascot)rig._mascot.eventUntil=now+(kind==='celebrate'?2650:kind==='wave'?2350:kind==='thumbsup'?2150:1000);if(expression)mascotExpression(rig,expression,kind==='celebrate'?1600:1050);});
 }
 // Confirmed page actions only; no extra requests or polling.
 function mascotActionCompleted(method,path,data,target){
@@ -2673,7 +2682,7 @@ function mascotActionCompleted(method,path,data,target){
     mascotSetTarget(rig,{headX:Math.max(-1.6,Math.min(1.6,dx/300)),headY:Math.max(-.8,Math.min(.8,dy/340)),headR:Math.max(-3.8,Math.min(3.8,dx/110))});
   });
 }
-function mascotSiteEvent(type){const map={message:['tail','alert'],sent:['paw','happy'],friend:['paw','happy'],learning:['celebrate','joy'],follow:['ack','happy'],listing:['celebrate','joy'],saved:['paw','happy'],error:['curious','concerned'],success:['ack','happy'],tutorial:['curious','focused'],dealprogress:['perk','focused'],undercontract:['stand','joy'],closed:['celebrate','joy'],wake:['curious','alert']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
+function mascotSiteEvent(type){const map={message:['tail','alert'],sent:['thumbsup','happy'],friend:['wave','happy'],learning:['celebrate','joy'],follow:['thumbsup','happy'],listing:['celebrate','joy'],saved:['thumbsup','happy'],error:['curious','concerned'],success:['thumbsup','happy'],tutorial:['curious','focused'],dealprogress:['perk','focused'],undercontract:['stand','joy'],closed:['celebrate','joy'],wake:['curious','alert']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
 function mascotMarkHumanActivity(){
   const a=state.mascotAwareness||(state.mascotAwareness={lastHumanActivity:Date.now(),lastPersistentCue:0,activeField:null}),wasIdle=Date.now()-Number(a.lastHumanActivity||0)>75000;
   a.lastHumanActivity=Date.now();if(wasIdle&&state.user)setTimeout(()=>mascotSiteEvent('wake'),40);
@@ -2723,7 +2732,7 @@ function openBetterGuide(){
   panel.appendChild(el('div',{class:'guide-section-label'},'PERSONALIZED MEMBER GUIDANCE'));
   if(betterGuidePremium()){const insight=guidePremiumInsight();panel.appendChild(el('div',{class:'guide-premium-card unlocked'},[el('b',{},insight.title),el('div',{class:'hint'},insight.copy),el('div',{class:'guide-premium-actions'},[el('button',{class:'btn-primary',onclick:()=>navigateFromGuide(insight.view,insight.module)},'Open guided workflow'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||'foundations')},'Continue learning')]) ]));}
   else panel.appendChild(el('div',{class:'guide-premium-card'},[el('b',{},'Free help stays useful'),el('div',{class:'hint'},'The course, product help and basic contextual guidance are free. Paid memberships add deeper personalized workflow guidance without locking the fundamentals away.'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('upgrade')},'See membership options')]));
-  shade.appendChild(panel);document.body.appendChild(shade);document.querySelector('.better-guide-trigger')?.classList.add('is-open');requestAnimationFrame(()=>{reactBetterMascot('ack');input.focus({preventScroll:true});});
+  shade.appendChild(panel);document.body.appendChild(shade);document.querySelector('.better-guide-trigger')?.classList.add('is-open');requestAnimationFrame(()=>{reactBetterMascot('wave');input.focus({preventScroll:true});});
 }
 
 async function markGuideModuleComplete(slug){
@@ -2756,7 +2765,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 58;
+const TUTORIAL_VERSION = 59;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2826,8 +2835,8 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:56,title:'More expression, more context',copy:'Better Guide now changes facial expression and body response for meaningful moments such as guidance, success, errors and new attention — while staying grounded in the header.'},
  {view:'detail',selector:'.owner-ops',min:0,release:56,title:'Edit your property posts',copy:'On a property you own, use Edit property to update pricing, facts, notes, photos, video, deadline and JV availability without recreating the post.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
- {view:'feed',selector:'.better-guide-trigger',min:0,release:58,title:'Your companion follows your progress',copy:'The mascot acknowledges confirmed follows, friend requests and accepts, liked properties, sent messages, and completed lessons. Important reactions take priority over pointer attention. His expanded stage keeps moving paws inside their own space beside the controls.'},
- {view:'compose',selector:'.previewrow',min:0,release:58,title:'Put your best property photo first',copy:'When posting or editing a property, use the arrows under each photo to arrange the gallery. The first photo becomes the cover. Removing one photo keeps the others, and Save changes updates the existing property.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:59,title:'Waves, thumbs up and celebrations',copy:'Better Guide greets you with a raised-paw wave, gives a thumbs up for confirmed follows, likes and sent messages, and celebrates completed lessons and deal wins with both arms and a happy bounce. His paws stay inside his own space beside Settings. Animation preferences and reduced motion are respected.'},
+ {view:'compose',selector:'.previewrow',min:0,release:59,title:'Put your best property photo first',copy:'When posting or editing a property, drag photos by their labels with your mouse or finger to arrange the gallery. Arrow buttons also work with a keyboard. The first photo becomes the cover. Removing one photo keeps the others, and Save changes updates the existing property.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:57,title:'The mascot now remembers what needs attention',copy:'The Better mascot can keep an eye on unread messages, follow the field you are actively working in, react when a deal advances, celebrate under-contract and closed milestones, and settle into a sleepy state after real inactivity. These cues use existing page state without adding a new polling service.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
@@ -3028,6 +3037,26 @@ async function renderBuyerCRM(){
   await load();return wrap;
 }
 
+function wirePropertyPhotoDrag(preview,status,redraw){
+  let drag=null,frame=0;
+  const finish=(commit=false)=>{
+    if(!drag)return;const d=drag;drag=null;cancelAnimationFrame(frame);d.ghost?.remove();d.tile.classList.remove('is-dragging');preview.querySelectorAll('.is-drop-target').forEach(x=>x.classList.remove('is-drop-target'));
+    document.removeEventListener('keydown',escape);try{d.handle.releasePointerCapture(d.id);}catch{}
+    if(commit&&d.started&&d.to!==null&&d.to!==d.from){state.composePhotos=reorderPropertyPhotos(state.composePhotos,d.from,d.to);redraw();status.textContent=`Photo moved to position ${d.to+1}. Save to keep your order.`;preview.querySelector(`[data-photo-index="${d.to}"] .property-photo-handle`)?.focus({preventScroll:true});}
+    else if(d.started)status.textContent='Photo order unchanged.';
+  };
+  const escape=e=>{if(e.key==='Escape'){e.preventDefault();finish();}};
+  const locate=()=>{
+    if(!drag)return;const d=drag;preview.querySelectorAll('.is-drop-target').forEach(x=>x.classList.remove('is-drop-target'));const r=preview.getBoundingClientRect();d.to=null;
+    if(d.x<r.left-12||d.x>r.right+12||d.y<r.top-12||d.y>r.bottom+12)return;
+    let best=Infinity;preview.querySelectorAll('.property-photo-tile').forEach(tile=>{const b=tile.getBoundingClientRect(),distance=Math.hypot(d.x-(b.left+b.width/2),d.y-(b.top+b.height/2));if(distance<best){best=distance;d.to=Number(tile.dataset.photoIndex);}});
+    preview.querySelector(`[data-photo-index="${d.to}"]`)?.classList.add('is-drop-target');
+  };
+  const tick=()=>{if(!drag)return;if(!preview.isConnected){finish();return;}if(drag.started){const speed=drag.y<70?-10:drag.y>innerHeight-70?10:0;if(speed){window.scrollBy(0,speed);locate();}}frame=requestAnimationFrame(tick);};
+  preview.addEventListener('pointerdown',e=>{const handle=e.target.closest('.property-photo-handle');if(!handle||e.button!==0||!e.isPrimary)return;finish();const tile=handle.closest('.property-photo-tile');drag={id:e.pointerId,handle,tile,from:Number(tile.dataset.photoIndex),to:null,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,started:false};handle.setPointerCapture(e.pointerId);document.addEventListener('keydown',escape);e.preventDefault();frame=requestAnimationFrame(tick);});
+  preview.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const d=drag;d.x=e.clientX;d.y=e.clientY;if(!d.started&&Math.hypot(d.x-d.startX,d.y-d.startY)>6){d.started=true;d.ghost=d.tile.cloneNode(true);d.ghost.className='property-photo-tile property-photo-drag-ghost';d.ghost.setAttribute('aria-hidden','true');d.ghost.inert=true;document.body.appendChild(d.ghost);d.tile.classList.add('is-dragging');status.textContent='Dragging photo. Drop on another photo to reorder.';}if(d.started){d.ghost.style.left=`${d.x-56}px`;d.ghost.style.top=`${d.y-80}px`;locate();e.preventDefault();}});
+  preview.addEventListener('pointerup',e=>{if(drag&&e.pointerId===drag.id){drag.x=e.clientX;drag.y=e.clientY;locate();finish(true);}});preview.addEventListener('pointercancel',()=>finish());preview.addEventListener('lostpointercapture',()=>finish());return ()=>finish();
+}
 async function renderCompose() {
   const editingId=state.composeEditId||null;let editingListing=null;
   if(editingId){const r=await api('GET','/api/listings/'+encodeURIComponent(editingId));editingListing=r.listing;if(!editingListing||(editingListing.ownerId!==state.user?.id&&!state.access?.adminUnlimited))throw new Error('You do not have permission to edit this property.');}
@@ -3095,13 +3124,15 @@ async function renderCompose() {
     fileInput.value = ''; draw();
   };
   const photoOrderStatus=el('div',{class:'hint property-photo-order-status',role:'status','aria-live':'polite'});
+  const cancelPhotoDrag=wirePropertyPhotoDrag(preview,photoOrderStatus,draw);
   function draw() {
+    cancelPhotoDrag();
     preview.innerHTML = '';
     state.composePhotos.forEach((p,i)=>{
       const move=(to)=>{state.composePhotos=reorderPropertyPhotos(state.composePhotos,i,to);draw();photoOrderStatus.textContent=`Photo moved to position ${to+1}. The first photo is the cover.`;preview.querySelector(`[data-photo-index="${to}"] .property-photo-actions button:not(:disabled)`)?.focus({preventScroll:true});};
       preview.appendChild(el('div',{class:'property-photo-tile','data-photo-index':i},[
-        el('img',{src:p,alt:`Property photo ${i+1}`}),
-        el('div',{class:'property-photo-caption'},i===0?'Cover photo':`Photo ${i+1}`),
+        el('img',{src:p,alt:`Property photo ${i+1}`,draggable:'false'}),
+        el('button',{type:'button',class:'property-photo-caption property-photo-handle','aria-label':`Drag photo ${i+1} to reorder`},`⠿ ${i===0?'Cover photo':`Photo ${i+1}`}`),
         el('div',{class:'property-photo-actions'},[
           el('button',{type:'button',class:'btn-ghost',disabled:i===0?'disabled':null,'aria-label':`Move photo ${i+1} earlier`,onclick:()=>move(i-1)},'←'),
           el('button',{type:'button',class:'btn-ghost',disabled:i===state.composePhotos.length-1?'disabled':null,'aria-label':`Move photo ${i+1} later`,onclick:()=>move(i+1)},'→')
@@ -3111,7 +3142,7 @@ async function renderCompose() {
     });
     picker.textContent = state.composePhotos.length ? `Add more (${state.composePhotos.length}/12)` : 'Tap to add photos (up to 12)';
   }
-  wrap.appendChild(el('label', {}, 'Photos')); wrap.appendChild(picker); wrap.appendChild(fileInput);wrap.appendChild(el('div',{class:'hint'},'Use the arrows to change photo order. The first photo is the cover. Save to keep your new order.')); wrap.appendChild(preview);wrap.appendChild(photoOrderStatus);draw();
+  wrap.appendChild(el('label', {}, 'Photos')); wrap.appendChild(picker); wrap.appendChild(fileInput);wrap.appendChild(el('div',{class:'hint'},'Drag a photo by its label to change the order, or use the arrows. The first photo is the cover. Save to keep your new order.')); wrap.appendChild(preview);wrap.appendChild(photoOrderStatus);draw();
   wrap.appendChild(el('label', {}, 'Address')); wrap.appendChild(f.address);
   wrap.appendChild(el('label', {}, 'City / State')); wrap.appendChild(f.city);
   wrap.appendChild(el('label', {}, 'Property type')); wrap.appendChild(f.propertyType);
