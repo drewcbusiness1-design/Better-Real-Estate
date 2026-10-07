@@ -9,14 +9,14 @@ const css = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-assert.equal(pkg.version, '2.9.27', 'package version must be v29.27');
+assert.equal(pkg.version, '2.9.28', 'package version must include the v29.27 Guide baseline');
 assert(app.includes("'learn'"), 'Learn route missing');
 assert(app.includes('function openBetterGuide()'), 'Better Guide panel missing');
 assert(app.includes('function renderLearnWholesaling()'), 'course renderer missing');
 assert(app.includes("selector:'.better-guide-trigger'"), 'Guide tutorial step missing');
 assert(app.includes("release:52,title:'Meet your Better Guide'"), 'v52 Guide What’s New step missing');
 assert(app.includes("release:52,title:'Learn wholesaling inside Better'"), 'v52 course What’s New step missing');
-assert(app.includes("const TUTORIAL_VERSION = 52;"), 'tutorial version must advance');
+assert(app.includes("const TUTORIAL_VERSION = 53;"), 'tutorial version must preserve and advance the Guide onboarding');
 assert(app.includes('BETTER_GUIDE_COURSE'), 'course curriculum missing');
 for (let n = 1; n <= 12; n++) assert(app.includes(`number:${n},`), `course module ${n} missing`);
 for (const required of ['Deal Intelligence','Network','Deal Pipeline','Buyer CRM','Better Dispo','Transaction Hub','Command Center']) {

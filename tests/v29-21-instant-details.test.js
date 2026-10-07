@@ -6,7 +6,7 @@ const pkg = require(path.join(root, 'package.json'));
 const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const store = fs.readFileSync(path.join(root, 'store.js'), 'utf8');
-assert.equal(pkg.version, '2.9.27');
+assert.equal(pkg.version, '2.9.28');
 assert(app.includes('detailPreview: null'), 'detail preview state missing');
 assert(app.includes('renderDetailPreview'), 'instant detail preview renderer missing');
 assert(app.includes("app.replaceChildren(rendered)"), 'detail hydration replacement missing');

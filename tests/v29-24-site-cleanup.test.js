@@ -3,7 +3,7 @@ const assert = require('assert');
 const app = fs.readFileSync('public/app.js','utf8');
 const css = fs.readFileSync('public/style.css','utf8');
 const pkg = require('../package.json');
-assert.equal(pkg.version,'2.9.27');
+assert.equal(pkg.version,'2.9.28');
 assert(app.includes('function renderSettings() {'), 'Settings should render synchronously from already-loaded user state');
 assert(!app.includes('async function renderSettings() {'), 'Settings must not block on secondary preferences');
 assert(app.includes("api('GET', '/api/email-preferences').then(ep =>"), 'Email preferences should hydrate after Settings paints');

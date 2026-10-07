@@ -14,6 +14,6 @@ assert(app.includes('renewals do not earn another commission'),'affiliate accept
 assert(app.includes('BETTER CREDITS') && app.includes('never cash-withdrawable'),'wallet must clearly distinguish Better Credits');
 assert(app.includes('SELLER PROCEEDS EARNED') && app.includes('Real cash from your marketplace sales'),'seller proceeds must be clearly cash');
 assert(css.includes('.wallet-balance-grid'),'cash/credit wallet presentation must be styled');
-assert(app.includes('const TUTORIAL_VERSION = 52;') && app.includes("release:35,title:'Affiliate Wallet'") && app.includes("release:35,title:'Cash and credits'"),'tutorial v35 must teach changed cash/credit behavior');
+assert(app.includes('const TUTORIAL_VERSION = 53;') && app.includes("release:35,title:'Affiliate Wallet'") && app.includes("release:35,title:'Cash and credits'"),'tutorial v35 must teach changed cash/credit behavior');
 assert(!server.includes('const AFFILIATE_HOLD_DAYS = 14;'),'old hold must not survive');
 console.log('v29.2 affiliate/seller wallet acceptance passed');
