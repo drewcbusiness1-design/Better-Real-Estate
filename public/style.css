@@ -1394,3 +1394,10 @@ html.better-guide-open,body.better-guide-open{overflow:hidden}
 .email-recipient-row small{font-size:12px;line-height:1.4}
 .diagnostic-row.diagnostic-pass{grid-template-columns:minmax(0,1fr);gap:4px}
 .diagnostic-row.diagnostic-pass>*{min-width:0;overflow-wrap:anywhere;text-align:left;grid-column:auto}
+
+/* Deal metrics must fit their card, including long currency values. */
+.dealnumbers{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))}
+.dealnumbers .metriccard strong{font-size:clamp(20px,2vw,26px);line-height:1.25;white-space:nowrap;overflow-wrap:normal;word-break:normal}
+.deal-intel-snapshot{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))}
+.deal-intel-snapshot .metriccard strong{font-size:clamp(20px,2vw,26px);line-height:1.25}
+@media(max-width:620px){.dealnumbers,.deal-intel-snapshot{grid-template-columns:1fr}}

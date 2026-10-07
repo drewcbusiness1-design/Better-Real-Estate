@@ -31,9 +31,9 @@ assert(src.includes("PRIMARY_PROPERTY_DOMAINS = ['zillow.com','realtor.com','red
 assert(src.includes("webTool.filters={allowed_domains"));
 assert(src.includes("passLabel:'subject-core-property-facts-major-property-sites'")&&src.includes("passLabel:'subject-independent-property-and-public-record-sources'")&&src.includes("passLabel:'sold-comps-local-brokers-public-records-secondary'")&&src.includes("passLabel:'sold-comps-independent-corroboration'"));
 assert(src.includes('regridCoverageError')&&src.includes('coverage_unavailable'),'Regrid coverage failures must be optional limitations, not blockers');
-assert(cache.includes("VERSION='v29.38-subject-facts-r6'"));
+assert(cache.includes("VERSION='v29.39-complete-facts-r7'"));
 assert(bg.includes("phase:'synthesis'")&&bg.includes('cache.persistEvidence(job.address,evidence,{synthesis,synthesisFailure})'),'final synthesis should be completed inside the background job when evidence supports it');
-assert(app.includes('const TUTORIAL_VERSION = 60;')||app.includes('const TUTORIAL_VERSION = 60;')&&app.includes("release:47,title:'Multi-source investor intelligence'"));
+assert(app.includes('const TUTORIAL_VERSION = 61;')||app.includes('const TUTORIAL_VERSION = 61;')&&app.includes("release:47,title:'Multi-source investor intelligence'"));
 assert(app.includes('aux-fact-grid')&&app.includes("a.arv?.precision==='working_range'?'Working ARV':'After-repair value'"));
 assert(css.includes('.dealbuilderpage{width:min(1080px,100%)')&&css.includes('v29.15 final Deal Intelligence presentation repair')&&css.includes('.evidence-field-grid{grid-template-columns:repeat(3')&&css.includes('.aux-fact-grid{display:grid')); 
 console.log('v29.15 perfect multi-source investor intelligence regression passed');

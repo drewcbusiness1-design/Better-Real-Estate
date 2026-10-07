@@ -2,7 +2,7 @@ const assert=require('assert');
 const fs=require('fs');
 const ds=require('../dealSources');
 const pkg=require('../package.json');
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39'].includes(pkg.version));
 
 // Regrid's documented response commonly stores the display address in properties.headline,
 // outside properties.fields. v29.13 dropped it, causing valid parcels to fail identity matching.
