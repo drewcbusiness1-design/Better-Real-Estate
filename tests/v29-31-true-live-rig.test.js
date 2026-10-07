@@ -4,7 +4,7 @@ const assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/style.css','utf8');
 const pkg=require('../package.json');
-assert(['2.9.31','2.9.32','2.9.33'].includes(pkg.version),'package version must be at least v29.31');
+assert(['2.9.31','2.9.32','2.9.33','2.9.34'].includes(pkg.version),'package version must be at least v29.31');
 for(const token of ['function mascotSpringStep','function mascotLifeFrame','function aimBetterMascotAt']) assert(app.includes(token),token+' missing');
 assert(app.includes('function mascotIdleSequence')||app.includes('function mascotIdlePlan'),'idle life planner missing');
 assert(app.includes('m.gaze.x+=')||app.includes('respondToPointer'),'continuous gaze missing');

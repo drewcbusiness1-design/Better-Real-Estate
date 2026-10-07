@@ -101,6 +101,7 @@ async function api(method, path, body) {
 
 /* ================= toasts ================= */
 function toast(msg, kind = '') {
+  if(state.user)setTimeout(()=>mascotSiteEvent(kind==='err'?'error':kind==='ok'?'success':'ack'),0);
   let wrap = document.getElementById('toastwrap');
   if (!wrap) { wrap = el('div', { id: 'toastwrap' }); document.body.appendChild(wrap); }
   const t = el('div', { class: 'toast ' + kind }, msg);
@@ -169,6 +170,7 @@ function applyRouteParams(params) {
   const userId = params.get('user');
   const itemId = params.get('item');
   if (['detail','promote','analytics','dealroom'].includes(state.view)) state.detailId = id || null;
+  if (state.view === 'compose') state.composeEditId = id || null;
   if (state.view === 'profile') state.profileId = userId || null;
   if (state.view === 'chat') state.chatUserId = userId || null;
   if (state.view === 'shopitem') state.shopItemId = itemId || null;
@@ -185,6 +187,7 @@ function routeUrl(view = state.view) {
   const p = new URLSearchParams();
   if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
+  if (view === 'compose' && state.composeEditId) p.set('id', state.composeEditId);
   if (view === 'profile' && state.profileId) p.set('user', state.profileId);
   if (view === 'intake' && state.intakeCode) p.set('code', state.intakeCode);
   if (view === 'learn' && state.guideCourseModule) p.set('module', state.guideCourseModule);
@@ -273,7 +276,9 @@ async function refreshMe() {
   try { const before=state.user ? (TUTORIAL_RANK[tutorialTier()]??0) : -1; const d = await api('GET', '/api/me'); state.user = d.user; state.access = d.access; state.demoAdminSession = !!d.demoAdminSession; const after=TUTORIAL_RANK[tutorialTier()]??0; if(before>=0 && after>before) state.launchNewFeatureTutorial=true; } catch {}
 }
 function applyNotificationSummary(summary){
-  state.notificationSummary = summary || {profile:0,destinations:{}};
+  const before=state.notificationSummary||{destinations:{}};const incoming=summary||{profile:0,destinations:{}};
+  if(state.user){if(Number(incoming.destinations?.messages||0)>Number(before.destinations?.messages||0))setTimeout(()=>mascotSiteEvent('message'),80);else if(Number(incoming.profile||0)>Number(before.profile||0))setTimeout(()=>mascotSiteEvent('message'),80);}
+  state.notificationSummary = incoming;
   state.unreadCount = Number(summary?.destinations?.messages || 0);
   state.friendRequestCount = Number(summary?.destinations?.network || 0);
 }
@@ -376,13 +381,15 @@ function createBetterMascotRig({variant='header',label='Better mascot',hidden=fa
       <path d="M48 24 L53 17 L58 23 L62 16 L67 23 L72 19 L73 27" fill="url(#breFur)"/>
       <path d="M34 47 Q43 39 54 44" fill="none" stroke="#9e551e" stroke-width="1.8" opacity=".45"/><path d="M66 44 Q77 39 86 47" fill="none" stroke="#9e551e" stroke-width="1.8" opacity=".45"/>
       <g class="mascot-muzzle"><ellipse cx="60" cy="62" rx="22" ry="15" fill="#f6d29a"/><ellipse cx="60" cy="56" rx="7.5" ry="5.5" fill="#2b1c18"/><path d="M60 61 Q53 67 47 64 M60 61 Q67 67 73 64" fill="none" stroke="#6a3b26" stroke-width="1.7" stroke-linecap="round"/><path d="M50 69 Q60 77 70 69 Q67 80 60 81 Q53 80 50 69" fill="#3a211d"/><path d="M56 73 Q60 77 64 73" fill="#ef7f78"/></g>
+      <g class="mascot-face-details"><path class="mascot-brow-left" d="M36 38 Q44 34 52 38" fill="none" stroke="#7f431b" stroke-width="2.2" stroke-linecap="round"/><path class="mascot-brow-right" d="M68 38 Q76 34 84 38" fill="none" stroke="#7f431b" stroke-width="2.2" stroke-linecap="round"/><path class="mascot-lid-left" d="M35 47 Q44 51 53 47" fill="none" stroke="#e5a24c" stroke-width="4" stroke-linecap="round" opacity="0"/><path class="mascot-lid-right" d="M67 47 Q76 51 85 47" fill="none" stroke="#e5a24c" stroke-width="4" stroke-linecap="round" opacity="0"/></g>
       <g class="mascot-glasses"><path d="M31 42 Q43 37 55 41 L53 54 Q42 58 35 52 Z" fill="url(#breLens)" stroke="#d8a13a" stroke-width="1.5"/><path d="M65 41 Q77 37 89 42 L85 52 Q78 58 67 54 Z" fill="url(#breLens)" stroke="#d8a13a" stroke-width="1.5"/><path d="M54 44 Q60 41 66 44" fill="none" stroke="#d8a13a" stroke-width="2"/><path d="M35 44 L29 42 M85 44 L91 42" stroke="#d8a13a" stroke-width="1.5"/></g>
     </g>
   </svg>`;
   const now=performance.now();
   rig._mascot={current:mascotNeutral(),target:mascotNeutral(),velocity:{},mood:'idle',pointer:{x:0,y:0,last:0},gaze:{x:0,y:0},lastTs:0,born:now,nextIdle:now+7000+Math.random()*4500,sequenceUntil:0,actionToken:0,breathPhase:Math.random()*Math.PI*2};
-  wireBetterMascotRig(rig);return rig;
+  rig.dataset.expression='content';wireBetterMascotRig(rig);return rig;
 }
+function mascotExpression(rig,name='content',duration=0){if(!rig)return;rig.dataset.expression=name;clearTimeout(rig._expressionTimer);if(duration)rig._expressionTimer=setTimeout(()=>{if(rig.isConnected)rig.dataset.expression='content';},duration);}
 function mascotSetTarget(rig,patch={},mood){if(!rig?._mascot)return;Object.assign(rig._mascot.target,patch);if(mood)rig._mascot.mood=mood;}
 function mascotApply(rig){
   const c=rig._mascot.current,st=rig.style,set=(n,v,u='')=>st.setProperty(n,Number(v).toFixed(u==='scale'?4:2)+(u==='scale'?'':u));
@@ -441,6 +448,7 @@ function mascotPerform(rig,name='ack',duration=1250,side=0){
     lean:{torsoR:side*2.6,headR:side*-3.5,headX:side*-.8,rootR:side*.5,tailR:side*-5},
     settle:{torsoY:1.1,torsoSY:.994,headY:.85,muzzleY:.18,earL:2.2,earR:2.2,armLY:.5,armRY:.5}
   };
+  const expressions={ack:'happy',curious:'curious',paw:'happy',celebrate:'joy',perk:'alert',stand:'alert',lean:'focused',settle:'sleepy'};mascotExpression(rig,expressions[name]||'content',duration+250);
   rig.dataset.posture=name==='stand'?'stand':name==='settle'?'settle':'sit';mascotSetTarget(rig,{...mascotNeutral(),...(plans[name]||plans.ack)},name==='celebrate'?'celebrate':'react');
   clearTimeout(m._behaviorTimer);m._behaviorTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},duration);
 }
@@ -458,7 +466,7 @@ function aimBetterMascotAt(rig,target){
   if(!rig||!target||rig.classList.contains('motion-off')||!rig._mascot)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2),right=dx>=0,nx=Math.max(-1,Math.min(1,dx/420)),ny=Math.max(-1,Math.min(1,dy/340));
   const patch={...mascotNeutral(),headX:nx*1.6,headY:ny*.8,headR:nx*3.8,torsoR:nx*.45,earL:-nx,earR:nx,tailR:-nx*4};
   if(right)Object.assign(patch,{armRR:-58,armRY:-1.2,pawRX:1.8,pawRY:-1.2,pawRR:-12});else Object.assign(patch,{armLR:58,armLY:-1.2,pawLX:-1.8,pawLY:-1.2,pawLR:12});
-  const token=++rig._mascot.actionToken;rig._mascot.sequenceUntil=performance.now()+2200;mascotSetTarget(rig,patch,'guide');clearTimeout(rig._guideResetTimer);rig._guideResetTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},2050);
+  const token=++rig._mascot.actionToken;rig._mascot.sequenceUntil=performance.now()+2200;mascotExpression(rig,'focused',2200);mascotSetTarget(rig,patch,'guide');clearTimeout(rig._guideResetTimer);rig._guideResetTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},2050);
 }
 
 function renderTop() {
@@ -1248,7 +1256,7 @@ async function renderDetail() {
   }
 
   if (state.user && (state.user.id === owner.id || (listing.companyId && state.user.companyId === listing.companyId) || state.access?.adminUnlimited)) {
-    wrap.appendChild(el('div',{class:'dsection owner-ops'},[el('h3',{},'Deal operations'),el('div',{class:'owner-ops-actions'},[el('button',{class:'btn-primary',onclick:()=>go('dealroom',{detailId:listing.id})},'Open deal room'),el('button',{class:'btn-ghost',onclick:async()=>{await api('POST','/api/pipeline',{listingId:listing.id,title:listing.address,stage:'dispo'});toast('Added to pipeline','ok');go('pipeline');}},'Add to pipeline'),el('button',{class:'btn-ghost',onclick:()=>go('analytics',{detailId:listing.id})},'Listing analytics')]) ]));
+    wrap.appendChild(el('div',{class:'dsection owner-ops'},[el('h3',{},'Deal operations'),el('div',{class:'owner-ops-actions'},[el('button',{class:'btn-primary',onclick:()=>go('compose',{composeEditId:listing.id})},'Edit property'),el('button',{class:'btn-primary',onclick:()=>go('dealroom',{detailId:listing.id})},'Open deal room'),el('button',{class:'btn-ghost',onclick:async()=>{await api('POST','/api/pipeline',{listingId:listing.id,title:listing.address,stage:'dispo'});toast('Added to pipeline','ok');go('pipeline');}},'Add to pipeline'),el('button',{class:'btn-ghost',onclick:()=>go('analytics',{detailId:listing.id})},'Listing analytics')]) ]));
   }
 
   if (state.user) {
@@ -2634,9 +2642,10 @@ function betterGuideNextStep(){
   return {title:'Use your operating workspace',copy:'Open Command Center to review real matches, activity and next actions available to your account.',view:'commandcenter'};
 }
 function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');const trigger=document.querySelector('.better-guide-trigger');trigger?.classList.remove('is-open');trigger?.focus?.({preventScroll:true});}
-function reactBetterMascot(kind='ack'){
-  document.querySelectorAll('.better-mascot-rig').forEach(rig=>playBetterMascotBehavior(rig,kind,kind==='celebrate'?1250:760));
+function reactBetterMascot(kind='ack',expression=null){
+  document.querySelectorAll('.better-mascot-rig').forEach(rig=>{if(expression)mascotExpression(rig,expression,kind==='celebrate'?1600:1050);playBetterMascotBehavior(rig,kind,kind==='celebrate'?1250:760);});
 }
+function mascotSiteEvent(type){const map={message:['tail','alert'],follow:['ack','happy'],listing:['celebrate','joy'],saved:['paw','happy'],error:['curious','concerned'],success:['ack','happy'],tutorial:['curious','focused']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
 function navigateFromGuide(view,module){closeBetterGuide();if(module)state.guideCourseModule=module;go(view);}
 function openBetterGuide(){
   if(!state.user)return go('auth'); closeBetterGuide();
@@ -2700,7 +2709,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 55;
+const TUTORIAL_VERSION = 56;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2767,6 +2776,8 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:53,title:'Meet the mascot, not another button',copy:'The Better mascot now is the control: no Guide pill, no stacked circles. He reacts to hover, taps, tutorials and course wins while keeping Settings clear and the rest of Better unchanged.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'A mascot that actually feels alive',copy:'Better Guide is now a layered interactive character instead of a moving picture. His head, ears, raised paw, body and tail move independently, he follows nearby interaction, reacts to the tutorial target and settles back into a restrained idle state.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'The mascot now reacts continuously',copy:'The mascot now runs as one continuous character rig. He follows nearby pointer movement, leans with page motion, reacts to page actions, aims toward tutorial targets, and celebrates course progress without swapping between rendered poses.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:56,title:'More expression, more context',copy:'Better Guide now changes facial expression and body response for meaningful moments such as guidance, success, errors and new attention — while staying grounded in the header.'},
+ {view:'detail',selector:'.owner-ops',min:0,release:56,title:'Edit your property posts',copy:'On a property you own, use Edit property to update pricing, facts, notes, photos, video, deadline and JV availability without recreating the post.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
@@ -2968,9 +2979,11 @@ async function renderBuyerCRM(){
 }
 
 async function renderCompose() {
+  const editingId=state.composeEditId||null;let editingListing=null;
+  if(editingId){const r=await api('GET','/api/listings/'+encodeURIComponent(editingId));editingListing=r.listing;if(!editingListing||(editingListing.ownerId!==state.user?.id&&!state.access?.adminUnlimited))throw new Error('You do not have permission to edit this property.');}
   const wrap = el('div', { class: 'panel composepage' });
-  wrap.appendChild(el('h2', {}, 'Post a property'));
-  wrap.appendChild(el('div', { class: 'sub' }, 'Appears in the feed immediately, ranked for the buyers it fits.'));
+  wrap.appendChild(el('h2', {}, editingListing?'Edit property':'Post a property'));
+  wrap.appendChild(el('div', { class: 'sub' }, editingListing?'Update the property details buyers see. Changes publish immediately.':'Appears in the feed immediately, ranked for the buyers it fits.'));
   const f = {
     address: el('input', { placeholder: '123 Maple St' }),
     city: el('input', { placeholder: 'Austin, TX' }),
@@ -2988,9 +3001,10 @@ async function renderCompose() {
     videoUrl: el('input', { placeholder: 'https://youtube.com/… (optional walkthrough)' }),
     notes: el('textarea', { placeholder: 'Condition, access, why they\'re selling.' })
   };
-  if (state.dealBuilderDraft) { const d=state.dealBuilderDraft; ['address','city','propertyType','asking','arv','rehab','beds','baths','sqft','year','notes'].forEach(k=>{ if(d[k]!==undefined&&d[k]!==null&&f[k]) f[k].value=d[k]; }); state.dealBuilderDraft=null; }
+  if(editingListing){['address','city','propertyType','situation','asking','arv','rehab','beds','baths','sqft','year','timeline','contractDeadline','videoUrl','notes'].forEach(k=>{if(editingListing[k]!==undefined&&editingListing[k]!==null&&f[k])f[k].value=editingListing[k];});}
+  if (state.dealBuilderDraft&&!editingListing) { const d=state.dealBuilderDraft; ['address','city','propertyType','asking','arv','rehab','beds','baths','sqft','year','notes'].forEach(k=>{ if(d[k]!==undefined&&d[k]!==null&&f[k]) f[k].value=d[k]; }); state.dealBuilderDraft=null; }
   const builderLink = el('button',{class:'btn-primary',type:'button',onclick:()=>go('dealbuilder')},'Analyze an address with AI Deal Builder');
-  wrap.appendChild(el('div',{class:'dealbuilderentry'},[el('div',{},[el('b',{},'Starting with an address?'),el('div',{class:'hint'},'Generate a preliminary description, ARV range, repair scenarios and deal analysis from the address before you build the listing.')]),builderLink]));
+  if(!editingListing)wrap.appendChild(el('div',{class:'dealbuilderentry'},[el('div',{},[el('b',{},'Starting with an address?'),el('div',{class:'hint'},'Generate a preliminary description, ARV range, repair scenarios and deal analysis from the address before you build the listing.')]),builderLink]));
   const importText = el('textarea', { placeholder: 'Paste your existing Facebook deal post, email blast, text message or deal notes here…', style: 'min-height:130px' });
   const importStatus = el('div', { class: 'hint' });
   const importBtn = el('button', { class: 'btn-ghost', type: 'button' }, 'Import existing deal');
@@ -3013,7 +3027,7 @@ async function renderCompose() {
     finally { importBtn.disabled = false; importBtn.textContent = 'Import existing deal'; }
   };
   let dispoUsage=null; try{dispoUsage=(await api('GET','/api/tools/usage')).dispoAi;}catch{}
-  wrap.appendChild(el('div', { class: 'dispoimport' }, [
+  if(!editingListing)wrap.appendChild(el('div', { class: 'dispoimport' }, [
     el('div', { class: 'dispoeyebrow' }, 'AUTO AI DEAL BUILDER'),
     el('h3', {}, 'Turn messy deal notes into a ready-to-market deal.'),
     el('div', { class: 'hint' }, 'Paste a Facebook post, email blast, text thread or rough notes. Better Real Estate extracts the deal facts, then Better Dispo handles buyer matching and distribution after you post.'),
@@ -3022,7 +3036,7 @@ async function renderCompose() {
     importText, importBtn, importStatus
   ]));
 
-  state.composePhotos = [];
+  state.composePhotos = editingListing?[...(editingListing.photos||[])]:[];
   const fileInput = el('input', { type: 'file', accept: 'image/*', multiple: true, style: 'display:none' });
   const preview = el('div', { class: 'previewrow' });
   const picker = el('div', { class: 'picker', onclick: () => fileInput.click() }, 'Tap to add photos (up to 12)');
@@ -3050,7 +3064,7 @@ async function renderCompose() {
   wrap.appendChild(el('label', {}, 'Contract / assignment deadline (optional)')); wrap.appendChild(f.contractDeadline);
   wrap.appendChild(el('label', {}, 'Video walkthrough')); wrap.appendChild(f.videoUrl);
   wrap.appendChild(el('label', {}, 'Notes')); wrap.appendChild(f.notes);
-  const openToJV = el('input', { type:'checkbox' });
+  const openToJV = el('input', { type:'checkbox' });openToJV.checked=!!editingListing?.openToJV;
   wrap.appendChild(el('label', { class:'checkrow dealoption' }, [openToJV, el('span', {}, [el('b', {}, 'Open to JV opportunities'), el('small', {}, 'Let other professionals know you are open to discussing a joint venture on this deal.')]) ]));
   if (state.access?.platinum || state.user?.role === 'admin') {
     const aiMsg = el('div', { class: 'hint' });
@@ -3073,18 +3087,18 @@ async function renderCompose() {
     wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI property writing — Platinum'), el('div', { class: 'hint' }, 'Turn your property facts and photos into clean listing notes.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See Platinum')]));
   }
   const err = el('div', { class: 'errmsg' });
-  const submit = el('button', { class: 'submitbtn' }, 'Post to feed');
+  const submit = el('button', { class: 'submitbtn' }, editingListing?'Save property changes':'Post to feed');
   submit.onclick = async () => {
-    err.textContent = ''; submit.disabled = true; submit.textContent = 'Posting…';
+    err.textContent='';submit.disabled=true;submit.textContent=editingListing?'Saving…':'Posting…';
     try {
       const payload = { photos: state.composePhotos };
       for (const k in f) payload[k] = f[k].value;
       payload.openToJV = openToJV.checked;
-      const r = await api('POST', '/api/listings', payload);
-      state.composePhotos = [];
-      toast(r.matchCount ? `Posted — ${r.matchCount} buyer${r.matchCount === 1 ? '' : 's'} currently match this deal.` : 'Posted — Better Dispo is checking buyer demand.', 'ok');
+      const r=editingListing?await api('PATCH','/api/listings/'+encodeURIComponent(editingListing.id),payload):await api('POST','/api/listings',payload);
+      state.composePhotos=[];state.composeEditId=null;mascotSiteEvent('listing');
+      toast(editingListing?'Property updated.':(r.matchCount?`Posted — ${r.matchCount} buyer${r.matchCount===1?'':'s'} currently match this deal.`:'Posted — Better Dispo is checking buyer demand.'),'ok');
       go('detail', { detailId: r.listing.id, photoIdx: 0 });
-    } catch (e) { err.textContent = e.message; submit.disabled = false; submit.textContent = 'Post to feed'; }
+    }catch(e){err.textContent=e.message;mascotSiteEvent('error');submit.disabled=false;submit.textContent=editingListing?'Save property changes':'Post to feed';}
   };
   wrap.appendChild(err); wrap.appendChild(submit);
   return wrap;

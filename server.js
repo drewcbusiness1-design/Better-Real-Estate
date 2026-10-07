@@ -2183,6 +2183,17 @@ app.post('/api/listings/:id/unlock', requireAuth, async (req, res) => {
   res.json({ ok: true, unlockCredits: req.user.unlockCredits });
 });
 
+app.patch('/api/listings/:id', requireAuth, async (req, res) => {
+  const listing=req.db.listings.find(l=>l.id===req.params.id);
+  if(!listing)return res.status(404).json({error:'Listing not found.'});
+  if(listing.ownerId!==req.user.id&&!isAdminUser(req.user))return res.status(403).json({error:'Not your listing.'});
+  const b=req.body||{};
+  if(!String(b.address||'').trim()||!String(b.city||'').trim()||!Number(b.asking))return res.status(400).json({error:'Address, city, and asking price are required.'});
+  const photos=(await Promise.all((Array.isArray(b.photos)?b.photos:[]).slice(0,12).map(async x=>String(x||'').startsWith('data:')?writeImage(x):String(x||'')))).filter(Boolean);
+  Object.assign(listing,{address:String(b.address).trim(),city:String(b.city).trim(),propertyType:b.propertyType||'Single family',situation:b.situation||'Motivated seller',asking:Number(b.asking),arv:b.arv?Number(b.arv):null,rehab:b.rehab?Number(b.rehab):null,beds:b.beds?Number(b.beds):null,baths:b.baths?Number(b.baths):null,sqft:b.sqft?Number(b.sqft):null,year:b.year?Number(b.year):null,timeline:b.timeline||'Flexible',notes:String(b.notes||'').slice(0,1500),videoUrl:String(b.videoUrl||'').slice(0,300)||null,contractDeadline:/^20\d{2}-\d{2}-\d{2}$/.test(String(b.contractDeadline||''))?String(b.contractDeadline):null,openToJV:b.openToJV===true||b.openToJV==='true',photos,updatedAt:new Date().toISOString()});
+  await saveDB(req.db);res.json({listing:{...listing,freshness:listingFreshness(listing)}});
+});
+
 app.delete('/api/listings/:id', requireAuth, async (req, res) => {
   const i = req.db.listings.findIndex(l => l.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: 'Not found.' });

@@ -1,0 +1,12 @@
+const fs=require('fs'),assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),srv=fs.readFileSync('server.js','utf8'),pkg=require('../package.json');
+assert.equal(pkg.version,'2.9.34');
+for(const x of ['mascotExpression','data-expression','mascot-brow-left','mascot-lid-left','concerned','sleepy','focused','mascotSiteEvent'])assert.ok((app+css).includes(x),x);
+assert.ok(!app.includes('mascot-poses/'),'slideshow pose assets must not return');
+assert.ok(!app.includes('living-mascot-bubble'),'speech bubble must not return');
+assert.ok(app.includes("go('compose',{composeEditId:listing.id})"),'owner edit action missing');
+assert.ok(app.includes("state.composeEditId = id || null"),'edit route persistence missing');
+assert.ok(app.includes("editingListing?'Save property changes':'Post to feed'"),'edit submit mode missing');
+assert.ok(srv.includes("app.patch('/api/listings/:id'"),'property edit endpoint missing');
+assert.ok(srv.includes("listing.ownerId!==req.user.id&&!isAdminUser(req.user)"),'property edit authorization missing');
+console.log('v29.34 mascot expressions + property edits regression: PASS');
