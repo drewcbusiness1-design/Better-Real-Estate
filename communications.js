@@ -17,9 +17,12 @@ function reminderDelayMinutes(user) {
 
 function eligibleBroadcastUsers(db, audience = {}) {
   const kind = String(audience.kind || 'all');
+  const selected=new Set(Array.isArray(audience.userIds)?audience.userIds.filter(x=>typeof x==='string'):[]);
+  if(!['all','buyers','sellers','teams','selected'].includes(kind))return [];
   const market = String(audience.market || '').trim().toLowerCase();
   return (db.users || []).filter(u => {
-    if (!u || u.role === 'admin' || !u.emailVerified || u.marketingOptIn !== true || u.marketingUnsubscribedAt) return false;
+    if (!u || u.demo === true || u.role === 'admin' || !u.emailVerified || u.marketingOptIn !== true || u.marketingUnsubscribedAt) return false;
+    if(kind==='selected'&&!selected.has(u.id))return false;
     const roles = Array.isArray(u.roles) && u.roles.length ? u.roles : [u.role];
     if (kind === 'buyers' && !roles.includes('buyer')) return false;
     if (kind === 'sellers' && !roles.includes('seller')) return false;
@@ -115,7 +118,8 @@ function normalizeBroadcastInput(input = {}, createdBy = null) {
   const ctaLabel = String(input.ctaLabel || 'Open Better Real Estate').trim().slice(0, 80);
   const ctaUrl = String(input.ctaUrl || APP_URL).trim().slice(0, 1000);
   const sender = input.sender === 'partners' ? 'partners' : 'notifications';
-  const audience = { kind: ['all','buyers','sellers','teams'].includes(input.audience?.kind) ? input.audience.kind : 'all', market: String(input.audience?.market || '').trim().slice(0, 100) };
+  const audience = { kind: ['all','buyers','sellers','teams','selected'].includes(input.audience?.kind) ? input.audience.kind : 'all', market: String(input.audience?.market || '').trim().slice(0, 100) };
+  if(audience.kind==='selected'){audience.market='';audience.userIds=[...new Set((Array.isArray(input.audience?.userIds)?input.audience.userIds:[]).filter(x=>typeof x==='string'&&x.length>0&&x.length<=120))];if(!audience.userIds.length)throw new Error('Select at least one person.');if(audience.userIds.length>200)throw new Error('Select up to 200 people per email.');}
   if (!subject || !headline || !body) throw new Error('Subject, headline and message are required.');
   let scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : new Date();
   if (!Number.isFinite(scheduledAt.getTime())) scheduledAt = new Date();

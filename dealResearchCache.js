@@ -2,7 +2,7 @@
 const crypto=require('crypto');
 const {sql,tableFor,FILE_MODE,loadDB,saveDB}=require('./store');
 const ds=require('./dealSources');
-const VERSION='v29.15-complete-intelligence-r5';
+const VERSION='v29.38-subject-facts-r6';
 const TTL_MS=24*60*60*1000;
 const MIN_REFRESH_MS=30*60*1000;
 function key(address){return `${VERSION}:${ds.cacheKey(address)}`}

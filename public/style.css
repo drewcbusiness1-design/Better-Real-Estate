@@ -1378,3 +1378,19 @@ html.better-guide-open,body.better-guide-open{overflow:hidden}
 .property-photo-tile.is-dragging{opacity:.35}
 .property-photo-tile.is-drop-target{outline:3px solid var(--accent,#E8590C);outline-offset:2px}
 .property-photo-drag-ghost{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;position:fixed;width:112px;z-index:10000;pointer-events:none;opacity:.9;box-shadow:0 8px 24px #0005;transform:rotate(-3deg)}
+
+/* v29.38 selected email recipients */
+.email-recipient-picker[hidden]{display:none}
+.email-recipient-picker{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.email-recipient-results{max-height:320px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+.email-recipient-row{display:flex;align-items:flex-start;gap:10px;padding:10px 2px;margin:0;border-bottom:1px solid var(--line);min-height:48px;cursor:pointer}
+.email-recipient-row>input{width:20px;min-width:20px;margin-top:4px;accent-color:var(--accent)}
+.email-recipient-row>span{display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+.email-recipient-row small{color:var(--muted)}
+.email-selected-recipients{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.email-selected-recipients button{max-width:100%;min-height:44px;overflow-wrap:anywhere;white-space:normal}
+.email-recipient-row{text-transform:none;letter-spacing:normal;font-weight:400}
+.email-recipient-row b{font-size:13px;color:var(--ink)}
+.email-recipient-row small{font-size:12px;line-height:1.4}
+.diagnostic-row.diagnostic-pass{grid-template-columns:minmax(0,1fr);gap:4px}
+.diagnostic-row.diagnostic-pass>*{min-width:0;overflow-wrap:anywhere;text-align:left;grid-column:auto}

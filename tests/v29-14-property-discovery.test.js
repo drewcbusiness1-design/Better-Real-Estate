@@ -2,7 +2,7 @@ const assert=require('assert');
 const fs=require('fs');
 const ds=require('../dealSources');
 const pkg=require('../package.json');
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38'].includes(pkg.version));
 
 // Regrid's documented response commonly stores the display address in properties.headline,
 // outside properties.fields. v29.13 dropped it, causing valid parcels to fail identity matching.
@@ -34,6 +34,6 @@ assert.equal(r.subject.squareFootage,1132);
 const src=fs.readFileSync('dealSources.js','utf8');
 assert(src.includes("search_context_size:'high'"),'background research should use higher search context for evidence quality');
 assert(src.includes('WEB_FACT_TIMEOUT_MS = 90000')&&src.includes('WEB_COMP_TIMEOUT_MS = 150000'),'background web research must be bounded but long enough for source discovery');
-assert(src.includes("PRIMARY_PROPERTY_DOMAINS = ['zillow.com','realtor.com','redfin.com','homes.com'")&&src.includes('subject-and-sold-comps-major-property-sites'),'must intentionally search multiple relevant public real-estate sources without pretending to scrape them');
+assert(src.includes("PRIMARY_PROPERTY_DOMAINS = ['zillow.com','realtor.com','redfin.com','homes.com'")&&src.includes('subject-core-property-facts-major-property-sites'),'must intentionally search multiple relevant public real-estate sources without pretending to scrape them');
 assert(src.includes('do not scrape websites or bypass access controls'),'restricted sites must not be scraped');
 console.log('v29.14 property discovery reliability tests passed');

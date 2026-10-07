@@ -3,7 +3,7 @@ const fs=require('fs');
 const ds=require('../dealSources');
 const pkg=require('../package.json');
 
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38'].includes(pkg.version));
 
 // Wrong-parcel candidates must lose even if they are returned first.
 const wrong={properties:{fields:{address:'99 Main St',scity:'Trenton',state2:'NJ',szip:'08608',num_bedrooms:4,num_bath:4}}};
@@ -50,7 +50,7 @@ assert.ok(resolved.conflicts.some(x=>x.field==='bedrooms'));
 
 const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ai=fs.readFileSync('ai.js','utf8'),store=fs.readFileSync('store.js','utf8');
 assert(server.includes('DEAL_RESEARCH_CACHE_TTL_MS'),'research cache required');
-const cache=fs.readFileSync('dealResearchCache.js','utf8'); assert(server.includes('DEAL_RESEARCH_CACHE_VERSION = dealResearchCache.VERSION')&&cache.includes("VERSION='v29.15-complete-intelligence-r5'"),'cache namespace must invalidate stale research');
+const cache=fs.readFileSync('dealResearchCache.js','utf8'); assert(server.includes('DEAL_RESEARCH_CACHE_VERSION = dealResearchCache.VERSION')&&cache.includes("VERSION='v29.38-subject-facts-r6'"),'cache namespace must invalidate stale research');
 assert(server.includes('dealResearchCache'),'persistent research cache required');
 assert(server.includes("analysis.subject[field]=verified[field]??null"),'AI guessed facts must be overwritten by verified facts');
 assert(!server.includes("const evidence=(req.body?.evidence"),'browser evidence must not drive final valuation');

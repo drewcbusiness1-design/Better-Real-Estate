@@ -52,10 +52,10 @@ assert(distanceBacked.estimate>120000&&distanceBacked.estimate<145000,'outlier-s
 assert(distanceBacked.warnings.some(x=>/outlier/i.test(x)),'abnormal low transfers should stay visibly excluded');
 
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),server=fs.readFileSync('server.js','utf8'),sources=fs.readFileSync('dealSources.js','utf8'),cache=fs.readFileSync('dealResearchCache.js','utf8');
-assert(app.includes('const TUTORIAL_VERSION = 59;')||app.includes('const TUTORIAL_VERSION = 59;')&&app.includes("release:48,title:'Complete Deal Intelligence'"));
+assert(app.includes('const TUTORIAL_VERSION = 60;')||app.includes('const TUTORIAL_VERSION = 60;')&&app.includes("release:48,title:'Complete Deal Intelligence'"));
 assert(app.includes('recorded/established mix')&&app.includes('source page')&&app.includes('facts surfaced')&&app.includes('independently established'),'recorded values must remain visible, surfaced facts must be distinguished from independent establishment, and source metadata must be explicit');
 assert(css.includes('v29.15 final Deal Intelligence presentation repair')&&css.includes('grid-template-columns:repeat(3,minmax(0,1fr))')&&css.includes('.fact-meta{display:grid'),'evidence UI must not clip source labels');
 assert(server.includes('canShowArv=Boolean')&&server.includes('readyForAnalysis=Boolean(enoughIdentity&&canShowArv)'),'deterministic ARV display must be separate from stricter AI synthesis gate');
-assert(sources.includes("needFacts:true,needComps:true")&&sources.includes("passLabel:'subject-independent-property-and-public-record-sources'")&&sources.includes("passLabel:'sold-comps-independent-corroboration'")&&sources.includes("!compAnalysis.valuationReady"),'research must be adaptive, multi-source, public-record aware, and keep improving a working range toward precision');
-assert(cache.includes("v29.15-complete-intelligence-r5"),'old incomplete research cache must be invalidated');
+assert(sources.includes("needFacts:true,needComps:false")&&sources.includes("passLabel:'subject-independent-property-and-public-record-sources'")&&sources.includes("passLabel:'sold-comps-independent-corroboration'")&&sources.includes("!compAnalysis.valuationReady"),'research must be adaptive, multi-source, public-record aware, and keep improving a working range toward precision');
+assert(cache.includes("v29.38-subject-facts-r6"),'old incomplete research cache must be invalidated');
 console.log('v29.15 complete Deal Intelligence regression passed');

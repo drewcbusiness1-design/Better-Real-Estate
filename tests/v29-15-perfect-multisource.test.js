@@ -10,7 +10,7 @@ assert.equal(r.subject.bedrooms,4);assert.equal(r.fieldEvidence.bedrooms.status,
 
 
 const sameFamily=ds._resolveField('bedrooms',[portal('zillow.com','bedrooms',4),portal('trulia.com','bedrooms',4)]);assert.equal(sameFamily.value,null);assert.equal(sameFamily.status,'recorded','Zillow + Trulia share a source family and must not count as two independent corroborators');
-assert(ds._urlWasActuallySearched('https://www.zillow.com/homedetails/123-test/',['https://www.zillow.com/homedetails/123-test/?foo=1']));
+assert(ds._urlWasActuallySearched('https://www.zillow.com/homedetails/123-test/',['https://www.zillow.com/homedetails/123-test/?utm_source=1']));
 assert(!ds._urlWasActuallySearched('https://www.zillow.com/homedetails/invented-child/',['https://www.zillow.com/']),'a surfaced domain/homepage must not validate an invented child URL');
 
 // Conflicting multi-source evidence stays visible and cannot silently establish a core fact.
@@ -29,11 +29,11 @@ const ca=di.analyzeComps(subject,comps);assert.equal(ca.valuationReady,false);as
 const src=fs.readFileSync('dealSources.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),cache=fs.readFileSync('dealResearchCache.js','utf8'),bg=fs.readFileSync('netlify/functions/deal-research-background.js','utf8');
 assert(src.includes("PRIMARY_PROPERTY_DOMAINS = ['zillow.com','realtor.com','redfin.com','homes.com'")&&src.includes('SECONDARY_PROPERTY_DOMAINS'));
 assert(src.includes("webTool.filters={allowed_domains"));
-assert(src.includes("passLabel:'subject-and-sold-comps-major-property-sites'")&&src.includes("passLabel:'subject-independent-property-and-public-record-sources'")&&src.includes("passLabel:'sold-comps-local-brokers-public-records-secondary'")&&src.includes("passLabel:'sold-comps-independent-corroboration'"));
+assert(src.includes("passLabel:'subject-core-property-facts-major-property-sites'")&&src.includes("passLabel:'subject-independent-property-and-public-record-sources'")&&src.includes("passLabel:'sold-comps-local-brokers-public-records-secondary'")&&src.includes("passLabel:'sold-comps-independent-corroboration'"));
 assert(src.includes('regridCoverageError')&&src.includes('coverage_unavailable'),'Regrid coverage failures must be optional limitations, not blockers');
-assert(cache.includes("VERSION='v29.15-complete-intelligence-r5'"));
+assert(cache.includes("VERSION='v29.38-subject-facts-r6'"));
 assert(bg.includes("phase:'synthesis'")&&bg.includes('cache.persistEvidence(job.address,evidence,{synthesis,synthesisFailure})'),'final synthesis should be completed inside the background job when evidence supports it');
-assert(app.includes('const TUTORIAL_VERSION = 59;')||app.includes('const TUTORIAL_VERSION = 59;')&&app.includes("release:47,title:'Multi-source investor intelligence'"));
+assert(app.includes('const TUTORIAL_VERSION = 60;')||app.includes('const TUTORIAL_VERSION = 60;')&&app.includes("release:47,title:'Multi-source investor intelligence'"));
 assert(app.includes('aux-fact-grid')&&app.includes("a.arv?.precision==='working_range'?'Working ARV':'After-repair value'"));
 assert(css.includes('.dealbuilderpage{width:min(1080px,100%)')&&css.includes('v29.15 final Deal Intelligence presentation repair')&&css.includes('.evidence-field-grid{grid-template-columns:repeat(3')&&css.includes('.aux-fact-grid{display:grid')); 
 console.log('v29.15 perfect multi-source investor intelligence regression passed');

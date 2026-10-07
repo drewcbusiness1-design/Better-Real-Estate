@@ -3689,7 +3689,7 @@ app.get('/api/admin/email-center', requireAuth, requireAdmin, async (req, res) =
     verificationPending: req.db.users.filter(u => u.role !== 'admin' && !u.emailVerified).length
   };
   const broadcasts = (req.db.emailBroadcasts || []).slice().sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 30)
-    .map(b => ({ id:b.id, subject:b.subject, audience:b.audience, status:b.status, scheduledAt:b.scheduledAt, createdAt:b.createdAt, sentCount:Number(b.sentCount||0), failedCount:Number(b.failedCount||0), finishedAt:b.finishedAt || null }));
+    .map(b => ({ id:b.id, subject:b.subject, sender:b.sender||'notifications', audience:b.audience, status:b.status, scheduledAt:b.scheduledAt, createdAt:b.createdAt, sentCount:Number(b.sentCount||0), failedCount:Number(b.failedCount||0), finishedAt:b.finishedAt || null }));
   const verificationFailures = req.db.users.filter(u => u.role !== 'admin' && u.verificationEmailLastStatus === 'failed').sort((a,b) => new Date(b.verificationEmailLastAttemptAt || 0) - new Date(a.verificationEmailLastAttemptAt || 0)).slice(0, 10).map(u => ({ email:u.email, at:u.verificationEmailLastAttemptAt || null, error:u.verificationEmailLastError || 'Delivery failed' }));
   res.json({
     health,
@@ -3707,6 +3707,12 @@ app.patch('/api/admin/email-center/signup-alerts', requireAuth, requireAdmin, as
   req.user.settings = next;
   await saveDB(req.db);
   res.json({ enabled: next.notifyOnNewSignup });
+});
+
+app.get('/api/admin/email-center/recipients', requireAuth, requireAdmin, async(req,res)=>{
+  const query=String(req.query.q||'').trim().toLowerCase().slice(0,160),eligible=new Set(communications.eligibleBroadcastUsers(req.db,{kind:'all'}).map(u=>u.id));
+  const matches=(req.db.users||[]).filter(u=>u.role!=='admin'&&!isDemoUser(u)&&(!query||[u.name,u.username,u.email].some(x=>String(x||'').toLowerCase().includes(query))));
+  res.json({users:matches.slice(0,50).map(u=>({id:u.id,name:u.name||'',username:u.username||'',email:u.email||'',eligible:eligible.has(u.id),reason:eligible.has(u.id)?null:!u.emailVerified?'Email not verified':u.marketingUnsubscribedAt?'Unsubscribed':'Product email opt-in required'})),hasMore:matches.length>50});
 });
 
 app.post('/api/admin/email-center/preview-audience', requireAuth, requireAdmin, async (req, res) => {
@@ -3746,6 +3752,7 @@ app.post('/api/admin/email-center/broadcasts', requireAuth, requireAdmin, async 
   let broadcast;
   try { broadcast = communications.normalizeBroadcastInput(req.body || {}, req.user.id); }
   catch (e) { return res.status(400).json({ error: e.message }); }
+  if(broadcast.audience.kind==='selected'&&!communications.eligibleBroadcastUsers(req.db,broadcast.audience).length)return res.status(400).json({error:'No eligible recipients selected.'});
   req.db.emailBroadcasts.push(broadcast);
   await saveDB(req.db);
   const sendNow = new Date(broadcast.scheduledAt).getTime() <= Date.now() + 30_000;

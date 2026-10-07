@@ -4,7 +4,7 @@ const ds=require('../dealSources');
 const di=require('../dealIntelligence');
 const pkg=require('../package.json');
 
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38'].includes(pkg.version));
 
 // Production regression: directional words/abbreviations and Regrid context must not reject the real parcel.
 const palestine={properties:{headline:'503 West Grand Prairie Street',context:{headline:'Palestine, IL',path:'/us/il/crawford/palestine'},score:96,ll_uuid:'parcel-503',fields:{
@@ -134,7 +134,7 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   assert(server.includes('if(newQualified){')&&server.includes('successfulAnalysis=Boolean(compAnalysis.valuationReady&&readyForAnalysis&&!synthesisDeferred)'),'reopening the same qualified property must not create duplicate analytics/quota events');
   assert(server.includes('DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000')&&server.includes('evidenceOnlyDealAnalysis'),'AI synthesis failure must degrade to verified evidence instead of failing the whole request or burning retries');
   assert(server.includes('synthesisFailureRecorded'),'synthesis failures must be cached for a retry cooldown without consuming quota');
-  assert(app.includes('const TUTORIAL_VERSION = 59;')||app.includes('const TUTORIAL_VERSION = 59;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
+  assert(app.includes('const TUTORIAL_VERSION = 60;')||app.includes('const TUTORIAL_VERSION = 60;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
   assert(app.includes("const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()})"),'browser must not resend evidence');
   assert(app.includes("fe.status==='recorded'?['Recorded','recorded']")&&app.includes("fe.status==='corroborated'||fe.status==='corroborated_with_conflict'?['Corroborated','corroborated']"),'Recorded / Corroborated / Verified UX required');
   assert(app.includes("fe.status==='recorded'&&fe.recordedValue"),'single-source values must be visibly shown as Recorded while remaining excluded from verified valuation facts');
@@ -144,7 +144,7 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   assert(sources.includes("search_context_size:'high'"),'background property research needs high search context while remaining bounded');
   assert(sources.includes("process.env.OPENAI_RESEARCH_MODEL||'gpt-5.6-luna'"),'web extraction should default to the cost-sensitive research model independent of synthesis model');
   assert(sources.includes("reasoning:{effort:'medium'}"),'background property web research should use medium reasoning for better source discovery');
-  assert(sources.includes('PRIMARY_PROPERTY_DOMAINS')&&sources.includes('subject-and-sold-comps-major-property-sites')&&sources.includes('subject-independent-property-and-public-record-sources'),'multi-source web research must deliberately target multiple property portals before expanding');
+  assert(sources.includes('PRIMARY_PROPERTY_DOMAINS')&&sources.includes('subject-core-property-facts-major-property-sites')&&sources.includes('subject-independent-property-and-public-record-sources'),'multi-source web research must deliberately target multiple property portals before expanding');
   assert(ai.includes('Server-verified evidence packet'),'AI must receive curated server evidence only');
   assert(netlify.includes('dealSources.js')&&netlify.includes('dealIntelligence.js'),'Deal Intelligence modules must ship with Netlify function');
   assert(env.includes('OPENAI_RESEARCH_MODEL=')&&env.includes('REGRID_USE_TYPEAHEAD=false'),'optional research controls must be documented');
