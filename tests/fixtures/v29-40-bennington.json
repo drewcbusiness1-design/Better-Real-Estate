@@ -1,0 +1,372 @@
+{
+  "identity": {
+    "confidence": "Low",
+    "sourceCount": 2,
+    "addressMatched": true,
+    "addressMatchScore": 100,
+    "resolvedCoreFields": 2,
+    "verifiedCoreFields": 0,
+    "webIdentitySources": 2,
+    "corroboratedCoreFields": 2,
+    "sufficientForValuation": false
+  },
+  "fieldEvidence": {
+    "bedrooms": {
+      "raw": [
+        {
+          "tier": 2,
+          "value": 4,
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "field": "bedrooms",
+      "value": null,
+      "status": "recorded",
+      "sources": [
+        {
+          "tier": 2,
+          "value": 4,
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "verified": false,
+      "confidence": "Low",
+      "winningTier": 2,
+      "alternatives": [],
+      "corroborated": false,
+      "recordedValue": 4,
+      "independentSources": 1
+    },
+    "bathrooms": {
+      "raw": [
+        {
+          "tier": 2,
+          "value": 2.5,
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        },
+        {
+          "tier": 2,
+          "value": 2.5,
+          "source": "Web \u00b7 Realtor.com",
+          "sourceUrl": "https://www.realtor.com/realestateandhomes-detail/36-Bennington-Dr_East-Windsor_NJ_08520_M50290-58025",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "field": "bathrooms",
+      "value": 2.5,
+      "status": "corroborated",
+      "sources": [
+        {
+          "tier": 2,
+          "value": 2.5,
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        },
+        {
+          "tier": 2,
+          "value": 2.5,
+          "source": "Web \u00b7 Realtor.com",
+          "sourceUrl": "https://www.realtor.com/realestateandhomes-detail/36-Bennington-Dr_East-Windsor_NJ_08520_M50290-58025",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "verified": false,
+      "confidence": "Moderate",
+      "winningTier": 2,
+      "alternatives": [],
+      "corroborated": true,
+      "recordedValue": 2.5,
+      "independentSources": 2
+    },
+    "yearBuilt": {
+      "raw": [
+        {
+          "tier": 2,
+          "value": 1970,
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "field": "yearBuilt",
+      "value": null,
+      "status": "recorded",
+      "sources": [
+        {
+          "tier": 2,
+          "value": 1970,
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "verified": false,
+      "confidence": "Low",
+      "winningTier": 2,
+      "alternatives": [],
+      "corroborated": false,
+      "recordedValue": 1970,
+      "independentSources": 1
+    },
+    "propertyType": {
+      "raw": [
+        {
+          "tier": 2,
+          "value": "Townhouse",
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "field": "propertyType",
+      "value": null,
+      "status": "recorded",
+      "sources": [
+        {
+          "tier": 2,
+          "value": "Townhouse",
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "verified": false,
+      "confidence": "Low",
+      "winningTier": 2,
+      "alternatives": [],
+      "corroborated": false,
+      "recordedValue": "Townhouse",
+      "independentSources": 1
+    },
+    "squareFootage": {
+      "raw": [
+        {
+          "tier": 2,
+          "value": 1796,
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        },
+        {
+          "tier": 2,
+          "value": 1796,
+          "source": "Web \u00b7 Realtor.com",
+          "sourceUrl": "https://www.realtor.com/realestateandhomes-detail/36-Bennington-Dr_East-Windsor_NJ_08520_M50290-58025",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "field": "squareFootage",
+      "value": 1796,
+      "status": "corroborated",
+      "sources": [
+        {
+          "tier": 2,
+          "value": 1796,
+          "source": "Web \u00b7 Zillow",
+          "sourceUrl": "https://www.zillow.com/homedetails/4-Bennington-Dr-East-Windsor-NJ-08520/38954118_zpid/",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        },
+        {
+          "tier": 2,
+          "value": 1796,
+          "source": "Web \u00b7 Realtor.com",
+          "sourceUrl": "https://www.realtor.com/realestateandhomes-detail/36-Bennington-Dr_East-Windsor_NJ_08520_M50290-58025",
+          "sourceKind": "real_estate_portal",
+          "sourceType": "Public web",
+          "reliability": 72
+        }
+      ],
+      "verified": false,
+      "confidence": "Moderate",
+      "winningTier": 2,
+      "alternatives": [],
+      "corroborated": true,
+      "recordedValue": 1796,
+      "independentSources": 2
+    }
+  },
+  "compGate": {
+    "selected": [
+      {
+        "index": 0,
+        "source": "Web \u00b7 Realtor.com",
+        "weight": 0.4489000000000001,
+        "address": "65 Bennington Dr, East Windsor, NJ 08520",
+        "ageDays": 103.87417209490741,
+        "reasons": [
+          "distance not independently established"
+        ],
+        "bedrooms": 3,
+        "included": true,
+        "saleDate": "2026-06-26",
+        "bathrooms": 2.5,
+        "pageTitle": "65 Bennington Dr, East Windsor, NJ 08520",
+        "salePrice": 400000,
+        "sourceKey": "web:realtor.com",
+        "sourceUrl": "https://www.realtor.com/realestateandhomes-detail/65-Bennington-Dr_East-Windsor_NJ_08520_M54890-61482",
+        "yearBuilt": 1970,
+        "distressed": false,
+        "similarity": 67,
+        "sourceKind": "real_estate_portal",
+        "sourceName": "Realtor.com",
+        "sourceType": "Public web",
+        "reliability": 72,
+        "retrievedAt": "2026-10-07T20:58:28.351Z",
+        "evidenceText": "65 Bennington Dr, East Windsor, NJ 08520 \u2014 Sold Jun 26, 2026 for $400,000; 3 bed, 2.5 bath, 1,620 sqft.",
+        "hardRejected": false,
+        "propertyType": "Townhomes",
+        "sourceFamily": "portal:realtor",
+        "verification": "web-corroborated",
+        "distanceMiles": null,
+        "squareFootage": 1620,
+        "distanceVerified": false,
+        "adjustedSalePrice": 415210,
+        "corroboratingSources": [
+          "Web \u00b7 Realtor.com",
+          "Web \u00b7 Homes.com"
+        ],
+        "distanceEvidenceText": "",
+        "distanceVerification": null,
+        "corroboratingSourceKeys": [
+          "web:realtor.com",
+          "web:homes.com"
+        ],
+        "corroboratingSourceFamilies": [
+          "portal:realtor",
+          "portal:homes"
+        ]
+      },
+      {
+        "index": 1,
+        "source": "Web \u00b7 Realtor.com",
+        "weight": 0.3721,
+        "address": "449 Livingston Dr, East Windsor, NJ 08520",
+        "ageDays": 229.8741720949074,
+        "reasons": [
+          "distance not independently established"
+        ],
+        "bedrooms": 3,
+        "included": true,
+        "saleDate": "2026-02-20",
+        "bathrooms": 2.5,
+        "pageTitle": "449 Livingston Dr, East Windsor, NJ 08520",
+        "salePrice": 439700,
+        "sourceKey": "web:realtor.com",
+        "sourceUrl": "https://www.realtor.com/realestateandhomes-detail/449-Livingston-Dr_East-Windsor_NJ_08520_M68659-84161",
+        "yearBuilt": 1972,
+        "distressed": false,
+        "similarity": 61,
+        "sourceKind": "real_estate_portal",
+        "sourceName": "Realtor.com",
+        "sourceType": "Public web",
+        "reliability": 72,
+        "retrievedAt": "2026-10-07T20:58:28.351Z",
+        "evidenceText": "449 Livingston Dr, East Windsor, NJ 08520 \u2014 Sold Feb 20, 2026 for $439,700; 3 bed, 2.5 bath, 1,620 sqft.",
+        "hardRejected": false,
+        "propertyType": "Townhomes",
+        "sourceFamily": "portal:realtor",
+        "verification": "web-corroborated",
+        "distanceMiles": null,
+        "squareFootage": 1620,
+        "distanceVerified": false,
+        "adjustedSalePrice": 456419,
+        "corroboratingSources": [
+          "Web \u00b7 Realtor.com",
+          "Web \u00b7 Homes.com"
+        ],
+        "distanceEvidenceText": "",
+        "distanceVerification": null,
+        "corroboratingSourceKeys": [
+          "web:realtor.com",
+          "web:homes.com"
+        ],
+        "corroboratingSourceFamilies": [
+          "portal:realtor",
+          "portal:homes"
+        ]
+      },
+      {
+        "index": 2,
+        "source": "Web \u00b7 Zillow",
+        "weight": 0.32489999999999997,
+        "address": "170 Bennington Dr, East Windsor, NJ 08520",
+        "ageDays": 331.8741720949074,
+        "reasons": [
+          "distance not independently established"
+        ],
+        "bedrooms": 3,
+        "included": true,
+        "saleDate": "2025-11-10",
+        "bathrooms": 2.5,
+        "pageTitle": "170 Bennington Dr, East Windsor, NJ 08520",
+        "salePrice": 450000,
+        "sourceKey": "web:zillow.com",
+        "sourceUrl": "https://www.zillow.com/homedetails/170-Bennington-Dr-East-Windsor-NJ-08520/38954321_zpid/",
+        "yearBuilt": 1970,
+        "distressed": false,
+        "similarity": 57,
+        "sourceKind": "real_estate_portal",
+        "sourceName": "Zillow",
+        "sourceType": "Public web",
+        "reliability": 72,
+        "retrievedAt": "2026-10-07T20:58:28.351Z",
+        "evidenceText": "170 Bennington Dr, East Windsor, NJ 08520 \u2014 11/10/2025 Sold $450,000; 3 beds, 1,620 sqft, Townhouse.",
+        "hardRejected": false,
+        "propertyType": "Townhouse",
+        "sourceFamily": "portal:zillow-group",
+        "verification": "web-corroborated",
+        "distanceMiles": null,
+        "squareFootage": 1620,
+        "distanceVerified": false,
+        "adjustedSalePrice": 467111,
+        "corroboratingSources": [
+          "Web \u00b7 Zillow",
+          "Web \u00b7 Homes.com"
+        ],
+        "distanceEvidenceText": "",
+        "distanceVerification": null,
+        "corroboratingSourceKeys": [
+          "web:zillow.com",
+          "web:homes.com"
+        ],
+        "corroboratingSourceFamilies": [
+          "portal:zillow-group",
+          "portal:homes"
+        ]
+      }
+    ]
+  }
+}

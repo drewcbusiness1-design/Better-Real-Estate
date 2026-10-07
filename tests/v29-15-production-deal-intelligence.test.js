@@ -4,7 +4,7 @@ const ds=require('../dealSources');
 const di=require('../dealIntelligence');
 const pkg=require('../package.json');
 
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40'].includes(pkg.version));
 
 // Production regression: directional words/abbreviations and Regrid context must not reject the real parcel.
 const palestine={properties:{headline:'503 West Grand Prairie Street',context:{headline:'Palestine, IL',path:'/us/il/crawford/palestine'},score:96,ll_uuid:'parcel-503',fields:{
@@ -134,7 +134,7 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   assert(server.includes('if(newQualified){')&&server.includes('successfulAnalysis=Boolean(compAnalysis.valuationReady&&readyForAnalysis&&!synthesisDeferred)'),'reopening the same qualified property must not create duplicate analytics/quota events');
   assert(server.includes('DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000')&&server.includes('evidenceOnlyDealAnalysis'),'AI synthesis failure must degrade to verified evidence instead of failing the whole request or burning retries');
   assert(server.includes('synthesisFailureRecorded'),'synthesis failures must be cached for a retry cooldown without consuming quota');
-  assert(app.includes('const TUTORIAL_VERSION = 61;')||app.includes('const TUTORIAL_VERSION = 61;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
+  assert(app.includes('const TUTORIAL_VERSION = 62;')||app.includes('const TUTORIAL_VERSION = 62;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
   assert(app.includes("const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()})"),'browser must not resend evidence');
   assert(app.includes("fe.status==='recorded'?['Recorded','recorded']")&&app.includes("fe.status==='corroborated'||fe.status==='corroborated_with_conflict'?['Corroborated','corroborated']"),'Recorded / Corroborated / Verified UX required');
   assert(app.includes("fe.status==='recorded'&&fe.recordedValue"),'single-source values must be visibly shown as Recorded while remaining excluded from verified valuation facts');
