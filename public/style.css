@@ -1328,3 +1328,43 @@ html.better-guide-open,body.better-guide-open{overflow:hidden}
 .better-mascot-rig[data-expression="alert"] .mascot-brow-left,.better-mascot-rig[data-expression="alert"] .mascot-brow-right{transform:translateY(-3px)}
 .better-mascot-rig[data-expression="sleepy"] .mascot-lid-left,.better-mascot-rig[data-expression="sleepy"] .mascot-lid-right{opacity:.95}.better-mascot-rig[data-expression="sleepy"] .mascot-brow-left,.better-mascot-rig[data-expression="sleepy"] .mascot-brow-right{transform:translateY(2px)}.better-mascot-rig[data-expression="sleepy"] .mascot-muzzle{transform:translateY(1px) scale(.99,.96)}
 @media(prefers-reduced-motion:reduce){.better-mascot-rig .mascot-face-details *,.better-mascot-rig .mascot-muzzle{transition:none!important}}
+
+/* v29.36: reserve the full animated silhouette; contain it within layout. */
+.better-guide-trigger{width:80px;min-width:80px;flex-basis:80px;height:76px}
+.better-guide-trigger .better-mascot-stage{width:78px;height:74px}
+.better-guide-trigger .mascot-svg{width:56px;height:70px;bottom:2px}
+.guide-mascot-stage.is-panel{width:112px;flex-basis:112px;height:110px;display:grid;place-items:center;align-self:center}
+.guide-mascot-stage.is-panel .better-mascot-rig{width:110px;height:108px;transform:none}
+.guide-mascot-stage.is-panel .mascot-svg{width:78px;height:98px;bottom:4px}
+.guide-mascot-stage.is-tutorial{width:76px;flex-basis:76px;height:74px}
+.guide-mascot-stage.is-tutorial .better-mascot-rig{width:76px;height:74px}
+.guide-mascot-stage.is-tutorial .mascot-svg{width:52px;height:65px;bottom:3px}
+@media(max-width:760px){
+ .better-guide-trigger{width:66px;min-width:66px;flex-basis:66px;height:64px}
+ .better-guide-trigger .better-mascot-stage{width:64px;height:62px}
+ .better-guide-trigger .mascot-svg{width:47px;height:59px;bottom:2px}
+ .guide-mascot-stage.is-panel{width:92px;flex-basis:92px;height:94px}
+ .guide-mascot-stage.is-panel .better-mascot-rig{width:92px;height:92px}
+ .guide-mascot-stage.is-panel .mascot-svg{width:65px;height:82px;bottom:4px}
+}
+
+/* Property gallery order controls: keyboard and touch accessible. */
+.previewrow .property-photo-tile{position:relative;width:112px;flex:0 0 112px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.property-photo-tile>img{display:block;width:100%;height:88px;object-fit:cover}
+.property-photo-caption{padding:6px 8px 0;font-size:11px;font-weight:700;color:var(--ink)}
+.property-photo-actions{display:flex;gap:4px;padding:4px}
+.property-photo-actions button{min-height:44px;min-width:44px;flex:1;padding:0!important;font-size:18px}
+.property-photo-actions button:disabled{opacity:.35}
+.property-photo-remove{position:absolute;right:2px;top:2px;min-width:44px;min-height:44px;border:0;border-radius:10px;background:rgba(0,0,0,.72);color:white;font-size:22px}
+.property-photo-order-status{min-height:18px;margin-top:4px}
+.better-guide-trigger .better-mascot-rig{width:100%;height:100%;aspect-ratio:auto}
+.navlinks .better-guide-trigger{padding:0!important}
+@media(max-width:620px){
+ #topbar .bar{flex-wrap:wrap;gap:4px}
+ #topbar .navlinks{width:100%;justify-content:flex-end;flex-wrap:wrap}
+}
+@media(max-width:620px){
+ #topbar .bar{padding:10px 12px}
+ #topbar .navlinks{gap:3px}
+ #topbar .demo-return-btn{flex:1 0 100%}
+}

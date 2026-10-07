@@ -1,0 +1,13 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8');
+const fn=app.slice(app.indexOf('function mascotActionCompleted'),app.indexOf('function mascotSiteEvent'));
+const events=[],context={state:{user:{}},document:{querySelectorAll:()=>[]},mascotSiteEvent:t=>events.push(t)};vm.createContext(context);vm.runInContext(fn,context);
+const done=context.mascotActionCompleted;
+done('GET','/api/messages',{});done('POST','/api/follow',{following:false});done('POST','/api/saves/toggle',{saved:false});assert.equal(events.length,0);
+done('POST','/api/follow',{following:true});done('POST','/api/saves/toggle',{saved:true});done('POST','/api/messages',{});done('POST','/api/friends/request',{});done('POST','/api/friends/requests/123/respond',{status:'friends'});assert.deepEqual(events,['follow','saved','sent','friend','friend']);
+context.state.user=null;done('POST','/api/messages',{});assert.equal(events.length,5);
+const rigs=[{_mascot:{eventUntil:0},classList:{contains:()=>false}}],calls=[];
+Object.assign(context,{document:{querySelectorAll:()=>rigs},performance:{now:()=>100},playBetterMascotBehavior:(r,k)=>calls.push(k),mascotExpression:(r,e)=>calls.push(e)});
+vm.runInContext(app.slice(app.indexOf('function reactBetterMascot('),app.indexOf('// Confirmed page actions only')),context);
+context.reactBetterMascot('paw','happy');assert.deepEqual(calls,['paw','happy']);context.reactBetterMascot('ack','happy');assert.equal(calls.length,2);context.reactBetterMascot('celebrate','joy');assert.deepEqual(calls.slice(-2),['celebrate','joy']);
+console.log('v29.36 confirmed-action routing and event priority: PASS');

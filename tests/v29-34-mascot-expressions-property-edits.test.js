@@ -1,6 +1,6 @@
 const fs=require('fs'),assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),srv=fs.readFileSync('server.js','utf8'),pkg=require('../package.json');
-assert.ok(['2.9.34','2.9.35'].includes(pkg.version));
+assert.ok(['2.9.34','2.9.35','2.9.36'].includes(pkg.version));
 for(const x of ['mascotExpression','data-expression','mascot-brow-left','mascot-lid-left','concerned','sleepy','focused','mascotSiteEvent'])assert.ok((app+css).includes(x),x);
 assert.ok(!app.includes('mascot-poses/'),'slideshow pose assets must not return');
 assert.ok(!app.includes('living-mascot-bubble'),'speech bubble must not return');

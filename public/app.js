@@ -87,7 +87,14 @@ function buildRoleSelector(initialRoles = [], onChange = () => {}) {
   return { element:tabs, values:() => [...selected], set(values){ selected.clear(); (values||[]).forEach(v => ACCOUNT_ROLE_LABELS[v] && selected.add(v)); sync(); } };
 }
 
+function reorderPropertyPhotos(photos,from,to){
+  const ordered=[...photos];
+  if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||to<0||from>=ordered.length||to>=ordered.length)return ordered;
+  const [photo]=ordered.splice(from,1);ordered.splice(to,0,photo);return ordered;
+}
+
 async function api(method, path, body) {
+  const actionTarget=document.activeElement;
   const res = await fetch(path, {
     method, credentials: 'include',
     headers: body ? { 'Content-Type': 'application/json' } : {},
@@ -95,6 +102,7 @@ async function api(method, path, body) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+  try{mascotActionCompleted(method,path,data,actionTarget);}catch{}
   return data;
 }
 
@@ -453,20 +461,21 @@ function mascotPerform(rig,name='ack',duration=1250,side=0){
   rig.dataset.posture=name==='stand'?'stand':name==='settle'?'settle':'sit';mascotSetTarget(rig,{...mascotNeutral(),...(plans[name]||plans.ack)},name==='celebrate'?'celebrate':'react');
   clearTimeout(m._behaviorTimer);m._behaviorTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},duration);
 }
-function playBetterMascotBehavior(rig,kind='ack',duration=1000){const map={celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);}
+function playBetterMascotBehavior(rig,kind='ack',duration=1000){if(performance.now()<Number(rig?._mascot?.eventUntil||0)&&kind!=='celebrate')return;const map={celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);}
 function wireBetterMascotRig(rig){
   const motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;mascotSetTarget(rig,mascotNeutral(),'idle');
   if(motionOff){rig.classList.add('motion-off');Object.assign(rig._mascot.current,mascotNeutral());mascotApply(rig);return rig;}
   let lastPointerSample=0;
   const onPointer=e=>{const now=performance.now();if(now-lastPointerSample<45||!rig.isConnected||!rig._mascot)return;lastPointerSample=now;rig._mascot.pointer.x=e.clientX;rig._mascot.pointer.y=e.clientY;rig._mascot.pointer.last=now;};
-  const onAction=e=>{if(!rig.isConnected||!rig._mascot||e.target?.closest?.('.better-guide-trigger'))return;const target=e.target?.closest?.('button,a,[role="button"],input,select,textarea');if(!target)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),side=Math.sign((tr.left+tr.width/2)-(rr.left+rr.width/2));mascotPerform(rig,'lean',850,side||1);};
+  const onAction=e=>{if(!rig.isConnected||!rig._mascot||performance.now()<Number(rig._mascot.eventUntil||0)||rig._mascot.mood==='guide'||e.target?.closest?.('.better-guide-trigger'))return;const target=e.target?.closest?.('button,a,[role="button"],input,select,textarea');if(!target)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),side=Math.sign((tr.left+tr.width/2)-(rr.left+rr.width/2));mascotPerform(rig,'lean',850,side||1);};
   document.addEventListener('pointermove',onPointer,{passive:true});document.addEventListener('pointerdown',onAction,{passive:true});
   rig._cleanupMascot=()=>{document.removeEventListener('pointermove',onPointer);document.removeEventListener('pointerdown',onAction);cancelAnimationFrame(rig._lifeRaf);};rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));return rig;
 }
 function aimBetterMascotAt(rig,target,point=true){
   if(!rig||!target||rig.classList.contains('motion-off')||!rig._mascot)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2),right=dx>=0,nx=Math.max(-1,Math.min(1,dx/420)),ny=Math.max(-1,Math.min(1,dy/340));
   const patch={...mascotNeutral(),headX:nx*1.6,headY:ny*.8,headR:nx*3.8,torsoR:nx*.45,earL:-nx,earR:nx,tailR:-nx*4};
-  if(right)Object.assign(patch,{armRR:-58,armRY:-1.2,pawRX:1.8,pawRY:-1.2,pawRR:-12});else Object.assign(patch,{armLR:58,armLY:-1.2,pawLX:-1.8,pawLY:-1.2,pawLR:12});
+  if(point&&right)Object.assign(patch,{armRR:-58,armRY:-1.2,pawRX:1.8,pawRY:-1.2,pawRR:-12});else if(point)Object.assign(patch,{armLR:58,armLY:-1.2,pawLX:-1.8,pawLY:-1.2,pawLR:12});
+  if(performance.now()<Number(rig._mascot.eventUntil||0))return;
   const token=++rig._mascot.actionToken;rig._mascot.sequenceUntil=performance.now()+2200;mascotExpression(rig,'focused',2200);mascotSetTarget(rig,patch,'guide');clearTimeout(rig._guideResetTimer);rig._guideResetTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},2050);
 }
 
@@ -2644,9 +2653,27 @@ function betterGuideNextStep(){
 }
 function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');const trigger=document.querySelector('.better-guide-trigger');trigger?.classList.remove('is-open');trigger?.focus?.({preventScroll:true});}
 function reactBetterMascot(kind='ack',expression=null){
-  document.querySelectorAll('.better-mascot-rig').forEach(rig=>{if(expression)mascotExpression(rig,expression,kind==='celebrate'?1600:1050);playBetterMascotBehavior(rig,kind,kind==='celebrate'?1250:760);});
+  document.querySelectorAll('.better-mascot-rig').forEach(rig=>{const now=performance.now();if(now<Number(rig._mascot?.eventUntil||0)&&kind!=='celebrate')return;playBetterMascotBehavior(rig,kind,kind==='celebrate'?1250:760);if(rig._mascot)rig._mascot.eventUntil=now+(kind==='celebrate'?1500:1000);if(expression)mascotExpression(rig,expression,kind==='celebrate'?1600:1050);});
 }
-function mascotSiteEvent(type){const map={message:['tail','alert'],follow:['ack','happy'],listing:['celebrate','joy'],saved:['paw','happy'],error:['curious','concerned'],success:['ack','happy'],tutorial:['curious','focused'],dealprogress:['perk','focused'],undercontract:['stand','joy'],closed:['celebrate','joy'],wake:['curious','alert']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
+// Confirmed page actions only; no extra requests or polling.
+function mascotActionCompleted(method,path,data,target){
+  if(!state.user||method==='GET')return;
+  let type=null;
+  if(path==='/api/follow'&&data.following)type='follow';
+  else if(path==='/api/saves/toggle'&&data.saved)type='saved';
+  else if(path==='/api/messages'&&method==='POST')type='sent';
+  else if(path==='/api/friends/request'&&method==='POST')type='friend';
+  else if(/^\/api\/friends\/requests\/[^/]+\/respond$/.test(path)&&data.status==='friends')type='friend';
+  if(!type)return;
+  mascotSiteEvent(type);
+  if(target?.isConnected)document.querySelectorAll('.better-mascot-rig').forEach(rig=>{
+    if(!rig._mascot||rig.classList.contains('motion-off'))return;
+    const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect();
+    const dx=tr.left+tr.width/2-rr.left-rr.width/2,dy=tr.top+tr.height/2-rr.top-rr.height/2;
+    mascotSetTarget(rig,{headX:Math.max(-1.6,Math.min(1.6,dx/300)),headY:Math.max(-.8,Math.min(.8,dy/340)),headR:Math.max(-3.8,Math.min(3.8,dx/110))});
+  });
+}
+function mascotSiteEvent(type){const map={message:['tail','alert'],sent:['paw','happy'],friend:['paw','happy'],learning:['celebrate','joy'],follow:['ack','happy'],listing:['celebrate','joy'],saved:['paw','happy'],error:['curious','concerned'],success:['ack','happy'],tutorial:['curious','focused'],dealprogress:['perk','focused'],undercontract:['stand','joy'],closed:['celebrate','joy'],wake:['curious','alert']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
 function mascotMarkHumanActivity(){
   const a=state.mascotAwareness||(state.mascotAwareness={lastHumanActivity:Date.now(),lastPersistentCue:0,activeField:null}),wasIdle=Date.now()-Number(a.lastHumanActivity||0)>75000;
   a.lastHumanActivity=Date.now();if(wasIdle&&state.user)setTimeout(()=>mascotSiteEvent('wake'),40);
@@ -2661,7 +2688,7 @@ function mascotPersistentAwareness(rig,now){
 function wireMascotSituationalAwareness(){
   if(window.__betterMascotAwarenessWired)return;window.__betterMascotAwarenessWired=true;
   ['pointerdown','keydown','touchstart','wheel'].forEach(type=>document.addEventListener(type,mascotMarkHumanActivity,{passive:true}));
-  document.addEventListener('focusin',e=>{const t=e.target;if(!t?.matches?.('input,textarea,select,[contenteditable="true"]'))return;mascotMarkHumanActivity();state.mascotAwareness.activeField=t;document.querySelectorAll('.better-mascot-rig').forEach(r=>{mascotExpression(r,'focused',1200);aimBetterMascotAt(r,t,false);});});
+  document.addEventListener('focusin',e=>{const t=e.target;if(!t?.matches?.('input,textarea,select,[contenteditable="true"]'))return;mascotMarkHumanActivity();state.mascotAwareness.activeField=t;document.querySelectorAll('.better-mascot-rig').forEach(r=>{if(performance.now()<Number(r._mascot?.eventUntil||0))return;mascotExpression(r,'focused',1200);aimBetterMascotAt(r,t,false);});});
   document.addEventListener('focusout',e=>{if(state.mascotAwareness?.activeField===e.target)state.mascotAwareness.activeField=null;});
 }
 wireMascotSituationalAwareness();
@@ -2703,6 +2730,7 @@ async function markGuideModuleComplete(slug){
   const completed=[...new Set([...betterGuideCompleted(),slug])];
   const passed=[...new Set([...betterGuideQuizPassed(),slug])];
   await saveBetterGuideSettings({guideCourseCompleted:completed,guideCourseQuizPassed:passed,guideCourseLastModule:slug});
+  mascotSiteEvent('learning');
 }
 async function openGuideModule(slug){state.guideCourseModule=slug;writeRoute('push');try{await saveBetterGuideSettings({guideCourseLastModule:slug});}catch{}renderApp();window.scrollTo(0,0);}
 
@@ -2728,7 +2756,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 57;
+const TUTORIAL_VERSION = 58;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2798,6 +2826,8 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:56,title:'More expression, more context',copy:'Better Guide now changes facial expression and body response for meaningful moments such as guidance, success, errors and new attention — while staying grounded in the header.'},
  {view:'detail',selector:'.owner-ops',min:0,release:56,title:'Edit your property posts',copy:'On a property you own, use Edit property to update pricing, facts, notes, photos, video, deadline and JV availability without recreating the post.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:58,title:'Your companion follows your progress',copy:'The mascot acknowledges confirmed follows, friend requests and accepts, liked properties, sent messages, and completed lessons. Important reactions take priority over pointer attention. His expanded stage keeps moving paws inside their own space beside the controls.'},
+ {view:'compose',selector:'.previewrow',min:0,release:58,title:'Put your best property photo first',copy:'When posting or editing a property, use the arrows under each photo to arrange the gallery. The first photo becomes the cover. Removing one photo keeps the others, and Save changes updates the existing property.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:57,title:'The mascot now remembers what needs attention',copy:'The Better mascot can keep an eye on unread messages, follow the field you are actively working in, react when a deal advances, celebrate under-contract and closed milestones, and settle into a sleepy state after real inactivity. These cues use existing page state without adding a new polling service.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
@@ -3064,14 +3094,24 @@ async function renderCompose() {
     for (const file of [...fileInput.files].slice(0, 12 - state.composePhotos.length)) state.composePhotos.push(await downscale(file));
     fileInput.value = ''; draw();
   };
+  const photoOrderStatus=el('div',{class:'hint property-photo-order-status',role:'status','aria-live':'polite'});
   function draw() {
     preview.innerHTML = '';
-    state.composePhotos.forEach((p, i) => preview.appendChild(el('div', { class: 'pv' }, [
-      el('img', { src: p }), el('button', { onclick: () => { state.composePhotos.splice(i, 1); draw(); } }, '×')
-    ])));
+    state.composePhotos.forEach((p,i)=>{
+      const move=(to)=>{state.composePhotos=reorderPropertyPhotos(state.composePhotos,i,to);draw();photoOrderStatus.textContent=`Photo moved to position ${to+1}. The first photo is the cover.`;preview.querySelector(`[data-photo-index="${to}"] .property-photo-actions button:not(:disabled)`)?.focus({preventScroll:true});};
+      preview.appendChild(el('div',{class:'property-photo-tile','data-photo-index':i},[
+        el('img',{src:p,alt:`Property photo ${i+1}`}),
+        el('div',{class:'property-photo-caption'},i===0?'Cover photo':`Photo ${i+1}`),
+        el('div',{class:'property-photo-actions'},[
+          el('button',{type:'button',class:'btn-ghost',disabled:i===0?'disabled':null,'aria-label':`Move photo ${i+1} earlier`,onclick:()=>move(i-1)},'←'),
+          el('button',{type:'button',class:'btn-ghost',disabled:i===state.composePhotos.length-1?'disabled':null,'aria-label':`Move photo ${i+1} later`,onclick:()=>move(i+1)},'→')
+        ]),
+        el('button',{type:'button',class:'property-photo-remove','aria-label':`Remove photo ${i+1}`,onclick:()=>{state.composePhotos.splice(i,1);draw();photoOrderStatus.textContent='Photo removed.';}},'×')
+      ]));
+    });
     picker.textContent = state.composePhotos.length ? `Add more (${state.composePhotos.length}/12)` : 'Tap to add photos (up to 12)';
   }
-  wrap.appendChild(el('label', {}, 'Photos')); wrap.appendChild(picker); wrap.appendChild(fileInput); wrap.appendChild(preview);
+  wrap.appendChild(el('label', {}, 'Photos')); wrap.appendChild(picker); wrap.appendChild(fileInput);wrap.appendChild(el('div',{class:'hint'},'Use the arrows to change photo order. The first photo is the cover. Save to keep your new order.')); wrap.appendChild(preview);wrap.appendChild(photoOrderStatus);draw();
   wrap.appendChild(el('label', {}, 'Address')); wrap.appendChild(f.address);
   wrap.appendChild(el('label', {}, 'City / State')); wrap.appendChild(f.city);
   wrap.appendChild(el('label', {}, 'Property type')); wrap.appendChild(f.propertyType);
