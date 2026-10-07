@@ -7,7 +7,7 @@ const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-assert.equal(pkg.version, '2.9.29', 'package version must be v29.28');
+assert(['2.9.29','2.9.30'].includes(pkg.version), 'package version must be at least the v29.28 mascot baseline');
 assert(app.includes('createBetterMascotRig'), 'interactive mascot system is not wired');
 assert(!app.includes("class:'better-guide-trigger-label'"), 'header must not render a Guide text pill');
 assert(app.includes("release:53,title:'Meet the mascot, not another button'"), 'v53 mascot What’s New step missing');

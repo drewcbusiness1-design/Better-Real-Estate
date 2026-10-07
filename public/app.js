@@ -378,12 +378,92 @@ function wireBetterMascotRig(rig){
 }
 function aimBetterMascotAt(rig,target){
   if(!rig||!target||rig.classList.contains('motion-off'))return;
+  if(rig.classList.contains('living-better-mascot')){
+    const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect();
+    const dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2);
+    rig.style.setProperty('--tilt-x',Math.max(-6,Math.min(6,dx/48)).toFixed(2)+'deg');
+    rig.style.setProperty('--tilt-y',Math.max(-4,Math.min(4,dy/72)).toFixed(2)+'deg');
+    rig.classList.add('is-guiding');
+    setLivingMascotPose(rig,'point',{duration:1900,bubble:betterMascotHint().copy});
+    clearTimeout(rig._guideResetTimer);
+    rig._guideResetTimer=setTimeout(()=>{if(!rig.matches(':hover')){rig.classList.remove('is-guiding');rig.style.setProperty('--tilt-x','0deg');rig.style.setProperty('--tilt-y','0deg');}},1600);
+    return;
+  }
   const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect();
   const dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2);
-  rig.style.setProperty('--look-x',`${Math.max(-3,Math.min(3,dx/180)).toFixed(2)}px`);
-  rig.style.setProperty('--look-y',`${Math.max(-1.8,Math.min(1.8,dy/260)).toFixed(2)}px`);
-  rig.style.setProperty('--look-r',`${Math.max(-3.2,Math.min(3.2,dx/150)).toFixed(2)}deg`);
+  rig.style.setProperty('--look-x',Math.max(-3,Math.min(3,dx/180)).toFixed(2)+'px');
+  rig.style.setProperty('--look-y',Math.max(-1.8,Math.min(1.8,dy/260)).toFixed(2)+'px');
+  rig.style.setProperty('--look-r',Math.max(-3.2,Math.min(3.2,dx/150)).toFixed(2)+'deg');
   rig.classList.add('is-guiding');
+}
+
+const BETTER_MASCOT_POSES={
+  idle:'/mascot-poses/idle.webp',
+  wave:'/mascot-poses/wave.webp',
+  point:'/mascot-poses/point.webp',
+  welcome:'/mascot-poses/welcome.webp',
+  celebrate:'/mascot-poses/celebrate.webp',
+  excited:'/mascot-poses/excited.webp'
+};
+function betterMascotHint(){
+  const map={
+    feed:['What are we doing today?','Need help posting, learning, or finding the next Better tool?'],
+    messages:['Stay personal.','Use Better to message, build trust, and move the conversation forward.'],
+    network:['Grow the network.','Follow up, share Better, and build the kind of buyer list you will reuse.'],
+    settings:['Tighten your setup.','Settings is where you control help, notifications, and account details.'],
+    learn:['Keep going.','The free course is built around using Better, not learning in a vacuum.'],
+    dealbuilder:['Truth before valuation.','Start with accurate property facts, then let Better help with the math.'],
+    affiliate:['Share Better.','The affiliate center gives you a trackable link you can actually use.'],
+    contact:['Need us?','Use the contact page if you need direct help from the Better team.']
+  };
+  const pair=map[state.view]||['Open Better Guide','I can help with learning, support, walkthroughs, and the next step inside Better.'];
+  return {title:pair[0],copy:pair[1]};
+}
+function livingPoseForKind(kind='ack'){
+  return ({ack:'wave',celebrate:'celebrate',curious:'welcome',ear:'idle',paw:'wave',tail:'excited',guide:'point'})[kind]||'wave';
+}
+function createLivingBetterMascot({variant='header',label='Better mascot',initial='idle',hidden=false}={}){
+  const attrs={class:'living-better-mascot mascot-'+variant,'data-pose':initial};
+  if(hidden)attrs['aria-hidden']='true';else{attrs.role='img';attrs['aria-label']=label;}
+  const root=el('span',attrs);
+  const stage=el('span',{class:'living-mascot-stage'});
+  const shadow=el('span',{class:'living-mascot-shadow','aria-hidden':'true'});
+  const deck=el('span',{class:'living-mascot-deck','aria-hidden':'true'});
+  Object.entries(BETTER_MASCOT_POSES).forEach(([name,src])=>deck.appendChild(el('img',{class:'living-mascot-pose pose-'+name+(name===initial?' is-active':''),src,alt:'',draggable:'false','data-pose':name})));
+  const bubble=el('span',{class:'living-mascot-bubble','aria-hidden':'true'},el('span',{class:'living-mascot-bubble-text'},betterMascotHint().copy));
+  stage.append(shadow,deck,bubble); root.appendChild(stage);
+  root._bubble=bubble; root._bubbleText=bubble.querySelector('.living-mascot-bubble-text');
+  wireLivingBetterMascot(root);
+  setLivingMascotPose(root,initial,{bubble:betterMascotHint().copy,showBubble:false,instant:true});
+  return root;
+}
+function setLivingMascotPose(mascot,pose='idle',opts={}){
+  if(!mascot)return mascot;
+  const chosen=BETTER_MASCOT_POSES[pose]?pose:'idle';
+  mascot.dataset.pose=chosen;
+  mascot.querySelectorAll('.living-mascot-pose').forEach(img=>img.classList.toggle('is-active',img.dataset.pose===chosen));
+  if(opts.bubble!==undefined&&mascot._bubbleText)mascot._bubbleText.textContent=opts.bubble;
+  if(opts.showBubble!==false&&mascot._bubble){mascot.classList.add('show-bubble');clearTimeout(mascot._bubbleTimer);mascot._bubbleTimer=setTimeout(()=>mascot.classList.remove('show-bubble'),opts.bubbleDuration||2600);}
+  mascot.classList.remove('is-reacting');
+  if(!opts.instant){void mascot.offsetWidth;mascot.classList.add('is-reacting');}
+  clearTimeout(mascot._revertTimer);
+  if(opts.duration){mascot._revertTimer=setTimeout(()=>{if(!mascot.isConnected)return;mascot.classList.remove('is-guiding');setLivingMascotPose(mascot,'idle',{bubble:betterMascotHint().copy,showBubble:false,instant:true});},opts.duration);}
+  return mascot;
+}
+function wireLivingBetterMascot(mascot){
+  const motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if(motionOff){mascot.classList.add('motion-off');return mascot;}
+  const calm=()=>{mascot.style.setProperty('--tilt-x','0deg');mascot.style.setProperty('--tilt-y','0deg');mascot.classList.remove('is-engaged');if(!mascot.classList.contains('is-open'))setLivingMascotPose(mascot,'idle',{bubble:betterMascotHint().copy,showBubble:false,instant:true});};
+  mascot.addEventListener('pointermove',e=>{const r=mascot.getBoundingClientRect();if(!r.width)return;const nx=Math.max(-1,Math.min(1,(e.clientX-(r.left+r.width/2))/(r.width/2)));const ny=Math.max(-1,Math.min(1,(e.clientY-(r.top+r.height/2))/(r.height/2)));mascot.style.setProperty('--tilt-x',(nx*7).toFixed(2)+'deg');mascot.style.setProperty('--tilt-y',(ny*5).toFixed(2)+'deg');});
+  mascot.addEventListener('pointerenter',()=>{mascot.classList.add('is-engaged');setLivingMascotPose(mascot,'wave',{duration:1300,bubble:betterMascotHint().copy,bubbleDuration:2800});});
+  mascot.addEventListener('pointerleave',calm);
+  mascot.addEventListener('focusout',calm);
+  const schedule=()=>{if(!mascot.isConnected){clearTimeout(mascot._lifeTimer);return;}const cycle=['idle','wave','welcome','point'];const next=cycle[Math.floor(Math.random()*cycle.length)];setLivingMascotPose(mascot,next,{duration:next==='idle'?0:1200,showBubble:false,instant:false});mascot._lifeTimer=setTimeout(schedule,4800+Math.random()*3600);};
+  mascot._lifeTimer=setTimeout(schedule,2500+Math.random()*1800);
+  return mascot;
+}
+function syncLivingBetterMascotHints(){
+  document.querySelectorAll('.living-better-mascot').forEach(node=>{if(node._bubbleText&&(!node.classList.contains('show-bubble')||node.dataset.pose==='idle'))node._bubbleText.textContent=betterMascotHint().copy;});
 }
 
 function renderTop() {
@@ -416,8 +496,8 @@ function renderTop() {
   nav.appendChild(el('button', {
     class:'better-guide-trigger',
     title:'Open Better Guide', 'aria-label':'Open Better Guide',
-    onclick:e=>{const rig=e.currentTarget.querySelector('.better-mascot-rig');playBetterMascotBehavior(rig,'ack',520);setTimeout(()=>openBetterGuide(),95);}
-  }, el('span',{class:'better-mascot-stage','aria-hidden':'true'},createBetterMascotRig({variant:'header',hidden:true}))));
+    onclick:e=>{const mascot=e.currentTarget.querySelector('.living-better-mascot');if(mascot){mascot.classList.add('is-open');setLivingMascotPose(mascot,'welcome',{duration:1100,bubble:'Opening Better Guide…',bubbleDuration:2000});}reactBetterMascot('ack');setTimeout(()=>openBetterGuide(),95);}
+  }, el('span',{class:'better-mascot-stage','aria-hidden':'true'},createLivingBetterMascot({variant:'header',hidden:true,label:'Better mascot'}))));
 }
 
 function renderTabs() {
@@ -466,6 +546,7 @@ async function renderApp() {
       if (preserveDetailScroll !== null && preserveDetailScroll > 0) requestAnimationFrame(() => window.scrollTo({ top: preserveDetailScroll, behavior: 'auto' }));
     }
     if(state.user && requestedView==='feed') setTimeout(maybeShowFirstLoginPayoff,80);
+    setTimeout(syncLivingBetterMascotHints,0);
   }
   catch (e) {
     if(routeLoadTimer)clearTimeout(routeLoadTimer);
@@ -2557,8 +2638,9 @@ function betterGuideNextStep(){
   if(!state.user?.bio||!(state.user?.investmentMarkets||[]).length)return {title:'Tighten your profile',copy:'Add your market and a useful bio so your Better profile gives the network context.',view:'settings'};
   return {title:'Use your operating workspace',copy:'Open Command Center to review real matches, activity and next actions available to your account.',view:'commandcenter'};
 }
-function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');const trigger=document.querySelector('.better-guide-trigger');trigger?.classList.remove('is-open');trigger?.focus?.({preventScroll:true});}
+function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');const trigger=document.querySelector('.better-guide-trigger');trigger?.classList.remove('is-open');const mascot=trigger?.querySelector('.living-better-mascot');if(mascot){mascot.classList.remove('is-open');setLivingMascotPose(mascot,'idle',{bubble:betterMascotHint().copy,showBubble:false,instant:true});}trigger?.focus?.({preventScroll:true});}
 function reactBetterMascot(kind='ack'){
+  document.querySelectorAll('.living-better-mascot').forEach(mascot=>setLivingMascotPose(mascot,livingPoseForKind(kind),{duration:kind==='celebrate'?1450:880,bubble:betterMascotHint().copy,bubbleDuration:kind==='celebrate'?2400:1800}));
   document.querySelectorAll('.better-mascot-rig').forEach(rig=>playBetterMascotBehavior(rig,kind,kind==='celebrate'?1250:720));
 }
 function navigateFromGuide(view,module){closeBetterGuide();if(module)state.guideCourseModule=module;go(view);}
@@ -2569,7 +2651,7 @@ function openBetterGuide(){
   shade.onclick=e=>{if(e.target===shade)closeBetterGuide();};
   panel.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();closeBetterGuide();}};
   const [ctxTitle,ctxCopy]=guideContext(),progress=betterGuideProgress(),next=betterGuideNextStep();
-  const mascot=el('div',{class:'guide-mascot-stage is-panel','aria-label':'Better Guide mascot'},createBetterMascotRig({variant:'panel',label:'Better Guide mascot'}));
+  const mascot=el('div',{class:'guide-mascot-stage is-panel','aria-label':'Better Guide mascot'},createLivingBetterMascot({variant:'panel',label:'Better mascot',initial:'welcome'}));
   const close=el('button',{class:'iconbtn guide-close','aria-label':'Close Better Guide',onclick:closeBetterGuide},'×');
   panel.appendChild(el('div',{class:'better-guide-head'},[mascot,el('div',{class:'grow'},[el('div',{class:'dispoeyebrow'},'BETTER GUIDE'),el('h2',{},'How can I help?'),el('div',{class:'hint'},'Platform help, learning and guidance without leaving your workflow.')]),close]));
   if(state.user?.settings?.guideContextTips!==false)panel.appendChild(el('div',{class:'guide-context-card'},[el('b',{},ctxTitle),el('div',{class:'hint'},ctxCopy)]));
@@ -2605,7 +2687,7 @@ async function openGuideModule(slug){state.guideCourseModule=slug;writeRoute('pu
 async function renderLearnWholesaling(){
   const wrap=el('div',{class:'page better-learning-page'}),module=betterGuideModule(state.guideCourseModule||state.user?.settings?.guideCourseLastModule||'foundations'),progress=betterGuideProgress();
   const hero=el('section',{class:'guide-course-hero'},[
-    el('div',{class:'guide-course-mascot'},[createBetterMascotRig({variant:'course',label:'Better Guide, the Better Real Estate golden retriever mascot'}),el('img',{class:'guide-course-logo',src:'/better-guide-logo.png',alt:'Better Real Estate'})]),
+    el('div',{class:'guide-course-mascot'},[createLivingBetterMascot({variant:'course',label:'Better mascot, the Better Real Estate golden retriever mascot',initial:'welcome'}),el('img',{class:'guide-course-logo',src:'/better-guide-logo.png',alt:'Better Real Estate'})]),
     el('div',{class:'grow'},[el('div',{class:'dispoeyebrow'},'FREE BETTER REAL ESTATE COURSE'),el('h1',{},'Learn wholesaling by doing it in Better.'),el('p',{},'From your first opportunity to buyer relationships and closing, each module teaches the workflow and then sends you into the real Better tool built for that step. The course is free; the goal is to help you build the habit of running the business in one place.'),el('div',{class:'guide-progress-row'},[el('div',{class:'guide-progress-track'},el('span',{style:`width:${progress.pct}%`})),el('b',{},`${progress.done} of ${progress.total} complete`)])])
   ]);wrap.appendChild(hero);
   if(progress.done===progress.total)wrap.appendChild(el('div',{class:'guide-course-achievement'},[el('b',{},'Wholesaling Foundations — Completed'),el('span',{},'You completed the full free Better-centered course. This is a learning milestone, not a professional certification or license.') ]));
@@ -2690,6 +2772,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'learn',selector:'.better-learning-page',min:0,release:52,title:'Learn wholesaling inside Better',copy:'The free course teaches the wholesaling workflow while showing where to do each step in Better — research a property, build your network, post a deal, manage buyers, and move the transaction forward.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:53,title:'Meet the mascot, not another button',copy:'The Better mascot now is the control: no Guide pill, no stacked circles. He reacts to hover, taps, tutorials and course wins while keeping Settings clear and the rest of Better unchanged.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'A mascot that actually feels alive',copy:'Better Guide is now a layered interactive character instead of a moving picture. His head, ears, raised paw, body and tail move independently, he follows nearby interaction, reacts to the tutorial target and settles back into a restrained idle state.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'A live character that changes with you',copy:'He no longer sits in one frozen pose. Better now swaps between different mascot states — welcoming, waving, guiding, celebrating and teaching — so the interaction feels alive instead of like a moving sticker.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
  ].filter(x=>rank>=x.min&&(!x.when||x.when()));
@@ -2748,7 +2831,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
  const move=delta=>{const next=Math.max(0,Math.min(steps.length-1,i+delta));if(next===i&&delta>0)return finish();i=next;draw();};
  const draw=async()=>{
    if(closed)return; const step=steps[i]; card.innerHTML='';
-   const tutorialMascot=createBetterMascotRig({variant:'tutorial',hidden:true});
+   const tutorialMascot=createLivingBetterMascot({variant:'tutorial',hidden:true,initial:'point'});
    card.appendChild(el('div',{class:'guide-tutor-head'},[el('div',{class:'guide-mascot-stage is-tutorial','aria-hidden':'true'},tutorialMascot),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':'I’ll show you around')])]));
    card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));
    card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
