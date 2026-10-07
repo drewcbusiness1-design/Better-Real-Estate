@@ -51,8 +51,8 @@ Netlify → **Site configuration → Environment variables**. Set for all deploy
 SESSION_SECRET      = <run: openssl rand -base64 32>
 APP_URL             = https://betterrealestate.org
 RESEND_API_KEY      = re_xxxxxxxxxxxx
-MAIL_FROM           = Better Real Estate <noreply@betterrealestate.org>
-MAIL_REPLY_TO       = drewcbusiness1@gmail.com
+MAIL_FROM           = Better Real Estate <notifications@betterrealestate.org>
+MAIL_REPLY_TO       = partners@betterrealestate.org
 CJ_API_KEY          = <CJdropshipping API key>
 GOOGLE_MAPS_API_KEY = <Google Places API (New) key — optional>
 ```

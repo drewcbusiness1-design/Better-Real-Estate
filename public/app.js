@@ -3888,6 +3888,10 @@ async function renderEmailCenter() {
   const audience = el('select', {}, [
     ['all','All opted-in users'],['buyers','Buyers'],['sellers','Sellers / wholesalers'],['teams','Wholesale Team members']
   ].map(([v,l]) => el('option', { value:v }, l)));
+  const sender = el('select', {}, [
+    el('option',{value:'notifications'},'Better notifications — notifications@betterrealestate.org'),
+    el('option',{value:'partners'},'Better partners — partners@betterrealestate.org')
+  ]);
   const market = el('input', { placeholder: 'Optional market filter, e.g. Philadelphia' });
   const audienceSt = el('div', { class: 'hint' }, 'Recipient count will only include verified users who opted into product & activity email.');
   const previewAudience = async () => { try { const r = await api('POST','/api/admin/email-center/preview-audience',{ audience:{ kind:audience.value, market:market.value.trim() } }); audienceSt.textContent = `${r.count} eligible recipient${r.count === 1 ? '' : 's'}.`; } catch(e) { audienceSt.textContent=e.message; } };
@@ -3905,11 +3909,11 @@ async function renderEmailCenter() {
   [headline,body,ctaLabel].forEach(x => x.addEventListener('input',refreshPreview));
   refreshPreview();
   const sendSt = el('div', { class:'hint' });
-  [['Audience',audience],['Market filter',market],['Subject',subject],['Headline',headline],['Message',body],['Button text',ctaLabel],['Button link',ctaUrl],['Delivery',timing]].forEach(([label,input]) => { box.appendChild(el('label',{},label)); box.appendChild(input); });
+  [['Sender',sender],['Audience',audience],['Market filter',market],['Subject',subject],['Headline',headline],['Message',body],['Button text',ctaLabel],['Button link',ctaUrl],['Delivery',timing]].forEach(([label,input]) => { box.appendChild(el('label',{},label)); box.appendChild(input); });
   box.appendChild(when); box.appendChild(audienceSt);
   box.appendChild(el('label',{},'Preview')); box.appendChild(preview);
   box.appendChild(el('button', { class:'btn-ghost', style:'width:100%;margin-top:12px', onclick: async () => {
-    try { await api('POST','/api/admin/email-center/broadcast-test',{ subject:subject.value, headline:headline.value, body:body.value, ctaLabel:ctaLabel.value, ctaUrl:ctaUrl.value, audience:{kind:audience.value,market:market.value.trim()} }); toast('Draft sent to ' + state.user.email, 'ok'); }
+    try { await api('POST','/api/admin/email-center/broadcast-test',{ subject:subject.value, headline:headline.value, body:body.value, ctaLabel:ctaLabel.value, ctaUrl:ctaUrl.value, sender:sender.value, audience:{kind:audience.value,market:market.value.trim()} }); toast('Draft sent to ' + state.user.email, 'ok'); }
     catch(e) { toast(e.message,'err'); }
   } }, 'Send draft to myself'));
   box.appendChild(el('button', { class:'submitbtn', onclick: async () => {
@@ -3919,7 +3923,7 @@ async function renderEmailCenter() {
     if (!confirm(`${timing.value === 'later' ? 'Schedule' : 'Send'} this broadcast?\n\n${countText}\n\nOnly opted-in, verified users in this audience are eligible.`)) return;
     try {
       const scheduledAt = timing.value === 'later' ? new Date(when.value).toISOString() : new Date().toISOString();
-      const r = await api('POST','/api/admin/email-center/broadcasts',{ subject:subject.value, headline:headline.value, body:body.value, ctaLabel:ctaLabel.value, ctaUrl:ctaUrl.value, audience:{kind:audience.value,market:market.value.trim()}, scheduledAt });
+      const r = await api('POST','/api/admin/email-center/broadcasts',{ subject:subject.value, headline:headline.value, body:body.value, ctaLabel:ctaLabel.value, ctaUrl:ctaUrl.value, sender:sender.value, audience:{kind:audience.value,market:market.value.trim()}, scheduledAt });
       sendSt.className='okmsg'; sendSt.textContent = timing.value === 'later' ? 'Broadcast scheduled.' : `Broadcast queued/sent. ${r.result?.sent || 0} delivered in the first batch.`;
       setTimeout(() => render(), 600);
     } catch(e) { sendSt.className='errmsg'; sendSt.textContent=e.message; }
@@ -3932,7 +3936,7 @@ async function renderEmailCenter() {
   const hist = el('div', { class:'card' });
   if (!(data.broadcasts || []).length) hist.appendChild(el('div',{class:'listrow'},el('div',{class:'s'},'No broadcasts yet.')));
   (data.broadcasts || []).forEach(b => hist.appendChild(el('div',{class:'listrow'},[
-    el('div',{class:'grow'},[el('div',{class:'t'},b.subject),el('div',{class:'s'},`${b.status} · ${b.sentCount} sent${b.failedCount ? ' · ' + b.failedCount + ' failed' : ''} · ${new Date(b.scheduledAt).toLocaleString()}`), b.audience?.market ? el('div',{class:'hint'},`${b.audience.kind} · ${b.audience.market}`) : el('div',{class:'hint'},b.audience?.kind || 'all')]),
+    el('div',{class:'grow'},[el('div',{class:'t'},b.subject),el('div',{class:'s'},`${b.status} · ${b.sentCount} sent${b.failedCount ? ' · ' + b.failedCount + ' failed' : ''} · ${new Date(b.scheduledAt).toLocaleString()}`), b.audience?.market ? el('div',{class:'hint'},`${b.sender === 'partners' ? 'partners@betterrealestate.org' : 'notifications@betterrealestate.org'} · ${b.audience.kind} · ${b.audience.market}`) : el('div',{class:'hint'},`${b.sender === 'partners' ? 'partners@betterrealestate.org' : 'notifications@betterrealestate.org'} · ${b.audience?.kind || 'all'}`)]),
     el('span',{class:'pill ' + (b.status === 'sent' ? 'good' : '')},b.status)
   ])));
   wrap.appendChild(hist);
@@ -4313,7 +4317,7 @@ function renderFooter() {
   f.appendChild(el('div', { class: 'footinner' }, [
     row,
     socialLinksBlock(true),
-    el('div', { class: 'footmeta' }, `© ${new Date().getFullYear()} Better Real Estate · drewcbusiness1@gmail.com`),
+    el('div', { class: 'footmeta' }, `© ${new Date().getFullYear()} Better Real Estate · partners@betterrealestate.org`),
     el('div', { class: 'footdisc' }, 'Better Real Estate is a listing and marketing platform. We are not a licensed real estate brokerage and do not provide brokerage, legal, tax, or investment advice. Verify every property independently and consult your own professionals before transacting.')
   ]));
 }
@@ -4377,7 +4381,7 @@ function pageTerms() {
     ['7. No warranty', 'The service is provided as-is. We do not promise it will be uninterrupted, error-free, or that any listing or user is legitimate.'],
     ['8. Limitation of liability', 'To the maximum extent the law allows, our total liability to you for any claim relating to the service is limited to the amount you paid us in the twelve months before the claim arose.'],
     ['9. Changes and termination', 'We may update these terms; continued use after an update means you accept it. We may suspend or terminate accounts that violate these terms.'],
-    ['10. Contact', 'Questions about these terms: drewcbusiness1@gmail.com'],
+    ['10. Contact', 'Questions about these terms: partners@betterrealestate.org'],
     ['A necessary note', 'This document is a working template for a small platform. Before scaling real payments, marketplace payouts, or regulated transaction services, have a lawyer review these terms and the privacy policy for the states and countries where you operate.']
   ]);
 }
@@ -4407,10 +4411,10 @@ function pagePrivacy() {
     ['What other users can see', 'Your name, username, role, bio, optional market/location, profile photo, listing count, follower count, friend count, points, verification status, company affiliation and reviews may be public and may appear in member search. Authorized members of the same Wholesale Teams workspace may see company listings, team analytics, shared acquisition criteria and messages tied to company property listings. Personal direct messages not tied to company listings are not included in the company inbox. Your email address and phone number are shown to another user only where the product requires it, such as after they unlock one of your property listings. Direct messaging does not by itself reveal your email address or phone number. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
     ['Who we share it with', "We share information only as needed to operate the service: the specific wholesaler/company when you intentionally submit that business's buyer-list form; Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; OpenAI for eligible AI-assisted listing or deal-import generation when you invoke those features; email providers for transactional and opted-in marketing messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising."],
     ['Cookies and similar technology', 'We use a session cookie to keep you signed in. Payment providers such as Stripe may use cookies, browser/device information and similar signals for payment security and fraud prevention. We do not operate third-party advertising trackers on the site.'],
-    ['Your choices', 'You can edit your profile, username and password, manage your marketplace listings, and permanently delete your account from Settings. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. Marketing email can be turned on or off in Settings or through the unsubscribe link in any marketing message. Unread-message email reminders can be turned off or delayed in Settings. AI writing features are optional and only send content when you choose to use them. To request a copy of your data or correction that is not available in the product, email drewcbusiness1@gmail.com. Additional legal rights may apply depending on where you live.'],
+    ['Your choices', 'You can edit your profile, username and password, manage your marketplace listings, and permanently delete your account from Settings. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. Marketing email can be turned on or off in Settings or through the unsubscribe link in any marketing message. Unread-message email reminders can be turned off or delayed in Settings. AI writing features are optional and only send content when you choose to use them. To request a copy of your data or correction that is not available in the product, email partners@betterrealestate.org. Additional legal rights may apply depending on where you live.'],
     ['Retention and security', 'We keep account, order, payment and transaction records for as long as reasonably needed to provide the service, resolve disputes, prevent fraud, and meet tax, accounting or other legal obligations. When you delete an account, public profile content and ordinary social data are removed; transaction records we must retain are de-identified where practical. Shipping information may remain with the related order record only where reasonably needed for those purposes. Passwords are stored as bcrypt hashes and never in readable form. No system is perfectly secure, so avoid posting sensitive information that is not necessary for a transaction.'],
     ['Children', 'This service is not for anyone under 18 and we do not knowingly collect personal information from children.'],
-    ['Contact', 'drewcbusiness1@gmail.com']
+    ['Contact', 'partners@betterrealestate.org']
   ]);
 }
 
@@ -4421,14 +4425,14 @@ function pageContact() {
   wrap.appendChild(el('div', { class: 'sub' }, 'A real person reads these.'));
   wrap.appendChild(el('div', { class: 'card', style: 'padding:22px' }, [
     el('div', { class: 'stbody' }, 'Email us directly:'),
-    el('a', { href: 'mailto:drewcbusiness1@gmail.com', class: 'contactmail' }, 'drewcbusiness1@gmail.com'),
+    el('a', { href: 'mailto:partners@betterrealestate.org', class: 'contactmail' }, 'partners@betterrealestate.org'),
     el('div', { class: 'stbody', style: 'margin-top:16px' }, 'Useful things to include: your account email, the listing or item involved, and a screenshot if something looks broken. Expect a reply within a business day or two.')
   ]));
   const subj = el('input', { placeholder: 'What is this about?' });
   const body = el('textarea', { placeholder: 'Tell us what you need.' });
   const btn = el('button', { class: 'submitbtn' }, 'Open in your email app');
   btn.onclick = () => {
-    window.location.href = `mailto:drewcbusiness1@gmail.com?subject=${encodeURIComponent(subj.value || 'Better Real Estate enquiry')}&body=${encodeURIComponent(body.value)}`;
+    window.location.href = `mailto:partners@betterrealestate.org?subject=${encodeURIComponent(subj.value || 'Better Real Estate enquiry')}&body=${encodeURIComponent(body.value)}`;
   };
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Or compose here'));
   wrap.appendChild(el('div', { class: 'card', style: 'padding:18px' }, [

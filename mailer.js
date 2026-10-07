@@ -25,21 +25,27 @@
 
 const APP_NAME = 'Better Real Estate';
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
-const FROM = process.env.MAIL_FROM || `${APP_NAME} <onboarding@resend.dev>`;
-
+const NOTIFICATIONS_FROM = process.env.MAIL_NOTIFICATIONS_FROM || `${APP_NAME} <notifications@betterrealestate.org>`;
+const PARTNERS_FROM = process.env.MAIL_PARTNERS_FROM || `${APP_NAME} <partners@betterrealestate.org>`;
+const CONTACT_EMAIL = 'partners@betterrealestate.org';
 const RESEND_KEY = process.env.RESEND_API_KEY;
-const REPLY_TO = process.env.MAIL_REPLY_TO || 'drewcbusiness1@gmail.com';
+const REPLY_TO = process.env.MAIL_REPLY_TO || CONTACT_EMAIL;
+const LOGO_URL = `${APP_URL.replace(/\/$/, '')}/bre-email-logo.png`;
+
+function senderAddress(sender = 'notifications') {
+  return sender === 'partners' ? PARTNERS_FROM : NOTIFICATIONS_FROM;
+}
 
 function shell(title, bodyHtml) {
   return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#FAF9F6;padding:32px 16px">
   <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #DBD7CD;border-radius:14px;overflow:hidden">
-    <div style="background:#12222D;padding:20px 24px;color:#fff;font-size:18px;font-weight:600">${APP_NAME}</div>
+    <div style="background:#12222D;padding:18px 24px;text-align:center"><img src="${LOGO_URL}" width="190" alt="Better Real Estate" style="display:block;max-width:190px;height:auto;margin:0 auto"></div>
     <div style="padding:26px 24px;color:#14181C;font-size:15px;line-height:1.6">
       <h2 style="margin:0 0 12px;font-size:20px">${title}</h2>
       ${bodyHtml}
     </div>
     <div style="padding:16px 24px;border-top:1px solid #DBD7CD;color:#40474F;font-size:12px">
-      ${APP_NAME} · <a href="mailto:drewcbusiness1@gmail.com" style="color:#1F3B4D">drewcbusiness1@gmail.com</a>
+      ${APP_NAME} · <a href="mailto:${CONTACT_EMAIL}" style="color:#1F3B4D">${CONTACT_EMAIL}</a>
     </div>
   </div>
 </div>`;
@@ -52,7 +58,7 @@ function esc(v) {
 function marketingShell(title, bodyHtml, { unsubscribeUrl, preferencesUrl, postalAddress }) {
   return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#FAF9F6;padding:32px 16px">
   <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #DBD7CD;border-radius:14px;overflow:hidden">
-    <div style="background:#12222D;padding:20px 24px;color:#fff;font-size:18px;font-weight:600">${APP_NAME}</div>
+    <div style="background:#12222D;padding:18px 24px;text-align:center"><img src="${LOGO_URL}" width="190" alt="Better Real Estate" style="display:block;max-width:190px;height:auto;margin:0 auto"></div>
     <div style="padding:26px 24px;color:#14181C;font-size:15px;line-height:1.6">
       <h2 style="margin:0 0 12px;font-size:20px">${esc(title)}</h2>
       ${bodyHtml}
@@ -80,7 +86,7 @@ async function send(to, subject, html, text, extra = {}) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: FROM, to: [to], subject, html, text, reply_to: REPLY_TO, ...(extra.headers ? { headers: extra.headers } : {}) })
+    body: JSON.stringify({ from: senderAddress(extra.sender), to: [to], subject, html, text, reply_to: extra.replyTo || REPLY_TO, ...(extra.headers ? { headers: extra.headers } : {}) })
   });
   if (!res.ok) {
     const body = await res.text();
@@ -187,7 +193,7 @@ exports.sendUnreadMessageReminder = (to, name, { senderName, count = 1, listingL
     `You have ${n > 1 ? n + ' unread messages' : 'an unread message'} from ${senderName || 'a Better Real Estate member'}. Open the conversation: ${conversationUrl || APP_URL}`);
 };
 
-exports.sendAdminBroadcast = (to, name, { subject, headline, body, ctaLabel, ctaUrl, unsubscribeUrl, preferencesUrl, postalAddress }) => {
+exports.sendAdminBroadcast = (to, name, { subject, headline, body, ctaLabel, ctaUrl, unsubscribeUrl, preferencesUrl, postalAddress, sender = 'notifications' }) => {
   const safeName = esc(name || 'there');
   const safeBody = esc(body || '').replace(/\n/g, '<br>');
   const safeCta = esc(ctaLabel || 'Open Better Real Estate');
@@ -196,7 +202,7 @@ exports.sendAdminBroadcast = (to, name, { subject, headline, body, ctaLabel, cta
     `<p>Hi ${safeName},</p><p>${safeBody}</p><p style="margin:22px 0"><a href="${safeUrl}" style="background:#12222D;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;display:inline-block;font-weight:600">${safeCta}</a></p>`,
     { unsubscribeUrl, preferencesUrl, postalAddress });
   const text = `${headline || 'An update from Better Real Estate'}\n\nHi ${name || 'there'},\n\n${body || ''}\n\n${ctaLabel || 'Open Better Real Estate'}: ${ctaUrl || APP_URL}\n\nEmail preferences: ${preferencesUrl}\nUnsubscribe: ${unsubscribeUrl}\n${APP_NAME} · ${postalAddress}`;
-  return send(to, subject || `Update from ${APP_NAME}`, html, text, { headers: { 'List-Unsubscribe': `<${unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } });
+  return send(to, subject || `Update from ${APP_NAME}`, html, text, { sender, replyTo: sender === 'partners' ? CONTACT_EMAIL : REPLY_TO, headers: { 'List-Unsubscribe': `<${unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } });
 };
 
 exports.sendNewSignupAlert = (to, user) => {
@@ -235,8 +241,10 @@ exports.sendMailTest = (to) => send(to, `${APP_NAME} email test`,
 exports.health = () => ({
   configured: !!RESEND_KEY,
   provider: 'Resend',
-  from: FROM,
+  from: NOTIFICATIONS_FROM,
+  notificationsFrom: NOTIFICATIONS_FROM,
+  partnersFrom: PARTNERS_FROM,
   replyTo: REPLY_TO,
   appUrl: APP_URL,
-  usingSandboxSender: /@resend\.dev[>\s]*$/i.test(FROM)
+  usingSandboxSender: /@resend\.dev[>\s]*$/i.test(NOTIFICATIONS_FROM)
 });

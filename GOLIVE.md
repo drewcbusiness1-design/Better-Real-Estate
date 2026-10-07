@@ -76,8 +76,8 @@ This isn't a Resend limitation — it's every provider, because the rule lives a
 Send from a domain **you** control, and set your Gmail as the reply-to:
 
 ```
-MAIL_FROM     = Better Real Estate <noreply@betterrealestate.org>
-MAIL_REPLY_TO = drewcbusiness1@gmail.com
+MAIL_FROM     = Better Real Estate <notifications@betterrealestate.org>
+MAIL_REPLY_TO = partners@betterrealestate.org
 ```
 
 Now the From: header says `betterrealestate.org`, you publish the DNS records proving Resend is authorised to send for that domain, DMARC passes, and it lands. When someone hits reply, it still goes to your Gmail inbox. You get the deliverability of a real domain and keep reading mail where you already read it.

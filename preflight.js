@@ -30,8 +30,8 @@ else ok('SESSION_SECRET set and looks random.');
 head('Email');
 if (!process.env.RESEND_API_KEY) bad('RESEND_API_KEY not set. Password resets and email confirmation will not send.');
 else ok('Resend API key present.');
-const from = process.env.MAIL_FROM || '';
-if (!from) bad('MAIL_FROM not set — the app would fall back to Resend’s sandbox sender, which is not appropriate for real user verification mail. Set Better Real Estate <noreply@betterrealestate.org> after verifying the domain in Resend.');
+const from = process.env.MAIL_NOTIFICATIONS_FROM || process.env.MAIL_FROM || 'Better Real Estate <notifications@betterrealestate.org>';
+if (!from) bad('MAIL_NOTIFICATIONS_FROM/MAIL_FROM is not set. Use Better Real Estate <notifications@betterrealestate.org> on the verified Resend domain.');
 else if (/@resend\.dev/i.test(from)) bad('MAIL_FROM is still using Resend’s sandbox sender. Real signup verification should use a verified betterrealestate.org sender.');
 else if (/@gmail\.com|@yahoo\.|@outlook\.|@hotmail\./i.test(from)) bad('MAIL_FROM uses a free mailbox domain. Send from your own verified domain and set MAIL_REPLY_TO to your personal inbox.');
 else {

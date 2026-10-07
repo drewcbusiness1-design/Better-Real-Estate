@@ -53,7 +53,7 @@ This build includes a server-side CJdropshipping API 2.0 integration: admin cata
 - **Email verification** on signup, with resend. Unverified accounts can't post listings.
 - **Password reset** by emailed token, single-use, one-hour expiry. Unknown addresses get the same response as known ones so the endpoint can't be used to discover who has an account.
 - **Transactional email** via `mailer.js` — real SMTP when configured, prints to console otherwise so you can develop without a mail account.
-- **Footer pages**: About, FAQ, Terms, Privacy, Contact (→ drewcbusiness1@gmail.com).
+- **Footer pages**: About, FAQ, Terms, Privacy, Contact (→ partners@betterrealestate.org).
 - **Seed script** with eight sample listings and ten real shop items.
 
 ---

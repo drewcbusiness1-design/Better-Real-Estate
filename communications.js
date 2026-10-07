@@ -114,12 +114,13 @@ function normalizeBroadcastInput(input = {}, createdBy = null) {
   const body = String(input.body || '').trim().slice(0, 8000);
   const ctaLabel = String(input.ctaLabel || 'Open Better Real Estate').trim().slice(0, 80);
   const ctaUrl = String(input.ctaUrl || APP_URL).trim().slice(0, 1000);
+  const sender = input.sender === 'partners' ? 'partners' : 'notifications';
   const audience = { kind: ['all','buyers','sellers','teams'].includes(input.audience?.kind) ? input.audience.kind : 'all', market: String(input.audience?.market || '').trim().slice(0, 100) };
   if (!subject || !headline || !body) throw new Error('Subject, headline and message are required.');
   let scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : new Date();
   if (!Number.isFinite(scheduledAt.getTime())) scheduledAt = new Date();
   return {
-    id: crypto.randomUUID(), subject, headline, body, ctaLabel, ctaUrl, audience,
+    id: crypto.randomUUID(), subject, headline, body, ctaLabel, ctaUrl, sender, audience,
     status: 'queued', scheduledAt: scheduledAt.toISOString(), createdAt: new Date().toISOString(), createdBy,
     sentUserIds: [], failedUserIds: [], sentCount: 0, failedCount: 0, finishedAt: null
   };
@@ -143,7 +144,7 @@ async function runBroadcastCycle({ broadcastId = null, limit = 40 } = {}) {
       try {
         await mailer.sendAdminBroadcast(user.email, user.name, {
           subject: b.subject, headline: b.headline, body: b.body, ctaLabel: b.ctaLabel, ctaUrl: b.ctaUrl,
-          unsubscribeUrl: marketing.unsubscribeUrl(user), preferencesUrl: `${APP_URL}/?view=settings`, postalAddress: POSTAL_ADDRESS
+          unsubscribeUrl: marketing.unsubscribeUrl(user), preferencesUrl: `${APP_URL}/?view=settings`, postalAddress: POSTAL_ADDRESS, sender: b.sender || 'notifications'
         });
         b.sentUserIds = [...(b.sentUserIds || []), user.id];
         b.sentCount = Number(b.sentCount || 0) + 1;

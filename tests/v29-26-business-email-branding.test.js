@@ -1,0 +1,12 @@
+const fs=require('fs'); const assert=require('assert');
+const mailer=fs.readFileSync('mailer.js','utf8'); const app=fs.readFileSync('public/app.js','utf8'); const comm=fs.readFileSync('communications.js','utf8');
+assert(app.includes('partners@betterrealestate.org'),'public contact email must use partners@');
+assert(!app.includes('drewcbusiness1@gmail.com'),'public runtime must not expose personal Gmail');
+assert(mailer.includes("const CONTACT_EMAIL = 'partners@betterrealestate.org'"),'mailer contact must use partners@');
+assert(mailer.includes('bre-email-logo.png'),'email shell must use exact packaged logo asset');
+assert(fs.existsSync('public/bre-email-logo.png'),'canonical email logo must ship');
+assert(app.includes('notifications@betterrealestate.org') && app.includes('partners@betterrealestate.org'),'Email Center sender selector missing');
+assert(comm.includes("input.sender === 'partners' ? 'partners' : 'notifications'"),'sender choice must be normalized server-side');
+assert(mailer.includes("sender === 'partners' ? PARTNERS_FROM : NOTIFICATIONS_FROM"),'mailer must constrain sender choice');
+assert(mailer.includes("sender === 'partners' ? CONTACT_EMAIL : REPLY_TO"),'partners mail must reply to partners@');
+console.log('v29.26 business email + branding regression: PASS');

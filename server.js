@@ -3711,7 +3711,7 @@ app.post('/api/admin/email-center/broadcast-test', requireAuth, requireAdmin, as
   catch (e) { return res.status(400).json({ error: e.message }); }
   try {
     await mailer.sendAdminBroadcast(req.user.email, req.user.name, {
-      subject: `[TEST] ${draft.subject}`, headline: draft.headline, body: draft.body, ctaLabel: draft.ctaLabel, ctaUrl: draft.ctaUrl,
+      subject: `[TEST] ${draft.subject}`, headline: draft.headline, body: draft.body, ctaLabel: draft.ctaLabel, ctaUrl: draft.ctaUrl, sender: draft.sender,
       unsubscribeUrl: `${String(process.env.APP_URL || '').replace(/\/$/, '')}/?view=settings`,
       preferencesUrl: `${String(process.env.APP_URL || '').replace(/\/$/, '')}/?view=settings`,
       postalAddress: String(process.env.MARKETING_POSTAL_ADDRESS || '').trim()
