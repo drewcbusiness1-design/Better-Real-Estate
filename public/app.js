@@ -337,6 +337,55 @@ window.addEventListener('popstate', () => {
   render();
 });
 
+
+const BETTER_MASCOT_PARTS = [
+  ['tail','/mascot-rig/tail.webp'],
+  ['body','/mascot-rig/body.webp'],
+  ['ear-left','/mascot-rig/ear-left.webp'],
+  ['ear-right','/mascot-rig/ear-right.webp'],
+  ['head','/mascot-rig/head.webp'],
+  ['paw','/mascot-rig/paw.webp']
+];
+function createBetterMascotRig({variant='header',label='Better Guide mascot',hidden=false}={}){
+  const attrs={class:`better-mascot-rig mascot-${variant}`};
+  if(hidden)attrs['aria-hidden']='true';else{attrs.role='img';attrs['aria-label']=label;}
+  const rig=el('span',attrs);
+  BETTER_MASCOT_PARTS.forEach(([part,src])=>rig.appendChild(el('span',{class:`mascot-piece mascot-${part}`},el('img',{src,alt:'',draggable:'false'}))));
+  rig.appendChild(el('span',{class:'mascot-face-glint','aria-hidden':'true'}));
+  wireBetterMascotRig(rig);
+  return rig;
+}
+function playBetterMascotBehavior(rig,kind='ack',duration=900){
+  if(!rig||rig.classList.contains('motion-off'))return;
+  ['is-curious','is-ear-flick','is-paw-wave','is-tail-wag','is-ack','is-celebrate'].forEach(c=>rig.classList.remove(c));
+  void rig.offsetWidth;
+  const cls={curious:'is-curious',ear:'is-ear-flick',paw:'is-paw-wave',tail:'is-tail-wag',celebrate:'is-celebrate'}[kind]||'is-ack';
+  rig.classList.add(cls);
+  clearTimeout(rig._mascotBehaviorTimer);
+  rig._mascotBehaviorTimer=setTimeout(()=>rig.classList.remove(cls),duration);
+}
+function wireBetterMascotRig(rig){
+  const motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if(motionOff){rig.classList.add('motion-off');return rig;}
+  const resetLook=()=>{rig.style.setProperty('--look-x','0px');rig.style.setProperty('--look-y','0px');rig.style.setProperty('--look-r','0deg');};
+  rig.addEventListener('pointermove',e=>{const r=rig.getBoundingClientRect();if(!r.width)return;const nx=Math.max(-1,Math.min(1,(e.clientX-(r.left+r.width/2))/(r.width/2)));const ny=Math.max(-1,Math.min(1,(e.clientY-(r.top+r.height/2))/(r.height/2)));rig.style.setProperty('--look-x',`${(nx*2.4).toFixed(2)}px`);rig.style.setProperty('--look-y',`${(ny*1.3).toFixed(2)}px`);rig.style.setProperty('--look-r',`${(nx*2.2).toFixed(2)}deg`);});
+  rig.addEventListener('pointerenter',()=>rig.classList.add('is-engaged'));
+  rig.addEventListener('pointerleave',()=>{rig.classList.remove('is-engaged');resetLook();});
+  rig.addEventListener('focusout',resetLook);
+  const schedule=()=>{if(!rig.isConnected){clearTimeout(rig._mascotLifeTimer);return;}const choices=[['curious',850],['ear',760],['paw',980],['tail',1100]];const pick=choices[Math.floor(Math.random()*choices.length)];playBetterMascotBehavior(rig,pick[0],pick[1]);rig._mascotLifeTimer=setTimeout(schedule,5200+Math.random()*5200);};
+  rig._mascotLifeTimer=setTimeout(schedule,3600+Math.random()*2800);
+  return rig;
+}
+function aimBetterMascotAt(rig,target){
+  if(!rig||!target||rig.classList.contains('motion-off'))return;
+  const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect();
+  const dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2);
+  rig.style.setProperty('--look-x',`${Math.max(-3,Math.min(3,dx/180)).toFixed(2)}px`);
+  rig.style.setProperty('--look-y',`${Math.max(-1.8,Math.min(1.8,dy/260)).toFixed(2)}px`);
+  rig.style.setProperty('--look-r',`${Math.max(-3.2,Math.min(3.2,dx/150)).toFixed(2)}deg`);
+  rig.classList.add('is-guiding');
+}
+
 function renderTop() {
   const brandEl = document.querySelector('.brand');
   if (brandEl && !brandEl.dataset.wired) {
@@ -365,10 +414,10 @@ function renderTop() {
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Search', 'aria-label':'Search', onclick: () => go('search') }, iconSvg('search',19)));
   nav.appendChild(el('button', { onclick: () => go('settings'), class: 'top-settings-btn '+(state.view === 'settings' ? 'active' : ''), title:'Settings' }, [iconSvg('settings',18),el('span',{class:'top-settings-label'},'Settings')]));
   nav.appendChild(el('button', {
-    class:'better-guide-trigger '+(state.user?.settings?.guideAnimations===false?'no-guide-motion':''),
+    class:'better-guide-trigger',
     title:'Open Better Guide', 'aria-label':'Open Better Guide',
-    onclick:e=>{const b=e.currentTarget;b.classList.remove('mascot-hello');void b.offsetWidth;b.classList.add('mascot-hello');setTimeout(()=>openBetterGuide(),90);}
-  }, el('span',{class:'better-mascot-stage','aria-hidden':'true'},[el('img',{class:'better-mascot-cutout',src:'/better-guide-mascot-cutout.webp',alt:''}),el('span',{class:'better-mascot-glint'})])));
+    onclick:e=>{const rig=e.currentTarget.querySelector('.better-mascot-rig');playBetterMascotBehavior(rig,'ack',520);setTimeout(()=>openBetterGuide(),95);}
+  }, el('span',{class:'better-mascot-stage','aria-hidden':'true'},createBetterMascotRig({variant:'header',hidden:true}))));
 }
 
 function renderTabs() {
@@ -2508,10 +2557,9 @@ function betterGuideNextStep(){
   if(!state.user?.bio||!(state.user?.investmentMarkets||[]).length)return {title:'Tighten your profile',copy:'Add your market and a useful bio so your Better profile gives the network context.',view:'settings'};
   return {title:'Use your operating workspace',copy:'Open Command Center to review real matches, activity and next actions available to your account.',view:'commandcenter'};
 }
-function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');const trigger=document.querySelector('.better-guide-trigger');trigger?.classList.remove('is-open','mascot-hello');trigger?.focus?.({preventScroll:true});}
+function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');const trigger=document.querySelector('.better-guide-trigger');trigger?.classList.remove('is-open');trigger?.focus?.({preventScroll:true});}
 function reactBetterMascot(kind='ack'){
-  const nodes=[...document.querySelectorAll('.better-guide-trigger,.guide-mascot-stage,.guide-course-mascot')];
-  nodes.forEach(node=>{node.classList.remove('mascot-ack','mascot-celebrate');void node.offsetWidth;node.classList.add(kind==='celebrate'?'mascot-celebrate':'mascot-ack');setTimeout(()=>node.classList.remove('mascot-ack','mascot-celebrate'),760);});
+  document.querySelectorAll('.better-mascot-rig').forEach(rig=>playBetterMascotBehavior(rig,kind,kind==='celebrate'?1250:720));
 }
 function navigateFromGuide(view,module){closeBetterGuide();if(module)state.guideCourseModule=module;go(view);}
 function openBetterGuide(){
@@ -2521,7 +2569,7 @@ function openBetterGuide(){
   shade.onclick=e=>{if(e.target===shade)closeBetterGuide();};
   panel.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();closeBetterGuide();}};
   const [ctxTitle,ctxCopy]=guideContext(),progress=betterGuideProgress(),next=betterGuideNextStep();
-  const mascot=el('div',{class:'guide-mascot-stage is-panel','aria-label':'Better Guide mascot'},[el('img',{class:'better-mascot-cutout',src:'/better-guide-mascot-cutout.webp',alt:'Better Guide'}),el('span',{class:'better-mascot-glint','aria-hidden':'true'})]);
+  const mascot=el('div',{class:'guide-mascot-stage is-panel','aria-label':'Better Guide mascot'},createBetterMascotRig({variant:'panel',label:'Better Guide mascot'}));
   const close=el('button',{class:'iconbtn guide-close','aria-label':'Close Better Guide',onclick:closeBetterGuide},'×');
   panel.appendChild(el('div',{class:'better-guide-head'},[mascot,el('div',{class:'grow'},[el('div',{class:'dispoeyebrow'},'BETTER GUIDE'),el('h2',{},'How can I help?'),el('div',{class:'hint'},'Platform help, learning and guidance without leaving your workflow.')]),close]));
   if(state.user?.settings?.guideContextTips!==false)panel.appendChild(el('div',{class:'guide-context-card'},[el('b',{},ctxTitle),el('div',{class:'hint'},ctxCopy)]));
@@ -2557,7 +2605,7 @@ async function openGuideModule(slug){state.guideCourseModule=slug;writeRoute('pu
 async function renderLearnWholesaling(){
   const wrap=el('div',{class:'page better-learning-page'}),module=betterGuideModule(state.guideCourseModule||state.user?.settings?.guideCourseLastModule||'foundations'),progress=betterGuideProgress();
   const hero=el('section',{class:'guide-course-hero'},[
-    el('div',{class:'guide-course-mascot'},[el('img',{src:'/better-guide-mascot.webp',alt:'Better Guide, the Better Real Estate golden retriever mascot'}),el('img',{class:'guide-course-logo',src:'/better-guide-logo.png',alt:'Better Real Estate'})]),
+    el('div',{class:'guide-course-mascot'},[createBetterMascotRig({variant:'course',label:'Better Guide, the Better Real Estate golden retriever mascot'}),el('img',{class:'guide-course-logo',src:'/better-guide-logo.png',alt:'Better Real Estate'})]),
     el('div',{class:'grow'},[el('div',{class:'dispoeyebrow'},'FREE BETTER REAL ESTATE COURSE'),el('h1',{},'Learn wholesaling by doing it in Better.'),el('p',{},'From your first opportunity to buyer relationships and closing, each module teaches the workflow and then sends you into the real Better tool built for that step. The course is free; the goal is to help you build the habit of running the business in one place.'),el('div',{class:'guide-progress-row'},[el('div',{class:'guide-progress-track'},el('span',{style:`width:${progress.pct}%`})),el('b',{},`${progress.done} of ${progress.total} complete`)])])
   ]);wrap.appendChild(hero);
   if(progress.done===progress.total)wrap.appendChild(el('div',{class:'guide-course-achievement'},[el('b',{},'Wholesaling Foundations — Completed'),el('span',{},'You completed the full free Better-centered course. This is a learning milestone, not a professional certification or license.') ]));
@@ -2576,7 +2624,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 53;
+const TUTORIAL_VERSION = 54;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2641,6 +2689,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:52,title:'Meet your Better Guide',copy:'Your Better Guide lives beside Settings. Open him anytime for platform help, contextual guidance, tutorials, support, and the free Learn Wholesaling course built around Better Real Estate.'},
  {view:'learn',selector:'.better-learning-page',min:0,release:52,title:'Learn wholesaling inside Better',copy:'The free course teaches the wholesaling workflow while showing where to do each step in Better — research a property, build your network, post a deal, manage buyers, and move the transaction forward.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:53,title:'Meet the mascot, not another button',copy:'The Better mascot now is the control: no Guide pill, no stacked circles. He reacts to hover, taps, tutorials and course wins while keeping Settings clear and the rest of Better unchanged.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'A mascot that actually feels alive',copy:'Better Guide is now a layered interactive character instead of a moving picture. His head, ears, raised paw, body and tail move independently, he follows nearby interaction, reacts to the tutorial target and settles back into a restrained idle state.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
  ].filter(x=>rank>=x.min&&(!x.when||x.when()));
@@ -2699,7 +2748,8 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
  const move=delta=>{const next=Math.max(0,Math.min(steps.length-1,i+delta));if(next===i&&delta>0)return finish();i=next;draw();};
  const draw=async()=>{
    if(closed)return; const step=steps[i]; card.innerHTML='';
-   card.appendChild(el('div',{class:'guide-tutor-head'},[el('div',{class:'guide-mascot-stage is-tutorial','aria-hidden':'true'},[el('img',{class:'better-mascot-cutout',src:'/better-guide-mascot-cutout.webp',alt:''}),el('span',{class:'better-mascot-glint'})]),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':'I’ll show you around')])]));
+   const tutorialMascot=createBetterMascotRig({variant:'tutorial',hidden:true});
+   card.appendChild(el('div',{class:'guide-tutor-head'},[el('div',{class:'guide-mascot-stage is-tutorial','aria-hidden':'true'},tutorialMascot),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':'I’ll show you around')])]));
    card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));
    card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
    if(i===0&&!onlyNew&&!releaseOnly)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{cleanup();state.guideCourseModule=state.user?.settings?.guideCourseLastModule||'foundations';go('learn');}},'I’m new to wholesaling — start the free course'));
@@ -2709,6 +2759,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
    actions.appendChild(el('button',{type:'button',class:'btn-primary',onclick:()=>i===steps.length-1?finish():move(1)},i===steps.length-1?'Finish':'Next'));
    card.appendChild(actions);card.appendChild(el('button',{type:'button',class:'tutorialskip',onclick:()=>finish(true)},'Skip entire tour'));
    await focus(step);
+   if(currentTarget)aimBetterMascotAt(tutorialMascot,currentTarget);
  };
  await draw();
 }

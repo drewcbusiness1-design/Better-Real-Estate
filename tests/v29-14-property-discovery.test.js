@@ -2,7 +2,7 @@ const assert=require('assert');
 const fs=require('fs');
 const ds=require('../dealSources');
 const pkg=require('../package.json');
-assert.equal(pkg.version,'2.9.28');
+assert.equal(pkg.version,'2.9.29');
 
 // Regrid's documented response commonly stores the display address in properties.headline,
 // outside properties.fields. v29.13 dropped it, causing valid parcels to fail identity matching.
