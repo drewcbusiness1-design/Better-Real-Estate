@@ -1,6 +1,6 @@
 const fs=require('fs'),assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),server=fs.readFileSync('server.js','utf8');
-for(const t of ["title: 'Quick options'","openQuickOptions()","openQuickCustomizer()","iconSvg('grid',19)","iconSvg('search',19)","quickOptions","accountAgeLabel","TUTORIAL_VERSION = 54"]) assert(app.includes(t),t);
+for(const t of ["title: 'Quick options'","openQuickOptions()","openQuickCustomizer()","iconSvg('grid',19)","iconSvg('search',19)","quickOptions","accountAgeLabel","TUTORIAL_VERSION = 55"]) assert(app.includes(t),t);
 assert(!app.includes("'YOUR WORKSPACE'"),'redundant workspace heading removed');
 assert(!app.includes("'What needs your attention'"),'redundant workspace title removed');
 assert(!app.includes("'Skip this step'"),'redundant tutorial action removed');

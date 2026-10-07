@@ -339,129 +339,137 @@ window.addEventListener('popstate', () => {
 
 
 const BETTER_MASCOT_PARTS = [
-  ['tail','/mascot-rig/tail.webp'],
-  ['body','/mascot-rig/body.webp'],
-  ['ear-left','/mascot-rig/ear-left.webp'],
-  ['ear-right','/mascot-rig/ear-right.webp'],
-  ['head','/mascot-rig/head.webp'],
-  ['paw','/mascot-rig/paw.webp']
+  ['tail','/mascot-v2/tail.webp'],
+  ['torso','/mascot-v2/torso.webp'],
+  ['arm-left','/mascot-v2/arm-left.webp'],
+  ['arm-right','/mascot-v2/arm-right.webp'],
+  ['paw-left','/mascot-v2/paw-left.webp'],
+  ['paw-right','/mascot-v2/paw-right.webp'],
+  ['head','/mascot-v2/head.webp'],
+  ['ear-left','/mascot-v2/ear-left.webp'],
+  ['ear-right','/mascot-v2/ear-right.webp'],
+  ['muzzle','/mascot-v2/muzzle.webp']
 ];
 const BETTER_MASCOT_DEFAULTS={
-  headX:0,headY:0,headR:0,bodyX:0,bodyY:0,bodyR:0,bodyS:1,
-  pawR:0,pawX:0,pawY:0,earL:0,earR:0,tailR:0,tailS:1
+  torsoX:0,torsoY:0,torsoR:0,torsoSX:1,torsoSY:1,
+  headX:0,headY:0,headR:0,headSX:1,headSY:1,
+  muzzleX:0,muzzleY:0,muzzleR:0,muzzleS:1,
+  earL:0,earR:0,
+  armLX:0,armLY:0,armLR:0,armRX:0,armRY:0,armRR:0,
+  pawLX:0,pawLY:0,pawLR:0,pawRX:0,pawRY:0,pawRR:0,
+  tailR:0,tailS:1,rootY:0
 };
-function createBetterMascotRig({variant='header',label='Better Guide mascot',hidden=false}={}){
-  const attrs={class:`better-mascot-rig mascot-${variant}`,'data-life':'kinetic'};
+function createBetterMascotRig({variant='header',label='Better mascot',hidden=false}={}){
+  const attrs={class:`better-mascot-rig mascot-${variant}`,'data-life':'articulated-v2'};
   if(hidden)attrs['aria-hidden']='true';else{attrs.role='img';attrs['aria-label']=label;}
   const rig=el('span',attrs);
-  BETTER_MASCOT_PARTS.forEach(([part,src])=>rig.appendChild(el('span',{class:`mascot-piece mascot-${part}`},el('img',{src,alt:'',draggable:'false'}))));
-  rig.appendChild(el('span',{class:'mascot-face-glint','aria-hidden':'true'}));
-  rig._mascot={current:{...BETTER_MASCOT_DEFAULTS},target:{...BETTER_MASCOT_DEFAULTS},velocity:{},mood:'idle',pointer:{x:0,y:0,active:false},lastTs:0,nextIdle:0,burstUntil:0};
+  const stage=el('span',{class:'mascot-articulated-stage'});
+  const asset=name=>BETTER_MASCOT_PARTS.find(([part])=>part===name)?.[1];
+  const img=name=>el('img',{src:asset(name),alt:'',draggable:'false'});
+  const tail=el('span',{class:'mascot-joint mascot-tail'},img('tail'));
+  const torso=el('span',{class:'mascot-joint mascot-torso'},img('torso'));
+  const leftArm=el('span',{class:'mascot-joint mascot-arm-left'},[img('arm-left'),el('span',{class:'mascot-joint-local mascot-paw-left'},img('paw-left'))]);
+  const rightArm=el('span',{class:'mascot-joint mascot-arm-right'},[img('arm-right'),el('span',{class:'mascot-joint-local mascot-paw-right'},img('paw-right'))]);
+  const head=el('span',{class:'mascot-joint mascot-head'},[img('head'),el('span',{class:'mascot-joint-local mascot-ear-left'},img('ear-left')),el('span',{class:'mascot-joint-local mascot-ear-right'},img('ear-right')),el('span',{class:'mascot-joint-local mascot-muzzle'},img('muzzle'))]);
+  stage.append(tail,torso,leftArm,rightArm,head);
+  rig.appendChild(stage);
+  rig._mascot={
+    current:{...BETTER_MASCOT_DEFAULTS},target:{...BETTER_MASCOT_DEFAULTS},velocity:{},
+    mood:'rest',pointer:{x:0,y:0,seen:false,last:0},gaze:{x:0,y:0},lastTs:0,
+    nextIdle:performance.now()+5000+Math.random()*3500,sequenceUntil:0,actionToken:0
+  };
   wireBetterMascotRig(rig);
   return rig;
 }
-function mascotSetTarget(rig,patch={},mood){
-  if(!rig?._mascot)return;
-  Object.assign(rig._mascot.target,patch);
-  if(mood)rig._mascot.mood=mood;
-}
+function mascotSetTarget(rig,patch={},mood){if(!rig?._mascot)return;Object.assign(rig._mascot.target,patch);if(mood)rig._mascot.mood=mood;}
 function mascotApply(rig){
-  const m=rig._mascot,c=m.current;
-  rig.style.setProperty('--head-x',c.headX.toFixed(2)+'px');
-  rig.style.setProperty('--head-y',c.headY.toFixed(2)+'px');
-  rig.style.setProperty('--head-r',c.headR.toFixed(2)+'deg');
-  rig.style.setProperty('--body-x',c.bodyX.toFixed(2)+'px');
-  rig.style.setProperty('--body-y',c.bodyY.toFixed(2)+'px');
-  rig.style.setProperty('--body-r',c.bodyR.toFixed(2)+'deg');
-  rig.style.setProperty('--body-s',c.bodyS.toFixed(3));
-  rig.style.setProperty('--paw-r',c.pawR.toFixed(2)+'deg');
-  rig.style.setProperty('--paw-x',c.pawX.toFixed(2)+'px');
-  rig.style.setProperty('--paw-y',c.pawY.toFixed(2)+'px');
-  rig.style.setProperty('--ear-l',c.earL.toFixed(2)+'deg');
-  rig.style.setProperty('--ear-r',c.earR.toFixed(2)+'deg');
-  rig.style.setProperty('--tail-r',c.tailR.toFixed(2)+'deg');
-  rig.style.setProperty('--tail-s',c.tailS.toFixed(3));
+  const c=rig._mascot.current,st=rig.style;
+  const set=(n,v,u='')=>st.setProperty(n,Number(v).toFixed(u==='scale'?3:2)+(u==='scale'?'':u));
+  set('--root-y',c.rootY,'px');set('--torso-x',c.torsoX,'px');set('--torso-y',c.torsoY,'px');set('--torso-r',c.torsoR,'deg');set('--torso-sx',c.torsoSX,'scale');set('--torso-sy',c.torsoSY,'scale');
+  set('--head-x',c.headX,'px');set('--head-y',c.headY,'px');set('--head-r',c.headR,'deg');set('--head-sx',c.headSX,'scale');set('--head-sy',c.headSY,'scale');
+  set('--muzzle-x',c.muzzleX,'px');set('--muzzle-y',c.muzzleY,'px');set('--muzzle-r',c.muzzleR,'deg');set('--muzzle-s',c.muzzleS,'scale');
+  set('--ear-l',c.earL,'deg');set('--ear-r',c.earR,'deg');
+  set('--arm-lx',c.armLX,'px');set('--arm-ly',c.armLY,'px');set('--arm-lr',c.armLR,'deg');set('--arm-rx',c.armRX,'px');set('--arm-ry',c.armRY,'px');set('--arm-rr',c.armRR,'deg');
+  set('--paw-lx',c.pawLX,'px');set('--paw-ly',c.pawLY,'px');set('--paw-lr',c.pawLR,'deg');set('--paw-rx',c.pawRX,'px');set('--paw-ry',c.pawRY,'px');set('--paw-rr',c.pawRR,'deg');
+  set('--tail-r',c.tailR,'deg');set('--tail-s',c.tailS,'scale');
 }
 function mascotSpringStep(rig,dt){
   const m=rig._mascot;if(!m)return;
-  const stiffness=m.mood==='celebrate'?34:m.mood==='guide'?26:20,damping=.78;
-  for(const k of Object.keys(BETTER_MASCOT_DEFAULTS)){
-    const cur=m.current[k],target=m.target[k];
-    let v=m.velocity[k]||0;
-    v+=(target-cur)*stiffness*dt;
-    v*=Math.pow(damping,dt*60);
-    m.current[k]=cur+v*dt*60;
-    m.velocity[k]=v;
+  const k=m.mood==='celebrate'?18:m.mood==='guide'?14:m.mood==='react'?13:9.5;
+  const damping=m.mood==='celebrate'?.72:.82;
+  for(const key of Object.keys(BETTER_MASCOT_DEFAULTS)){
+    let v=m.velocity[key]||0;const cur=m.current[key],target=m.target[key];
+    v+=(target-cur)*k*dt;v*=Math.pow(damping,dt*60);m.current[key]=cur+v*dt*60;m.velocity[key]=v;
   }
   mascotApply(rig);
 }
-function mascotIdlePlan(rig,now){
-  const m=rig._mascot;if(!m||now<m.nextIdle||now<m.burstUntil)return;
-  const plans=[
-    {headR:-4,headY:-1.2,earL:-7,earR:3,bodyR:-1.2},
-    {headR:4,headX:1.4,earL:2,earR:7,bodyR:1.0},
-    {pawR:-8,pawY:-2.2,tailR:10,bodyS:1.012},
-    {headY:1.2,bodyY:.6,tailR:-7,tailS:1.04}
+function mascotRestTarget(){return {...BETTER_MASCOT_DEFAULTS,torsoY:1.4,headY:.6,armLR:24,armRR:-24,pawLY:8,pawRY:8,pawLR:10,pawRR:-10,tailR:-4};}
+function mascotIdleSequence(rig,now){
+  const m=rig._mascot;if(!m||now<m.nextIdle||now<m.sequenceUntil||m.pointer.seen)return;
+  const token=++m.actionToken;
+  const sequences=[
+    [{t:0,p:{headR:-4,headX:-1.2,earL:-5,earR:2}},{t:950,p:{headR:2,headX:.6,earL:1,earR:4}},{t:1850,p:mascotRestTarget()}],
+    [{t:0,p:{torsoY:-1.2,torsoSY:1.012,headY:-1.6,earL:-3,earR:-3,tailR:6}},{t:1200,p:mascotRestTarget()}],
+    [{t:0,p:{armLR:-10,pawLR:-8,pawLY:-2,headR:-2}},{t:800,p:{armLR:6,pawLR:3,pawLY:0}},{t:1500,p:mascotRestTarget()}],
+    [{t:0,p:{headY:1.8,muzzleY:1.2,earL:3,earR:3,torsoY:2.2}},{t:1350,p:mascotRestTarget()}]
   ];
-  mascotSetTarget(rig,{...BETTER_MASCOT_DEFAULTS,...plans[Math.floor(Math.random()*plans.length)]},'idle');
-  m.nextIdle=now+1400+Math.random()*1800;
-  setTimeout(()=>{if(rig.isConnected&&rig._mascot?.mood==='idle')mascotSetTarget(rig,{...BETTER_MASCOT_DEFAULTS},'idle');},700+Math.random()*500);
+  const seq=sequences[Math.floor(Math.random()*sequences.length)];m.sequenceUntil=now+(seq.at(-1)?.t||1500)+400;
+  for(const step of seq)setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token&&rig._mascot.mood==='idle')mascotSetTarget(rig,{...mascotRestTarget(),...step.p},'idle');},step.t);
+  m.nextIdle=now+6500+Math.random()*5500;
 }
 function mascotLifeFrame(rig,ts){
-  if(!rig.isConnected){rig._cleanupMascot?.();return;}
-  const m=rig._mascot;if(!m)return;
-  if(!m.lastTs)m.lastTs=ts;const dt=Math.min(.035,(ts-m.lastTs)/1000||.016);m.lastTs=ts;
-  if(m.mood==='idle')mascotIdlePlan(rig,ts);
-  mascotSpringStep(rig,dt);
-  rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));
+  if(!rig.isConnected){rig._cleanupMascot?.();return;}const m=rig._mascot;if(!m)return;
+  if(!m.lastTs)m.lastTs=ts;const dt=Math.min(.033,(ts-m.lastTs)/1000||.016);m.lastTs=ts;
+  const pointerFresh=m.pointer.last&&performance.now()-m.pointer.last<900;
+  m.pointer.seen=!!pointerFresh;
+  if(pointerFresh&&m.mood!=='guide'&&m.mood!=='celebrate'&&m.mood!=='react'){
+    const rr=rig.getBoundingClientRect(),dx=m.pointer.x-(rr.left+rr.width/2),dy=m.pointer.y-(rr.top+rr.height/2);
+    const dist=Math.hypot(dx,dy),influence=Math.max(0,1-Math.max(0,dist-100)/500);
+    const gx=Math.max(-1,Math.min(1,dx/300))*influence,gy=Math.max(-1,Math.min(1,dy/260))*influence;
+    m.gaze.x+=(gx-m.gaze.x)*Math.min(1,dt*2.1);m.gaze.y+=(gy-m.gaze.y)*Math.min(1,dt*1.8);
+    mascotSetTarget(rig,{...mascotRestTarget(),headX:m.gaze.x*2.2,headY:m.gaze.y*1.2,headR:m.gaze.x*5.2,muzzleX:m.gaze.x*.45,muzzleY:m.gaze.y*.32,earL:-m.gaze.x*1.7,earR:m.gaze.x*1.7,torsoR:m.gaze.x*.7},'watch');
+  }else if(m.mood==='watch'){
+    m.gaze.x*=Math.max(0,1-dt*2.4);m.gaze.y*=Math.max(0,1-dt*2.4);if(Math.abs(m.gaze.x)<.02&&Math.abs(m.gaze.y)<.02)mascotSetTarget(rig,mascotRestTarget(),'idle');
+  }
+  if(m.mood==='idle')mascotIdleSequence(rig,ts);
+  mascotSpringStep(rig,dt);rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));
+}
+function mascotPerform(rig,name='ack',duration=1100,side=0){
+  if(!rig||rig.classList.contains('motion-off')||!rig._mascot)return;
+  const m=rig._mascot,token=++m.actionToken;m.sequenceUntil=performance.now()+duration;
+  const plans={
+    ack:{headY:-2,headR:side*3,torsoY:-1,tailR:10,armRR:-18,pawRY:-4,pawRR:-10},
+    curious:{headR:-7,headX:-2,earL:-8,earR:5,torsoR:-1.2},
+    paw:{armLR:-24,pawLY:-6,pawLR:-14,headR:-3,tailR:9},
+    celebrate:{rootY:-2.5,torsoY:-3,torsoSY:1.025,headY:-4,earL:-7,earR:-7,armLR:-26,armRR:26,pawLY:-7,pawRY:-7,pawLR:-16,pawRR:16,tailR:18,tailS:1.08},
+    perk:{torsoY:-2,headY:-2.2,earL:-5,earR:-5,tailR:8},
+    stand:{rootY:-3,torsoY:-2.5,torsoSY:1.04,headY:-2.2,armLR:13,armRR:-13,pawLY:3,pawRY:3,earL:-4,earR:-4,tailR:7},
+    lean:{torsoR:side*4,headR:side*-5,headX:side*-1.2,armLR:22+side*3,armRR:-22+side*3,tailR:side*-8},
+    settle:{torsoY:2.8,torsoSY:.985,headY:2.2,muzzleY:.7,earL:3,earR:3,armLR:10,armRR:-10}
+  };
+  mascotSetTarget(rig,{...mascotRestTarget(),...(plans[name]||plans.ack)},name==='celebrate'?'celebrate':'react');
+  clearTimeout(rig._mascotBehaviorTimer);rig._mascotBehaviorTimer=setTimeout(()=>{if(!rig.isConnected||rig._mascot?.actionToken!==token)return;mascotSetTarget(rig,mascotRestTarget(),'idle');rig._mascot.nextIdle=performance.now()+4500+Math.random()*3500;},duration);
 }
 function playBetterMascotBehavior(rig,kind='ack',duration=900){
-  if(!rig||rig.classList.contains('motion-off')||!rig._mascot)return;
-  const m=rig._mascot,now=performance.now();m.burstUntil=now+duration;
-  const plans={
-    ack:{headY:2.2,headR:2.5,pawR:-16,pawY:-5,tailR:14,bodyS:1.018},
-    curious:{headR:-7,headX:-2,headY:-2,earL:-10,earR:7,bodyR:-2},
-    ear:{earL:-13,earR:10,headR:2},
-    paw:{pawR:-24,pawX:-2,pawY:-7,headR:-2,tailR:10},
-    tail:{tailR:18,tailS:1.08,bodyR:1.2},
-    celebrate:{headY:-5,headR:-4,pawR:-28,pawY:-9,tailR:22,tailS:1.12,bodyY:-2,bodyS:1.035}
-  };
-  mascotSetTarget(rig,{...BETTER_MASCOT_DEFAULTS,...(plans[kind]||plans.ack)},kind==='celebrate'?'celebrate':'react');
-  rig.classList.toggle('is-celebrate',kind==='celebrate');
-  clearTimeout(rig._mascotBehaviorTimer);
-  rig._mascotBehaviorTimer=setTimeout(()=>{if(!rig.isConnected)return;rig.classList.remove('is-celebrate');mascotSetTarget(rig,{...BETTER_MASCOT_DEFAULTS},'idle');},duration);
+  const map={celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);
 }
 function wireBetterMascotRig(rig){
   const motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  if(motionOff){rig.classList.add('motion-off');mascotApply(rig);return rig;}
-  const respondToPointer=e=>{
-    if(!rig.isConnected||!rig._mascot)return;
-    const rr=rig.getBoundingClientRect();if(!rr.width)return;
-    const dx=e.clientX-(rr.left+rr.width/2),dy=e.clientY-(rr.top+rr.height/2),dist=Math.hypot(dx,dy);
-    if(dist>460){if(rig._mascot.pointer.active){rig._mascot.pointer.active=false;mascotSetTarget(rig,{...BETTER_MASCOT_DEFAULTS},'idle');}return;}
-    rig._mascot.pointer.active=true;
-    const nx=Math.max(-1,Math.min(1,dx/220)),ny=Math.max(-1,Math.min(1,dy/180));
-    mascotSetTarget(rig,{headX:nx*3.8,headY:ny*2.0,headR:nx*8,bodyR:nx*2.2,pawR:-Math.max(0,8-Math.abs(nx)*5),earL:-nx*3,earR:nx*3,tailR:-nx*5},'watch');
-  };
-  const respondToAction=e=>{if(!rig.isConnected||!rig._mascot||e.target?.closest?.('.better-guide-trigger'))return;const target=e.target?.closest?.('button,a,input,select,textarea,[role="button"]')||e.target;if(!target?.getBoundingClientRect)return;aimBetterMascotAt(rig,target);};
-  let lastScrollY=window.scrollY;
-  const respondToScroll=()=>{if(!rig.isConnected||!rig._mascot)return;const delta=Math.max(-1,Math.min(1,(window.scrollY-lastScrollY)/80));lastScrollY=window.scrollY;rig._mascot.burstUntil=performance.now()+280;mascotSetTarget(rig,{bodyR:delta*3.5,headR:delta*-4,tailR:delta*-8,pawY:Math.abs(delta)*-2},'scroll');clearTimeout(rig._scrollResetTimer);rig._scrollResetTimer=setTimeout(()=>{if(rig.isConnected)mascotSetTarget(rig,{...BETTER_MASCOT_DEFAULTS},'idle');},260);};
-  document.addEventListener('pointermove',respondToPointer,{passive:true});
-  document.addEventListener('pointerdown',respondToAction,{passive:true});
-  window.addEventListener('scroll',respondToScroll,{passive:true});
-  rig._cleanupMascot=()=>{document.removeEventListener('pointermove',respondToPointer);document.removeEventListener('pointerdown',respondToAction);window.removeEventListener('scroll',respondToScroll);};
-  rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));
-  return rig;
+  mascotSetTarget(rig,mascotRestTarget(),'idle');
+  if(motionOff){rig.classList.add('motion-off');Object.assign(rig._mascot.current,mascotRestTarget());mascotApply(rig);return rig;}
+  const onPointer=e=>{if(!rig.isConnected||!rig._mascot)return;rig._mascot.pointer.x=e.clientX;rig._mascot.pointer.y=e.clientY;rig._mascot.pointer.last=performance.now();};
+  const onAction=e=>{if(!rig.isConnected||!rig._mascot||e.target?.closest?.('.better-guide-trigger'))return;const target=e.target?.closest?.('button,a,[role="button"],input,select,textarea');if(!target)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),side=Math.sign((tr.left+tr.width/2)-(rr.left+rr.width/2));mascotPerform(rig,'ack',900,side);};
+  document.addEventListener('pointermove',onPointer,{passive:true});document.addEventListener('pointerdown',onAction,{passive:true});
+  rig._cleanupMascot=()=>{document.removeEventListener('pointermove',onPointer);document.removeEventListener('pointerdown',onAction);};
+  rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));return rig;
 }
 function aimBetterMascotAt(rig,target){
   if(!rig||!target||rig.classList.contains('motion-off')||!rig._mascot)return;
-  const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect();
-  const dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2);
-  const nx=Math.max(-1,Math.min(1,dx/260)),ny=Math.max(-1,Math.min(1,dy/220));
-  rig._mascot.burstUntil=performance.now()+1800;
-  mascotSetTarget(rig,{headX:nx*4,headY:ny*2,headR:nx*9,bodyR:nx*2.5,pawR:-28+nx*5,pawX:nx*7,pawY:-7+ny*3,earL:-nx*5,earR:nx*5,tailR:-nx*7},'guide');
-  clearTimeout(rig._guideResetTimer);
-  rig._guideResetTimer=setTimeout(()=>{if(rig.isConnected)mascotSetTarget(rig,{...BETTER_MASCOT_DEFAULTS},'idle');},1700);
+  const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect();const dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2);const right=dx>=0,nx=Math.max(-1,Math.min(1,dx/360)),ny=Math.max(-1,Math.min(1,dy/260));
+  const patch={...mascotRestTarget(),headX:nx*2.6,headY:ny*1.5,headR:nx*6,torsoR:nx*.9,earL:-nx*2,earR:nx*2,tailR:-nx*5};
+  if(right)Object.assign(patch,{armRR:34,armRY:-5,pawRX:7,pawRY:-8,pawRR:38});else Object.assign(patch,{armLR:-34,armLY:-5,pawLX:-7,pawLY:-8,pawLR:-38});
+  const token=++rig._mascot.actionToken;rig._mascot.sequenceUntil=performance.now()+1900;mascotSetTarget(rig,patch,'guide');
+  clearTimeout(rig._guideResetTimer);rig._guideResetTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotSetTarget(rig,mascotRestTarget(),'idle');},1800);
 }
 
 
@@ -2704,7 +2712,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 54;
+const TUTORIAL_VERSION = 55;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2771,6 +2779,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:53,title:'Meet the mascot, not another button',copy:'The Better mascot now is the control: no Guide pill, no stacked circles. He reacts to hover, taps, tutorials and course wins while keeping Settings clear and the rest of Better unchanged.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'A mascot that actually feels alive',copy:'Better Guide is now a layered interactive character instead of a moving picture. His head, ears, raised paw, body and tail move independently, he follows nearby interaction, reacts to the tutorial target and settles back into a restrained idle state.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'The mascot now reacts continuously',copy:'The mascot now runs as one continuous character rig. He follows nearby pointer movement, leans with page motion, reacts to page actions, aims toward tutorial targets, and celebrates course progress without swapping between rendered poses.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
  ].filter(x=>rank>=x.min&&(!x.when||x.when()));

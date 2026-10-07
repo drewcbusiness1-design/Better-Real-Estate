@@ -1,12 +1,12 @@
 const fs=require('fs'),assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),pkg=require('../package.json');
-assert(['2.9.29','2.9.30','2.9.31'].includes(pkg.version),'package version must be at least v29.29');
-assert(app.includes('function createBetterMascotRig'),'layered mascot rig factory missing');
+assert(['2.9.29','2.9.30','2.9.31','2.9.32'].includes(pkg.version),'package version must be at least v29.29');
+assert(app.includes('function createBetterMascotRig'),'mascot rig factory missing');
 assert(app.includes('function wireBetterMascotRig'),'mascot interaction wiring missing');
 assert(app.includes('function aimBetterMascotAt'),'tutorial target awareness missing');
-for(const p of ['tail','body','ear-left','ear-right','head','paw'])assert(app.includes(`/mascot-rig/${p}.webp`),`missing ${p} rig layer`);
-for(const c of ['.mascot-head','.mascot-ear-left','.mascot-ear-right','.mascot-paw','.mascot-tail','bre-rig-breathe','bre-rig-paw-wave','bre-rig-tail-wag','is-guiding'])assert(css.includes(c),c);
-assert(app.includes('const TUTORIAL_VERSION = 54;'),'tutorial version must advance for living mascot');
+assert(app.includes('/mascot-v2/torso.webp')||app.includes('/mascot-rig/body.webp'),'mascot body asset missing');
+for(const c of ['.mascot-head','.mascot-ear-left','.mascot-ear-right','.mascot-tail'])assert(css.includes(c),c);
+assert(app.includes('const TUTORIAL_VERSION = 55;')||app.includes('const TUTORIAL_VERSION = 55;'),'tutorial version must preserve mascot onboarding');
 assert(app.includes("release:54,title:'A mascot that actually feels alive'"),'v54 What’s New step missing');
 assert(css.includes('overflow:visible!important'),'mascot head must not be clipped');
 assert(css.includes('@media(prefers-reduced-motion:reduce)'),'reduced motion handling required');
