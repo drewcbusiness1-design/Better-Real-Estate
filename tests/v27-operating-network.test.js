@@ -26,7 +26,7 @@ must(storage,'writeDocument');must(storage,'5 * 1024 * 1024');
 // Search, credibility, seller analytics retained
 must(server,"/api/search"); must(app,'renderUniversalSearch'); must(server,'credibility'); must(server,"/api/listings/:id/analytics");
 // Tutorial is mandatory and updated for this release
-must(app,'const TUTORIAL_VERSION = 62;');['Command center','Liked & watched properties','Universal search','Deal pipeline','Deal calendar','Market Hubs','Investment markets'].forEach(t=>must(app,t));must(app,'releaseOnly');must(app,'launchProductUpdateTutorial');must(app,'trial:1');must(app,"selector:'.buyercrmpage',min:0");
+must(app,'const TUTORIAL_VERSION = 63;');['Command center','Liked & watched properties','Universal search','Deal pipeline','Deal calendar','Market Hubs','Investment markets'].forEach(t=>must(app,t));must(app,'releaseOnly');must(app,'launchProductUpdateTutorial');must(app,'trial:1');must(app,"selector:'.buyercrmpage',min:0");
 // Every new routed view has a renderer and styling hooks
 ['commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','dealroom'].forEach(v=>must(app,`'${v}'`));
 ['feedcommand','pipeline-board','dealroom-grid','market-grid','searchbar-pro','watchgrid','admin-activity'].forEach(c=>must(css,'.'+c));

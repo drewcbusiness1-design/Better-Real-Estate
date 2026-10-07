@@ -2765,7 +2765,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 62;
+const TUTORIAL_VERSION = 63;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2820,11 +2820,11 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
  {view:'companyworkspace',selector:'.companyhero',min:3,release:29,title:'Wholesale Team workspace',copy:'Team access adds shared buyer CRM, pipeline assignments, internal notes, activity and analytics while each teammate keeps a separate login.'},
  {view:'admin',selector:'.admin-activity',min:4,release:29,title:'Admin activity & user analytics',copy:'See who is active now, unique users over preset or custom periods, market activity, funnel signals and inspect individual accounts. Ordinary members never see this step.'},
- {view:'admin',selector:'.demo-account-card',min:4,release:37,title:'Demo accounts',copy:'Create controlled demo accounts for presentations and testing. Demo accounts never consume First 100 Founder places, never count in growth analytics, and cannot generate real billing, referral rewards, affiliate commissions or payouts.'},
+ {view:'admin',selector:'.demo-account-card',min:4,release:37,title:'Demo accounts',copy:'Create controlled demo accounts for presentations and testing. Demo accounts never consume First 50 Founder places, never count in growth analytics, and cannot generate real billing, referral rewards, affiliate commissions or payouts.'},
  {view:'admin',selector:'.demo-preview-card',min:4,release:38,title:'Preview experiences',copy:'Use a demo account to safely replay Founder welcome, onboarding, and What’s New experiences without consuming Founder places, issuing access, changing analytics, or creating money.'},
  {view:'admin',selector:'.user-inspector',min:4,release:39,title:'Demo account controls',copy:'Demo rows now keep every action visible: enter the demo, reset its password or state, convert it to a real account, or permanently delete it with confirmation.'},
  {view:'admin',selector:'.user-inspector',min:4,release:36,title:'Membership access controls',copy:'Open Manage access on any non-admin account to grant, replace, extend or revoke complimentary membership access without touching the user’s paid subscription.'},
- {view:'me',selector:'.founder-program-card',min:0,release:36,when:()=>!!state.user?.founderLaunchPosition,title:'First 100 Founding Member',copy:'As one of the first 100 qualifying members, your profile carries Founding Member recognition and includes two weeks of complimentary Platinum access. Your referral link is ready to share with your network.'},
+ {view:'me',selector:'.founder-program-card',min:0,release:36,when:()=>!!state.user?.founderLaunchPosition,title:'First 50 Founding Member',copy:'As one of the first 50 qualifying members, your profile carries Founding Member recognition and includes two weeks of complimentary Platinum access. Your referral link is ready to share with your network.'},
  {view:'feed',selector:'.topquick',min:0,release:31,title:'Quick options',copy:'Open your customizable shortcut menu from anywhere. Choose the platform actions you use most, customize up to six shortcuts, and use Back to return to your saved Quick Options without closing the menu.'},
  {view:'settings',selector:'.market-settings',min:0,release:29,title:'Investment markets',copy:'Choose the states you work in. They boost relevant properties in For You without hiding opportunities elsewhere.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:52,title:'Meet your Better Guide',copy:'Your Better Guide lives beside Settings. Open him anytime for platform help, contextual guidance, tutorials, support, and the free Learn Wholesaling course built around Better Real Estate.'},
@@ -2835,6 +2835,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:56,title:'More expression, more context',copy:'Better Guide now changes facial expression and body response for meaningful moments such as guidance, success, errors and new attention — while staying grounded in the header.'},
  {view:'detail',selector:'.owner-ops',min:0,release:56,title:'Edit your property posts',copy:'On a property you own, use Edit property to update pricing, facts, notes, photos, video, deadline and JV availability without recreating the post.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
+ {view:'me',selector:'.founder-program-card',min:0,release:63,when:()=>!!state.user?.founderLaunchPosition,title:'First 50 Founders',copy:'Founder recognition and two weeks of complimentary Platinum are limited to the first 50 qualifying accounts. Your signup rank and bonus dates appear here; paid memberships and separate admin grants remain independent.'},
  {view:'dealbuilder',selector:'.verified-comps-card',min:1,release:62,title:'Sold comps and working ARV',copy:'Review selected and excluded closed sales, adjusted prices and source links. A corroborated working range can support deal math when subject size and identity are established; missing distance or recorded subject details keep it separate from a precise ARV. Add or remove comps to update the calculator.'},
  {view:'dealbuilder',selector:'.dealbuildersearch',min:0,release:61,title:'Clear property evidence and deal numbers',copy:'Better preserves full and half bathroom details, labels unresolved facts and keeps withheld ARV out of the calculator. Number cards fit desktop and mobile. Research skips sold-comp expansion when the subject cannot be located; review source details before underwriting.'},
  {view:'compose',selector:'.previewrow',min:0,release:60,title:'Start a fresh property post',copy:'Post always opens a blank property form. To update an existing property, open its detail page and choose Edit property. Your photo dragging and saved gallery order remain available.'},
@@ -3598,7 +3599,7 @@ function demoFounderPreviewDismissed(){const key=demoFounderPreviewDismissKey();
 function founderDisplayPosition(){return Number(demoFounderPreview()?.position||state.user?.founderLaunchPosition||0)||null;}
 function founderInviteMessage(){
   const link=`${location.origin}/s/join?ref=${encodeURIComponent(state.user?.referralCode||'')}`;
-  return {link,text:`I’m one of the first 100 Founding Members on Better Real Estate. It’s a real estate network and workspace for deals, buyers, investors, deal analysis, pipelines and more. Join through my link: ${link}`};
+  return {link,text:`I’m one of the first 50 Founding Members on Better Real Estate. It’s a real estate network and workspace for deals, buyers, investors, deal analysis, pipelines and more. Join through my link: ${link}`};
 }
 async function copyFounderInvite(){
   const {text}=founderInviteMessage();
@@ -3616,9 +3617,9 @@ function showFounderWelcome(force=false){
   const expires=preview?new Date(Date.now()+14*86400000).toLocaleDateString():(state.user.founderPlatinumUntil?new Date(state.user.founderPlatinumUntil).toLocaleDateString():null);
   card.append(
     el('div',{class:'founder-welcome-mark'},`#${position}`),
-    el('div',{class:'eyebrow'},preview?'DEMO PREVIEW · FIRST 100 FOUNDING MEMBER':'FIRST 100 FOUNDING MEMBER'),
+    el('div',{class:'eyebrow'},preview?'DEMO PREVIEW · FIRST 50 FOUNDING MEMBER':'FIRST 50 FOUNDING MEMBER'),
     el('h2',{},'You helped start Better Real Estate.'),
-    el('p',{class:'founder-welcome-copy'},preview?`This is a safe preview of Founder #${position}. A real qualifying member would receive Founding Member recognition and 14 days of complimentary Platinum access${expires?` through ${expires}`:''}. Nothing is being awarded to this demo account.`:`You’re one of the first 100 qualifying members. Your account has Founding Member recognition${expires?` and complimentary Platinum access through ${expires}`:''}.`),
+    el('p',{class:'founder-welcome-copy'},preview?`This is a safe preview of Founder #${position}. A real qualifying member would receive Founding Member recognition and 14 days of complimentary Platinum access${expires?` through ${expires}`:''}. Nothing is being awarded to this demo account.`:`You’re one of the first 50 qualifying members. Your account has Founding Member recognition${expires?` and complimentary Platinum access through ${expires}`:''}.`),
     el('div',{class:'founder-share-preview'},[el('small',{},'READY TO SHARE'),el('p',{},text)]),
     el('div',{class:'founder-welcome-actions'},[
       el('button',{class:'btn-ghost',onclick:copyFounderInvite},'Copy invite'),
@@ -3645,7 +3646,7 @@ function openAdminAccessModal(u,onDone=()=>{}){
   card.appendChild(el('div',{class:'admin-access-summary'},[
     el('div',{class:'admin-access-stat'},[el('small',{},'PAID PLAN'),el('b',{},paidActive?adminPlanLabel(u.paidPlan):'None'),el('span',{},paidActive&&u.paidPlanUntil?`Through ${new Date(u.paidPlanUntil).toLocaleDateString()}`:'Paid billing stays separate')]),
     el('div',{class:'admin-access-stat'},[el('small',{},'COMPLIMENTARY'),el('b',{},grantActive?adminPlanLabel(u.grant.grantPlan):'None'),el('span',{},grantActive?`${u.grant.remainingDays||'—'} day${u.grant.remainingDays===1?'':'s'} remaining`:'No active admin grant')]),
-    el('div',{class:'admin-access-stat'},[el('small',{},'FOUNDING BONUS'),el('b',{},u.founderAward?`Founder #${u.founderAward.position}`:'Not enrolled'),el('span',{},founderActive?`Platinum through ${new Date(founderUntil).toLocaleDateString()}`:u.founderAward?'Platinum bonus ended':'First 100 program only')]),
+    el('div',{class:'admin-access-stat'},[el('small',{},'FOUNDING BONUS'),el('b',{},u.founderAward?`Founder #${u.founderAward.position}`:'Not enrolled'),el('span',{},founderActive?`Platinum through ${new Date(founderUntil).toLocaleDateString()}`:u.founderAward?'Platinum bonus ended':'First 50 program only')]),
     el('div',{class:'admin-access-stat'},[el('small',{},'EFFECTIVE ACCESS'),el('b',{},u.access?.wholesale?'Wholesale Teams':u.access?.platinum?'Platinum':u.access?.pro?'Plus':u.access?.trial?'Trial':'Free'),el('span',{},'Resolved without changing paid billing')])
   ]));
   const form=el('div',{class:'admin-access-form'}),tier=el('select');[['platinum','Platinum'],['pro','Plus'],['wholesale','Wholesale Teams']].forEach(([v,l])=>tier.appendChild(el('option',{value:v},l)));
@@ -3666,7 +3667,7 @@ function openAdminAccessModal(u,onDone=()=>{}){
     actions.append(
       el('button',{class:'btn-ghost',onclick:()=>act('extend')},`Extend ${adminPlanLabel(u.grant.grantPlan)}`),
       el('button',{class:'btn-primary',onclick:()=>act('replace')},'Replace grant'),
-      el('button',{class:'dangerbtn',onclick:async()=>{if(!confirm(`Revoke ${u.name}’s complimentary access? Paid access and the First 100 bonus stay untouched.`))return;try{await api('POST','/api/admin/memberships/revoke',{userId:u.id});toast('Complimentary membership revoked','ok');close();await onDone();}catch(e){status.textContent=e.message;}}},'Revoke grant')
+      el('button',{class:'dangerbtn',onclick:async()=>{if(!confirm(`Revoke ${u.name}’s complimentary access? Paid access and the First 50 bonus stay untouched.`))return;try{await api('POST','/api/admin/memberships/revoke',{userId:u.id});toast('Complimentary membership revoked','ok');close();await onDone();}catch(e){status.textContent=e.message;}}},'Revoke grant')
     );
   }else actions.append(el('button',{class:'btn-primary',onclick:()=>act('replace')},'Grant access'));
   card.appendChild(actions);shade.appendChild(card);document.body.appendChild(shade);
@@ -3697,7 +3698,7 @@ async function renderMe() {
   if(state.user.founderLaunchPosition){
     const until=state.user.founderPlatinumUntil?new Date(state.user.founderPlatinumUntil):null;
     wrap.appendChild(el('div',{class:'card founder-program-card'},[
-      el('div',{class:'founder-program-copy'},[el('div',{class:'eyebrow'},`FOUNDING MEMBER #${state.user.founderLaunchPosition}`),el('h3',{},'You’re part of the first 100.'),el('p',{class:'sub'},until&&until>new Date()?`Your complimentary Platinum access is active through ${until.toLocaleDateString()}. Invite your network with your personal referral link.`:'Your Founding Member recognition stays on your profile. Invite your network with your personal referral link.')]),
+      el('div',{class:'founder-program-copy'},[el('div',{class:'eyebrow'},`FOUNDING MEMBER #${state.user.founderLaunchPosition}`),el('h3',{},'You’re part of the first 50.'),el('p',{class:'sub'},until&&until>new Date()?`Your complimentary Platinum access is active through ${until.toLocaleDateString()}. Invite your network with your personal referral link.`:'Your Founding Member recognition stays on your profile. Invite your network with your personal referral link.')]),
       el('button',{class:'btn-ghost founder-share-btn',onclick:()=>showFounderWelcome(true)},'Share founder invite')
     ]));
   }
@@ -4573,7 +4574,7 @@ async function renderMemberships() {
 
       const fp=data.founderProgram||{limit:100,claimed:0,remaining:100,awards:[]};
       const founderCard=el('div',{class:'card founder-admin-card'},[
-        el('div',{class:'founder-admin-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'FIRST 100 FOUNDERS'),el('h3',{},`${fp.claimed} of ${fp.limit} places awarded`),el('div',{class:'hint'},`${fp.remaining} remaining. Qualifying accounts receive Founding Member recognition and two weeks of complimentary Platinum without altering paid billing.`)]),el('span',{class:'founding-badge'},`${fp.claimed}/${fp.limit}`)]),
+        el('div',{class:'founder-admin-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'FIRST 50 FOUNDERS'),el('h3',{},`${fp.claimed} of ${fp.limit} places awarded`),el('div',{class:'hint'},`${fp.remaining} remaining. Qualifying accounts receive Founding Member recognition and two weeks of complimentary Platinum without altering paid billing.`)]),el('span',{class:'founding-badge'},`${fp.claimed}/${fp.limit}`)]),
         el('div',{class:'founder-admin-list'},(fp.awards||[]).slice(0,100).map(a=>el('div',{class:'founder-admin-row'},[el('b',{},`#${a.position} · ${a.userName||'Deleted account'}`),el('span',{},a.platinumUntil?`Platinum through ${new Date(a.platinumUntil).toLocaleDateString()}`:'Award recorded')])) )
       ]);
       founderHost.appendChild(founderCard);
@@ -4625,7 +4626,7 @@ async function renderMemberships() {
   wrap.appendChild(search);
   wrap.appendChild(el('div', { class:'sectiontitle' }, 'Monthly prize'));
   wrap.appendChild(prizeHost);
-  wrap.appendChild(el('div', { class:'sectiontitle' }, 'First 100 Founders'));
+  wrap.appendChild(el('div', { class:'sectiontitle' }, 'First 50 Founders'));
   wrap.appendChild(founderHost);
   wrap.appendChild(el('div', { class:'sectiontitle' }, 'Users'));
   wrap.appendChild(host);
@@ -4802,7 +4803,7 @@ async function renderAdmin() {
   const previewCard=el('div',{class:'card demo-preview-card'});
   const previewHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'SAFE EXPERIENCE PREVIEW'),el('h3',{},'Preview the real user experience'),el('p',{class:'sub'},'Choose a demo account and an experience. Start Preview immediately enters that demo experience. You can return to Admin from the top navigation.')]),el('span',{class:'demo-admin-badge'},'PREVIEW')]);
   const previewGrid=el('div',{class:'demo-preview-form'}),pvUser=el('select',{'aria-label':'Demo account'}),pvType=el('select',{'aria-label':'Experience'}),pvPosition=el('input',{type:'number',min:'1',max:'100',value:'7','aria-label':'Simulated Founder position'}),pvRun=el('button',{class:'btn-primary'},'Start Preview'),pvClear=el('button',{class:'btn-ghost'},'Reset Preview'),pvEnter=el('button',{class:'btn-ghost'},'Enter Demo'),pvStatus=el('div',{class:'demo-preview-summary','aria-live':'polite'});
-  pvType.append(el('option',{value:'founder'},'First 100 Founder welcome'),el('option',{value:'onboarding'},'New-user onboarding'),el('option',{value:'whatsnew'},'What’s New tutorial'));
+  pvType.append(el('option',{value:'founder'},'First 50 Founder welcome'),el('option',{value:'onboarding'},'New-user onboarding'),el('option',{value:'whatsnew'},'What’s New tutorial'));
   const updatePreviewControls=()=>{const has=!!pvUser.value;pvRun.disabled=pvClear.disabled=pvEnter.disabled=!has;const founder=pvType.value==='founder';pvPosition.closest?.('.demo-field')?.classList.toggle('is-hidden',!founder);pvPosition.style.display=founder?'block':'none';};
   pvType.onchange=updatePreviewControls;pvUser.onchange=()=>{pvStatus.innerHTML='';updatePreviewControls();};
   pvRun.onclick=async()=>{if(!pvUser.value)return;await withButtonBusy(pvRun,async()=>{try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:pvType.value,position:Number(pvPosition.value||7)});const entered=await api('POST',`/api/admin/demo-accounts/${pvUser.value}/enter`);state.user=entered.user;state.access=entered.access;state.demoAdminSession=true;state.launchTutorialAfterNav=false;state.launchProductUpdateTutorial=false;go('feed',{}, {replace:true});}catch(e){pvStatus.textContent=e.message;pvStatus.className='demo-feedback error';}});};
@@ -4822,7 +4823,7 @@ async function renderAdmin() {
       const accessText=u.role==='admin'?'Admin · unlimited':u.access?.wholesale?'Wholesale Teams':u.access?.platinum?'Platinum':u.access?.pro?'Plus':u.access?.trial?'Trial':'Free';
       const details=[u.demo?`Demo access: ${adminPlanLabel(u.demoPlan||'free')}`:null,u.demoPreview?`Preview: ${u.demoPreview.type}${u.demoPreview.position?` #${u.demoPreview.position}`:''}`:null,`${u.listings} listings`,`${u.saves} liked`,`${u.messages} messages`,accountAgeLabel(u.createdAt),u.lastActiveAt?'Last active '+new Date(u.lastActiveAt).toLocaleString():'No activity yet'].filter(Boolean);
       if(u.grant?.active)details.push(`Grant: ${adminPlanLabel(u.grant.grantPlan)} · ${u.grant.remainingDays}d left`);
-      if(u.founderAward)details.push(`First 100 · #${u.founderAward.position}`);
+      if(u.founderAward)details.push(`First 50 · #${u.founderAward.position}`);
       const actions=el('div',{class:'inspector-actions'});
       if(u.role!=='admin')actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:()=>openAdminAccessModal(u,loadInspector)},'Manage access'));
       if(u.role!=='admin' && !u.demo)actions.appendChild(el('button',{class:'dangerbtn compactbtn',onclick:async()=>{const typed=prompt(`Permanently delete ${u.name} (${u.email})? This is intended for spam/abusive accounts. Type DELETE USER to confirm.`);if(typed!=='DELETE USER')return;try{await api('DELETE',`/api/admin/users/${u.id}`,{confirmation:'DELETE USER'});toast('Account permanently deleted','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Delete account'));

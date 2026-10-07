@@ -1,7 +1,7 @@
 const fs=require('fs'),assert=require('assert'),crypto=require('crypto');
 const src=fs.readFileSync('server.js','utf8');
 function fn(name){const re=new RegExp(`function ${name}\\([^]*?\\n\\}`);const m=src.match(re);if(!m)throw new Error('missing '+name);return m[0];}
-const FOUNDER_PROGRAM_LIMIT=100,FOUNDER_PLATINUM_DAYS=14;
+const FOUNDER_PROGRAM_LIMIT=50,FOUNDER_PLATINUM_DAYS=14;
 const isAdminUser=u=>u?.role==='admin';
 const syncCompanyMemberEntitlements=()=>false;
 const GRANT_TIERS=new Set(['pro','platinum','wholesale']);
@@ -18,12 +18,12 @@ users.push({id:'demo',role:'buyer',demo:true,name:'Demo',email:'demo@example.tes
 for(let i=1;i<=105;i++)users.push({id:'u'+i,role:'buyer',name:'User '+i,email:`u${i}@example.test`,createdAt:new Date(start+(i+2)*1000).toISOString(),plan:i===1?'pro':'free',planUntil:i===1?new Date(Date.now()+30*86400000).toISOString():null,grantPlan:i===2?'pro':null,grantUntil:i===2?new Date(Date.now()+20*86400000).toISOString():null,grantReason:i===2?'Existing grant':null});
 const db={users,founderAwards:[],membershipGrants:[]};
 assert.equal(ensureFirst100FounderProgram(db),true);
-assert.equal(db.founderAwards.length,100,'must award exactly first 100 qualifying accounts');
-assert.deepEqual(db.founderAwards.map(a=>a.position),Array.from({length:100},(_,i)=>i+1));
+assert.equal(db.founderAwards.length,50,'must award exactly first 100 qualifying accounts');
+assert.deepEqual(db.founderAwards.map(a=>a.position),Array.from({length:50},(_,i)=>i+1));
 assert(!users[0].founderLaunchPosition&&!users[1].founderLaunchPosition,'admin/demo must not consume slots');
 assert.equal(users.find(u=>u.id==='u1').founderLaunchPosition,1);
-assert.equal(users.find(u=>u.id==='u100').founderLaunchPosition,100);
-assert(!users.find(u=>u.id==='u101').founderLaunchPosition,'101st qualifying user must not receive Founder award');
+assert.equal(users.find(u=>u.id==='u50').founderLaunchPosition,50);
+assert(!users.find(u=>u.id==='u51').founderLaunchPosition,'101st qualifying user must not receive Founder award');
 const first=users.find(u=>u.id==='u1');
 assert.equal(first.plan,'pro','Founder bonus must not overwrite paid plan');
 const manual=users.find(u=>u.id==='u2');
@@ -36,9 +36,9 @@ db.users=db.users.filter(u=>u.id!=='u5');
 const newcomer={id:'u106',role:'buyer',name:'User 106',email:'u106@example.test',createdAt:new Date().toISOString()};db.users.push(newcomer);
 assert.equal(ensureFirst100FounderProgram(db),true);
 const activeFounderAwards=db.founderAwards.filter(a=>!a.voidedAt);
-assert.equal(activeFounderAwards.length,100,'deleted Founder slot must return to the active pool');
+assert.equal(activeFounderAwards.length,50,'deleted Founder slot must return to the active pool');
 assert.equal(users.find(u=>u.id==='u6').founderLaunchPosition,5,'surviving Founder ranks must compact after deletion');
-assert.equal(users.find(u=>u.id==='u101').founderLaunchPosition,100,'next qualifying signup must fill the returned spot');
+assert.equal(users.find(u=>u.id==='u51').founderLaunchPosition,50,'next qualifying signup must fill the returned spot');
 assert(!newcomer.founderLaunchPosition,'a later signup must not jump ahead of earlier qualifying users');
 assert(db.founderAwards.some(a=>a.voidedAt&&a.formerUserId==='u5'),'deleted Founder must leave a tombstone to prevent reclaiming the benefit');
 // Grant / extend / replace behavior.

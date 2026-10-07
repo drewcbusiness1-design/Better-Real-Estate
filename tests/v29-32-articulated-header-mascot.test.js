@@ -1,6 +1,6 @@
 const fs=require('fs'),path=require('path'),assert=require('assert'),crypto=require('crypto');
 const root=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(root,'public/app.js'),'utf8'),css=fs.readFileSync(path.join(root,'public/style.css'),'utf8'),pkg=require('../package.json');
-assert(['2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40'].includes(pkg.version));
+assert(['2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41'].includes(pkg.version));
 assert(app.includes('function createBetterMascotRig'),'articulated mascot factory missing');
 assert(app.includes('function mascotLifeFrame'),'live motion controller missing');
 assert(app.includes('function aimBetterMascotAt'),'tutorial orientation missing');
