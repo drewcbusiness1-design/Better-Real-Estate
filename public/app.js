@@ -35,7 +35,8 @@ function iconSvg(name, size = 20) {
     moon:'<path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/>',
     sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>',
     search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
-    grid:'<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>'
+    grid:'<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>',
+    settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20.3h-3v-.09a1.7 1.7 0 0 0-1.03-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.55-1.03H5.3v-3h.15A1.7 1.7 0 0 0 7 9.94a1.7 1.7 0 0 0-.34-1.88L6.6 8l2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7V4.6h3v.1a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.03h.15v3h-.15A1.7 1.7 0 0 0 19.4 15Z"/>'
   };
   const span = el('span', { class:'svgicon', 'aria-hidden':'true' });
   span.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.home}</svg>`;
@@ -160,7 +161,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','dealroom','transactionhub','affiliate','intake','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -177,6 +178,7 @@ function applyRouteParams(params) {
   if (state.view === 'buyerportal') { state.buyerPortalType = params.get('type') || null; state.buyerPortalId = params.get('target') || null; }
   if (params.get('invite')) state.companyInviteToken = params.get('invite');
   if (state.view === 'intake') state.intakeCode = params.get('code') || null;
+  if (state.view === 'learn') state.guideCourseModule = params.get('module') || state.user?.settings?.guideCourseLastModule || 'foundations';
   return requested;
 }
 function routeUrl(view = state.view) {
@@ -185,6 +187,7 @@ function routeUrl(view = state.view) {
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
   if (view === 'profile' && state.profileId) p.set('user', state.profileId);
   if (view === 'intake' && state.intakeCode) p.set('code', state.intakeCode);
+  if (view === 'learn' && state.guideCourseModule) p.set('module', state.guideCourseModule);
   if (view === 'chat' && state.chatUserId) p.set('user', state.chatUserId);
   if (view === 'shopitem' && state.shopItemId) p.set('item', state.shopItemId);
   if (view === 'shopedit' && state.shopEditId) p.set('item', state.shopEditId);
@@ -360,7 +363,8 @@ function renderTop() {
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Wallet', onclick: () => go('wallet') }, iconSvg('wallet',19)));
   nav.appendChild(el('button', { class: 'iconbtn topquick', title: 'Quick options', 'aria-label':'Quick options', onclick: () => openQuickOptions() }, iconSvg('grid',19)));
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Search', 'aria-label':'Search', onclick: () => go('search') }, iconSvg('search',19)));
-  nav.appendChild(el('button', { onclick: () => go('settings'), class: state.view === 'settings' ? 'active' : '' }, 'Settings'));
+  nav.appendChild(el('button', { onclick: () => go('settings'), class: 'top-settings-btn '+(state.view === 'settings' ? 'active' : ''), title:'Settings' }, [iconSvg('settings',18),el('span',{class:'top-settings-label'},'Settings')]));
+  nav.appendChild(el('button', { class:'iconbtn better-guide-trigger '+(state.user?.settings?.guideAnimations===false?'no-guide-motion':''), title:'Better Guide', 'aria-label':'Open Better Guide', onclick:()=>openBetterGuide() }, [el('img',{src:'/better-guide-mascot.webp',alt:'','aria-hidden':'true'}),el('span',{class:'better-guide-trigger-label'},'Guide')]));
 }
 
 function renderTabs() {
@@ -389,7 +393,7 @@ async function renderApp() {
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
     wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
-    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal, insights: renderDemandInsights, dealbuilder: renderDealBuilder, buyercrm: renderBuyerCRM, commandcenter: renderCommandCenter, search: renderUniversalSearch, savedsearches: renderSavedSearches, pipeline: renderPipeline, dealcalendar: renderDealCalendar, markethubs: renderMarketHubs, dealroom: renderDealRoom, transactionhub: renderTransactionHub, affiliate: renderAffiliateCenter, intake: renderDealIntake,
+    boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal, insights: renderDemandInsights, dealbuilder: renderDealBuilder, buyercrm: renderBuyerCRM, commandcenter: renderCommandCenter, search: renderUniversalSearch, savedsearches: renderSavedSearches, pipeline: renderPipeline, dealcalendar: renderDealCalendar, markethubs: renderMarketHubs, dealroom: renderDealRoom, transactionhub: renderTransactionHub, affiliate: renderAffiliateCenter, intake: renderDealIntake, learn: renderLearnWholesaling,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
     forgot: renderForgot, reset: renderReset, verify: renderVerify
   };
@@ -2266,9 +2270,305 @@ async function renderOffers() {
   return wrap;
 }
 
+/* ================= BETTER GUIDE + LEARNING ================= */
+
+const BETTER_GUIDE_COURSE = [
+  {
+    slug:'foundations', number:1, title:'Wholesaling Foundations', stage:'START HERE',
+    goal:'Understand the wholesaling workflow and set up Better so every lesson has somewhere useful to go.',
+    overview:[
+      'Wholesaling is a deal-sourcing and contract-based real estate strategy. The exact legal requirements, disclosures, licensing rules and permitted transaction structures vary by state, so Better teaches the operating workflow without pretending one legal rule fits every market.',
+      'Your job is to identify a real opportunity, understand the property and seller situation, build a defensible deal, connect it with a qualified buyer, and keep the transaction organized through closing.'
+    ],
+    better:[
+      'Complete your Better profile and choose every role that actually applies to you so the Network can represent what you do.',
+      'Set your investment markets in Settings. Better uses those states as relevance signals without hiding opportunities elsewhere.',
+      'Use the Better Guide whenever a feature is unfamiliar instead of leaving the workflow to hunt through disconnected tools.'
+    ],
+    action:{view:'settings',label:'Set up my Better account'},
+    quiz:{q:'What should you do before treating a wholesaling rule as universal?',options:['Use the same rule in every state','Check the requirements for the market and transaction structure','Assume a buyer will handle it'],correct:1,explain:'Correct. Real-estate rules differ by jurisdiction. Better can organize the workflow, but local legal requirements still matter.'}
+  },
+  {
+    slug:'market', number:2, title:'Choose a Market', stage:'BUILD YOUR FOCUS',
+    goal:'Create a repeatable market focus instead of chasing random properties everywhere.',
+    overview:[
+      'A focused market makes it easier to learn pricing, buyer behavior, neighborhoods, title practices and common property types. You can expand later after your process is repeatable.',
+      'Look for enough transaction activity to support real comparable sales and enough investor demand that you can build relationships instead of starting from zero on every deal.'
+    ],
+    better:[
+      'Add the states you actually work in under Settings → Investment markets.',
+      'Use Market Hubs to observe real Better activity where available. Do not mistake missing Better activity for proof that a market itself has no demand.',
+      'Create Buy Boxes for the kinds of properties you or your buyers actually want so Better can use those criteria throughout the network.'
+    ],
+    action:{view:'markethubs',label:'Open Market Hubs'},
+    quiz:{q:'Why start with a focused market?',options:['It guarantees every deal will sell','It helps you learn pricing, buyers and process deeply enough to repeat it','It removes the need for due diligence'],correct:1,explain:'Exactly. Focus improves pattern recognition and relationships; it does not guarantee a deal.'}
+  },
+  {
+    slug:'opportunities', number:3, title:'Find Real Opportunities', stage:'SOURCE DEALS',
+    goal:'Build an opportunity pipeline that is based on real seller/property information, not hype.',
+    overview:[
+      'A lead is not a deal. Start by collecting enough information to understand the property, seller goals, timing and any obvious transaction constraints.',
+      'Use ethical outreach and accurate representations. Avoid presenting yourself, your authority, or a property in a way that is not true.'
+    ],
+    better:[
+      'Use Deal Intake when you want a clean way to collect opportunity information.',
+      'Add opportunities to Deal Pipeline early so follow-ups, deadlines and status do not live only in your head.',
+      'When you already have deal notes, Better can help structure them into the rest of the workflow without inventing missing facts.'
+    ],
+    action:{view:'intake',label:'Open Deal Intake'},
+    quiz:{q:'When does a lead become worth deeper analysis?',options:['As soon as you have an address','When you have enough real information to evaluate the opportunity','When someone says it is a great deal'],correct:1,explain:'Right. Better should help organize evidence, not replace missing facts with confidence.'}
+  },
+  {
+    slug:'seller', number:4, title:'Seller Discovery', stage:'UNDERSTAND THE DEAL',
+    goal:'Learn what matters to the seller while capturing the facts you need to evaluate the opportunity.',
+    overview:[
+      'Good seller conversations are discovery, not pressure. Understand condition, occupancy, timing, liens or known title issues, the seller’s priorities, and what outcome they are trying to achieve.',
+      'Do not promise a closing, price, or buyer outcome you cannot support. Write down what you learn so the next decision is based on the same facts.'
+    ],
+    better:[
+      'Keep opportunity notes and follow-ups in Deal Pipeline rather than scattering them across texts and spreadsheets.',
+      'Use Deal Calendar for inspection dates, callbacks, offer expirations and closing-related deadlines.',
+      'Use private Deal Rooms when a listing-linked transaction needs documents, offers and deal conversation in one place.'
+    ],
+    action:{view:'pipeline',label:'Open Deal Pipeline'},
+    quiz:{q:'What is the purpose of the seller conversation?',options:['Pressure the seller into accepting quickly','Collect the facts, priorities and constraints needed to evaluate a real solution','Avoid writing anything down'],correct:1,explain:'Correct. Better decisions start with accurate discovery and an organized record.'}
+  },
+  {
+    slug:'analysis', number:5, title:'Analyze the Property', stage:'RUN THE NUMBERS',
+    goal:'Use Better Deal Intelligence to separate property evidence, sold comps, repairs and deal math instead of guessing.',
+    overview:[
+      'Start with property identity and facts before valuation. Beds, baths, square footage, property type and parcel identity should not be treated as verified when credible sources conflict.',
+      'ARV is only as useful as the subject match and comparable sales supporting it. Repair planning should be explicit enough that changing the scope changes the economics instead of hiding inside one magic number.'
+    ],
+    better:[
+      'Open AI Deal Builder / Deal Intelligence with the exact property address.',
+      'Review Property Evidence and conflicts before relying on valuation. Better intentionally withholds unsupported facts rather than fabricating precision.',
+      'Review sold comps, ARV confidence, repair planning, MAO and spread together. The AI explanation should interpret grounded numbers, not invent them.'
+    ],
+    action:{view:'dealbuilder',label:'Analyze a property in Better'},
+    quiz:{q:'What should come before a precise ARV?',options:['A confident-sounding AI paragraph','Verified property identity and credible sold-comp evidence','A seller asking price'],correct:1,explain:'Correct. Better’s property-truth rules intentionally put identity and evidence before valuation precision.'}
+  },
+  {
+    slug:'offer', number:6, title:'Build the Offer', stage:'MAKE A DECISION',
+    goal:'Turn the analysis into an offer you can explain rather than a number you hope works.',
+    overview:[
+      'Your offer should reflect the property, repair assumptions, transaction costs, desired margin, buyer reality and the structure you are actually using.',
+      'A formula is a decision aid, not permission to ignore uncertainty. If the property facts or comps are weak, the offer process needs more diligence, not fake precision.'
+    ],
+    better:[
+      'Use Deal Intelligence to keep ARV, repair range, MAO and spread visible together.',
+      'Save the opportunity to Pipeline so the offer, follow-up and deadlines stay connected to the deal.',
+      'Use Deal Calendar for offer expiration or seller follow-up instead of relying on memory.'
+    ],
+    action:{view:'dealbuilder',label:'Review deal math'},
+    quiz:{q:'If the property evidence is weak, what is the best next step?',options:['Increase confidence so the seller accepts','Do more diligence and treat the numbers as uncertain','Ignore the comp set'],correct:1,explain:'Exactly. Uncertainty should be visible and handled, not hidden.'}
+  },
+  {
+    slug:'contracts', number:7, title:'Contracts & Due Diligence', stage:'CONTROL THE WORKFLOW',
+    goal:'Understand what needs to be tracked once an opportunity moves toward contract.',
+    overview:[
+      'Contracts create real obligations. Assignment, marketing, disclosure, earnest-money, inspection and cancellation rules can differ by state and agreement, so use appropriate local legal or title guidance when needed.',
+      'Operationally, your job is to keep the agreement, deadlines, access, title work and communications organized so nothing critical disappears in a text thread.'
+    ],
+    better:[
+      'Move the opportunity to the correct Pipeline stage instead of leaving it marked as a lead.',
+      'Use Deal Room for the private transaction conversation and document workflow on listing-linked deals.',
+      'Put material dates in Deal Calendar and use Transaction Hub for tasks, contacts, credentials and closing outcomes.'
+    ],
+    action:{view:'transactionhub',label:'Open Transaction Hub'},
+    quiz:{q:'What should Better replace in this stage?',options:['Local legal advice','Scattered tracking of tasks, contacts, dates and deal communication','The signed agreement itself'],correct:1,explain:'Right. Better is the operating layer; it does not replace required legal documents or professional advice.'}
+  },
+  {
+    slug:'buyers', number:8, title:'Build Your Buyer Network', stage:'BUILD DEMAND',
+    goal:'Stop rebuilding a buyer list from scratch every time you get a property.',
+    overview:[
+      'A buyer list is strongest when you know what each buyer actually wants, where they buy, their strategy and whether they can perform.',
+      'The goal is not the biggest contact list. It is a useful network with criteria you can match against real opportunities.'
+    ],
+    better:[
+      'Use Network to find wholesalers, investors, buyers and funders by their real profile roles.',
+      'Use public Buy Boxes where available to understand stated criteria, and create your own Buy Box so others can understand yours.',
+      'Keep private buyer notes and relationship status in Buyer CRM. Better buyer matching must use actual criteria — never an invented buyer count.'
+    ],
+    action:{view:'network',label:'Build my Better network'},
+    quiz:{q:'What makes a buyer list useful?',options:['Having the most names possible','Knowing real criteria and keeping relationships organized','Sending every deal to everyone'],correct:1,explain:'Correct. Relevant criteria and relationships beat a giant unqualified list.'}
+  },
+  {
+    slug:'dispo', number:9, title:'Dispositions in Better', stage:'MARKET THE DEAL',
+    goal:'Package and distribute a real opportunity clearly enough that qualified buyers can evaluate it.',
+    overview:[
+      'Good dispositions starts with accuracy. Present the property, asking price, known condition, access process, material deal terms and supporting information without inventing certainty.',
+      'Make it easy for buyers to understand the opportunity and take the next step. Track interest instead of losing it across posts and DMs.'
+    ],
+    better:[
+      'Post the property to Better once the information is ready for distribution.',
+      'Use Better Dispo to structure the listing and create channel-ready distribution material from the real deal data.',
+      'Use the property page, buyer matching, sharing and Messages to move interested people into an organized conversation.'
+    ],
+    action:{view:'compose',label:'Post a property in Better'},
+    quiz:{q:'What should Better Dispo never do?',options:['Organize real property information','Create distribution assets','Invent missing deal facts to make a listing look stronger'],correct:2,explain:'Exactly. Distribution should make a real deal clearer, not make up a better one.'}
+  },
+  {
+    slug:'buyer-management', number:10, title:'Manage Buyer Interest', stage:'MOVE THE DEAL',
+    goal:'Turn interest into an organized process with communication, offers and follow-up.',
+    overview:[
+      'Once buyers respond, speed matters, but organization matters too. Track who is interested, what they asked for, whether they submitted an offer, and what still needs to happen.',
+      'Keep material information consistent across buyers. If something about the property changes, update the source information instead of letting different versions circulate.'
+    ],
+    better:[
+      'Use Messages for direct conversation and Buyer CRM for private relationship notes and follow-up status.',
+      'Use Deal Rooms for listing-linked offers, files and transaction conversation.',
+      'Use Pipeline and Command Center to keep the real next action visible without fabricating activity.'
+    ],
+    action:{view:'buyercrm',label:'Open Buyer CRM'},
+    quiz:{q:'What is the goal after buyer interest appears?',options:['Send different facts to each buyer','Track the conversation, offers and next actions consistently','Stop updating the property'],correct:1,explain:'Correct. The system should make the deal easier to follow, not create competing versions of the truth.'}
+  },
+  {
+    slug:'closing', number:11, title:'From Contract to Closing', stage:'FINISH THE DEAL',
+    goal:'Keep the transaction moving through title, tasks, documents, deadlines and final outcome.',
+    overview:[
+      'Closing requires coordination. Title or settlement work, document requests, buyer/seller communication, access and deadlines all need a clear owner.',
+      'Problems should become explicit tasks and conversations rather than surprises discovered at the end.'
+    ],
+    better:[
+      'Use Transaction Hub for task/checklist work, contacts, credentials and closing outcome confirmation.',
+      'Use Deal Calendar for material dates and Deal Room for the transaction’s private working space.',
+      'When the deal is actually closed, record the real outcome. Better Moments and activity should only celebrate events that truly happened.'
+    ],
+    action:{view:'transactionhub',label:'Manage a transaction'},
+    quiz:{q:'When should Better mark or celebrate a closing?',options:['When a buyer says they are interested','Only when the real closing outcome is confirmed','As soon as the property is posted'],correct:1,explain:'Correct. Better’s milestones and moments must stay grounded in real activity.'}
+  },
+  {
+    slug:'repeat', number:12, title:'Build a Repeatable Business', stage:'DO IT AGAIN, BETTER',
+    goal:'Turn your first complete workflow into a process you can repeat without adding chaos.',
+    overview:[
+      'The point of a system is not to create more tabs. It is to make the next opportunity easier to source, analyze, distribute and close because your relationships and workflow already live somewhere useful.',
+      'Review what actually produced results: where the opportunity came from, which buyers responded, where the deal slowed down, and what information was missing.'
+    ],
+    better:[
+      'Keep your profile, markets, Buy Boxes, Network and Buyer CRM current so future opportunities start with context.',
+      'Use Pipeline, Command Center, Saved Searches, Deal Alerts and Market Hubs as the operating layer instead of rebuilding the process in separate spreadsheets and group chats.',
+      'Use Better Guide for feature help and advanced member guidance while keeping the free course available whenever you want to revisit the fundamentals.'
+    ],
+    action:{view:'commandcenter',label:'Open Command Center'},
+    quiz:{q:'What should make the second deal easier than the first?',options:['More disconnected tools','A repeatable Better workflow with retained relationships, criteria and deal organization','Skipping analysis'],correct:1,explain:'That’s the idea. Better should become the operating home for the process, not another place you have to duplicate it.'}
+  }
+];
+
+const BETTER_GUIDE_HELP = [
+  {terms:'post property listing sell deal',title:'Post a property',copy:'Start from Post. Build the listing manually, import existing deal notes, or begin from Deal Intelligence.',view:'compose'},
+  {terms:'arv comps repair mao deal intelligence analysis',title:'Understand Deal Intelligence',copy:'Better verifies the subject property and evidence first, then shows sold comps, ARV confidence, repair planning and deal math.',view:'dealbuilder'},
+  {terms:'buyer buyers network connections investor wholesaler lender funder',title:'Find buyers and build your network',copy:'Use Network, public Buy Boxes and Buyer CRM to build real relationships and criteria.',view:'network'},
+  {terms:'pipeline crm follow up lead stages',title:'Organize a deal',copy:'Use Deal Pipeline for deal stages and Buyer CRM for private buyer relationship notes.',view:'pipeline'},
+  {terms:'wholesale course learn beginner training',title:'Learn wholesaling',copy:'Take the free Better-centered wholesaling course and continue from your saved module.',view:'learn'},
+  {terms:'password username delete account settings notifications',title:'Account & settings',copy:'Open Settings to manage your profile, alerts, password and account controls.',view:'settings'},
+  {terms:'affiliate referral credit money commission payout',title:'Referrals and affiliate program',copy:'Referral credits and affiliate cash earnings are separate. Open Affiliate Center or your profile Referral Center for the applicable workflow.',view:'affiliate'},
+  {terms:'help support contact problem bug',title:'Contact Better support',copy:'If self-service help does not solve it, open Contact and send the Better team the details.',view:'contact'}
+];
+
+function betterGuidePremium(){return !!(state.access?.pro||state.access?.platinum||state.access?.wholesale||state.access?.adminUnlimited||state.user?.role==='admin');}
+function betterGuideCompleted(){return Array.isArray(state.user?.settings?.guideCourseCompleted)?state.user.settings.guideCourseCompleted:[];}
+function betterGuideQuizPassed(){return Array.isArray(state.user?.settings?.guideCourseQuizPassed)?state.user.settings.guideCourseQuizPassed:[];}
+function betterGuideModule(slug){return BETTER_GUIDE_COURSE.find(x=>x.slug===slug)||BETTER_GUIDE_COURSE[0];}
+async function saveBetterGuideSettings(patch){
+  const r=await api('PATCH','/api/me/settings',patch); state.user.settings=r.settings; return r.settings;
+}
+function betterGuideProgress(){const done=betterGuideCompleted().filter(x=>BETTER_GUIDE_COURSE.some(m=>m.slug===x));return {done,total:BETTER_GUIDE_COURSE.length,pct:Math.round((done.length/BETTER_GUIDE_COURSE.length)*100)};}
+function guideContext(){
+  const map={
+    dealbuilder:['Deal Intelligence','Review property evidence before relying on ARV. If facts conflict, Better will keep the uncertainty visible.'],
+    network:['Network','Use roles and Buy Boxes to find people who actually fit the relationship you need.'],
+    pipeline:['Deal Pipeline','Keep the opportunity in the stage it is really in and make the next follow-up explicit.'],
+    buyercrm:['Buyer CRM','Capture real buyer criteria and relationship notes so matching improves over time.'],
+    compose:['Post a property','Use only property and deal information you can support. Better Dispo can structure it without inventing missing facts.'],
+    transactionhub:['Transaction Hub','Put tasks, contacts, credentials and closing outcomes in one place so the deal does not disappear into separate threads.'],
+    affiliate:['Affiliate Center','Use your tracked Better affiliate link. Cash affiliate earnings stay separate from Better Credits.'],
+    settings:['Settings','Manage your markets, notifications, Guide preferences and account controls here.'],
+    learn:['Learn Wholesaling','The course intentionally teaches the workflow through Better so you can practice each step where you will actually manage it.']
+  };
+  return map[state.view]||['Better Guide','I can help you learn Better, continue the free wholesaling course, or find the right tool for what you are doing.'];
+}
+function guidePremiumInsight(){
+  const markets=Array.isArray(state.user?.investmentMarkets)?state.user.investmentMarkets:[];
+  const marketLine=markets.length?` Your Better profile currently focuses on ${markets.slice(0,3).join(', ')}${markets.length>3?' and more':''}.`:'';
+  if(state.view==='dealbuilder')return {title:'Deal Intelligence companion',copy:'Use the Guide as a second set of eyes on the workflow: subject-property truth first, then comp strength, repair assumptions and deal math. It will not turn weak evidence into a confident number.',view:'dealbuilder'};
+  if(state.view==='network'||state.view==='buyercrm')return {title:'Buyer-network companion',copy:'Use real roles, Buy Boxes and relationship notes to decide who belongs in the conversation.'+marketLine,view:'buyercrm'};
+  if(state.view==='pipeline'||state.view==='transactionhub')return {title:'Deal workflow companion',copy:'Keep the next real action visible across Pipeline, Deal Rooms, Calendar and Transaction Hub rather than creating a second tracking system.',view:'pipeline'};
+  if(state.view==='learn')return {title:'Learning companion',copy:'Your course progress is tied to this account. I can keep the learning path connected to the Better tool used in each module.',view:'learn',module:state.guideCourseModule};
+  return {title:'Personalized Better workflow',copy:'Advanced guidance uses your real Better context, membership access and saved course progress to keep the next step relevant.'+marketLine,view:betterGuideNextStep().view,module:betterGuideNextStep().module};
+}
+
+function betterGuideNextStep(){
+  const progress=betterGuideProgress();
+  if(progress.done<progress.total){const next=BETTER_GUIDE_COURSE.find(m=>!betterGuideCompleted().includes(m.slug))||BETTER_GUIDE_COURSE[0];return {title:`Continue lesson ${next.number}`,copy:next.title,view:'learn',module:next.slug};}
+  if(!state.user?.bio||!(state.user?.investmentMarkets||[]).length)return {title:'Tighten your profile',copy:'Add your market and a useful bio so your Better profile gives the network context.',view:'settings'};
+  return {title:'Use your operating workspace',copy:'Open Command Center to review real matches, activity and next actions available to your account.',view:'commandcenter'};
+}
+function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');document.querySelector('.better-guide-trigger')?.focus?.({preventScroll:true});}
+function navigateFromGuide(view,module){closeBetterGuide();if(module)state.guideCourseModule=module;go(view);}
+function openBetterGuide(){
+  if(!state.user)return go('auth'); closeBetterGuide();
+  const shade=el('div',{class:'better-guide-shade',role:'presentation'}),panel=el('section',{class:'better-guide-panel',role:'dialog','aria-modal':'true','aria-label':'Better Guide',tabindex:'-1'});
+  document.documentElement.classList.add('better-guide-open');document.body.classList.add('better-guide-open');
+  shade.onclick=e=>{if(e.target===shade)closeBetterGuide();};
+  panel.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();closeBetterGuide();}};
+  const [ctxTitle,ctxCopy]=guideContext(),progress=betterGuideProgress(),next=betterGuideNextStep();
+  const mascot=el('div',{class:'guide-mini-mascot'},[el('img',{src:'/better-guide-mascot.webp',alt:'Better Guide'}),el('img',{class:'guide-mini-logo',src:'/better-guide-logo.png',alt:''})]);
+  const close=el('button',{class:'iconbtn guide-close','aria-label':'Close Better Guide',onclick:closeBetterGuide},'×');
+  panel.appendChild(el('div',{class:'better-guide-head'},[mascot,el('div',{class:'grow'},[el('div',{class:'dispoeyebrow'},'BETTER GUIDE'),el('h2',{},'How can I help?'),el('div',{class:'hint'},'Platform help, learning and guidance without leaving your workflow.')]),close]));
+  if(state.user?.settings?.guideContextTips!==false)panel.appendChild(el('div',{class:'guide-context-card'},[el('b',{},ctxTitle),el('div',{class:'hint'},ctxCopy)]));
+  const tourDone=Number(state.user?.settings?.tutorialCompletedVersion||0)>=TUTORIAL_VERSION;
+  panel.appendChild(el('div',{class:'guide-progress-center'},[el('div',{},[el('span',{},'Platform tour'),el('b',{},tourDone?'Complete':'Available')]),el('div',{},[el('span',{},'Wholesaling course'),el('b',{},`${progress.done}/${progress.total}`)])]));
+  const quick=el('div',{class:'guide-quick-grid'});
+  quick.append(
+    el('button',{onclick:()=>{closeBetterGuide();startTutorial(true);}},[el('b',{},'Guide me through Better'),el('span',{},'Replay the platform tutorial')]),
+    el('button',{onclick:()=>navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||next.module||'foundations')},[el('b',{},'Learn Wholesaling — Free'),el('span',{},`${progress.done}/${progress.total} modules complete`)]),
+    el('button',{onclick:()=>navigateFromGuide('faq')},[el('b',{},'Help center'),el('span',{},'Browse common questions')]),
+    el('button',{onclick:()=>navigateFromGuide('contact')},[el('b',{},'Contact support'),el('span',{},'Get help from the Better team')])
+  );
+  panel.appendChild(quick);
+  panel.appendChild(el('div',{class:'guide-section-label'},'SEARCH BETTER HELP'));
+  const input=el('input',{class:'guide-search',placeholder:'Try “ARV”, “post a property”, or “affiliate”','aria-label':'Search Better Help'}),results=el('div',{class:'guide-search-results'});
+  const drawResults=()=>{const q=input.value.trim().toLowerCase();results.innerHTML='';const rows=(q?BETTER_GUIDE_HELP.filter(x=>(x.terms+' '+x.title+' '+x.copy).toLowerCase().includes(q)):BETTER_GUIDE_HELP.slice(0,4)).slice(0,6);if(!rows.length){results.appendChild(el('div',{class:'guide-empty'},'No exact help topic found. Try a shorter search or contact support.'));return;}rows.forEach(x=>results.appendChild(el('button',{onclick:()=>navigateFromGuide(x.view)},[el('b',{},x.title),el('span',{},x.copy)])));};
+  input.oninput=drawResults;panel.append(input,results);drawResults();
+  panel.appendChild(el('div',{class:'guide-section-label'},'YOUR NEXT STEP'));
+  panel.appendChild(el('button',{class:'guide-next-card',onclick:()=>navigateFromGuide(next.view,next.module)},[el('div',{},[el('b',{},next.title),el('span',{},next.copy)]),el('span',{class:'guide-arrow'},'→')]));
+  panel.appendChild(el('div',{class:'guide-section-label'},'PERSONALIZED MEMBER GUIDANCE'));
+  if(betterGuidePremium()){const insight=guidePremiumInsight();panel.appendChild(el('div',{class:'guide-premium-card unlocked'},[el('b',{},insight.title),el('div',{class:'hint'},insight.copy),el('div',{class:'guide-premium-actions'},[el('button',{class:'btn-primary',onclick:()=>navigateFromGuide(insight.view,insight.module)},'Open guided workflow'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||'foundations')},'Continue learning')]) ]));}
+  else panel.appendChild(el('div',{class:'guide-premium-card'},[el('b',{},'Free help stays useful'),el('div',{class:'hint'},'The course, product help and basic contextual guidance are free. Paid memberships add deeper personalized workflow guidance without locking the fundamentals away.'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('upgrade')},'See membership options')]));
+  shade.appendChild(panel);document.body.appendChild(shade);requestAnimationFrame(()=>input.focus({preventScroll:true}));
+}
+
+async function markGuideModuleComplete(slug){
+  const completed=[...new Set([...betterGuideCompleted(),slug])];
+  const passed=[...new Set([...betterGuideQuizPassed(),slug])];
+  await saveBetterGuideSettings({guideCourseCompleted:completed,guideCourseQuizPassed:passed,guideCourseLastModule:slug});
+}
+async function openGuideModule(slug){state.guideCourseModule=slug;writeRoute('push');try{await saveBetterGuideSettings({guideCourseLastModule:slug});}catch{}renderApp();window.scrollTo(0,0);}
+
+async function renderLearnWholesaling(){
+  const wrap=el('div',{class:'page better-learning-page'}),module=betterGuideModule(state.guideCourseModule||state.user?.settings?.guideCourseLastModule||'foundations'),progress=betterGuideProgress();
+  const hero=el('section',{class:'guide-course-hero'},[
+    el('div',{class:'guide-course-mascot'},[el('img',{src:'/better-guide-mascot.webp',alt:'Better Guide, the Better Real Estate golden retriever mascot'}),el('img',{class:'guide-course-logo',src:'/better-guide-logo.png',alt:'Better Real Estate'})]),
+    el('div',{class:'grow'},[el('div',{class:'dispoeyebrow'},'FREE BETTER REAL ESTATE COURSE'),el('h1',{},'Learn wholesaling by doing it in Better.'),el('p',{},'From your first opportunity to buyer relationships and closing, each module teaches the workflow and then sends you into the real Better tool built for that step. The course is free; the goal is to help you build the habit of running the business in one place.'),el('div',{class:'guide-progress-row'},[el('div',{class:'guide-progress-track'},el('span',{style:`width:${progress.pct}%`})),el('b',{},`${progress.done} of ${progress.total} complete`)])])
+  ]);wrap.appendChild(hero);
+  if(progress.done===progress.total)wrap.appendChild(el('div',{class:'guide-course-achievement'},[el('b',{},'Wholesaling Foundations — Completed'),el('span',{},'You completed the full free Better-centered course. This is a learning milestone, not a professional certification or license.') ]));
+  const layout=el('div',{class:'guide-course-layout'}),sidebar=el('aside',{class:'guide-course-nav','aria-label':'Wholesaling course modules'}),detail=el('section',{class:'guide-lesson'});
+  BETTER_GUIDE_COURSE.forEach(m=>{const done=betterGuideCompleted().includes(m.slug);sidebar.appendChild(el('button',{class:(m.slug===module.slug?'active ':'')+(done?'done':''),onclick:()=>openGuideModule(m.slug)},[el('span',{class:'guide-module-num'},done?'✓':String(m.number)),el('span',{class:'grow'},[el('b',{},m.title),el('small',{},m.stage)])]));});
+  const lessonHead=el('div',{class:'guide-lesson-head'},[el('div',{},[el('div',{class:'tutorialprogress'},`MODULE ${module.number} OF ${BETTER_GUIDE_COURSE.length} · ${module.stage}`),el('h2',{},module.title),el('p',{},module.goal)]),el('button',{class:'btn-ghost',onclick:()=>openBetterGuide()},'Ask Better Guide')]);detail.appendChild(lessonHead);
+  detail.appendChild(el('div',{class:'guide-lesson-block'},[el('h3',{},'What you need to know'),...module.overview.map(x=>el('p',{},x))]));
+  detail.appendChild(el('div',{class:'guide-lesson-block better-workflow'},[el('div',{class:'guide-section-label'},'DO THIS IN BETTER'),el('h3',{},'Turn the lesson into a workflow'),el('ol',{},module.better.map(x=>el('li',{},x))),el('button',{class:'btn-primary',onclick:()=>go(module.action.view)},module.action.label)]));
+  const quiz=el('div',{class:'guide-lesson-block guide-quiz'},[el('div',{class:'guide-section-label'},'KNOWLEDGE CHECK'),el('h3',{},module.quiz.q)]),status=el('div',{class:'guide-quiz-status','aria-live':'polite'}),choices=el('div',{class:'guide-quiz-choices'});
+  module.quiz.options.forEach((option,index)=>choices.appendChild(el('button',{class:'btn-ghost',onclick:async e=>{choices.querySelectorAll('button').forEach(b=>b.classList.remove('correct','wrong'));if(index===module.quiz.correct){e.currentTarget.classList.add('correct');status.className='guide-quiz-status okmsg';status.textContent=module.quiz.explain;try{await withButtonBusy(e.currentTarget,()=>markGuideModuleComplete(module.slug));const next=BETTER_GUIDE_COURSE[module.number];if(next)status.appendChild(el('button',{class:'btn-primary guide-next-module',onclick:()=>openGuideModule(next.slug)},'Continue to next module'));else status.appendChild(el('div',{class:'guide-course-finish'},'Course complete. Keep using Better Guide whenever you want to revisit a workflow.'));renderTop();}catch(err){status.className='guide-quiz-status errmsg';status.textContent=err.message;}}else{e.currentTarget.classList.add('wrong');status.className='guide-quiz-status errmsg';status.textContent='Not quite. Review the lesson and try again.';}}},option)));
+  quiz.append(choices,status);detail.appendChild(quiz);
+  if(betterGuideCompleted().includes(module.slug))detail.insertBefore(el('div',{class:'guide-complete-banner'},'Completed — your progress is saved to this Better account.'),detail.children[1]||null);
+  detail.appendChild(el('div',{class:'guide-course-disclaimer'},'Education only. Better Real Estate helps organize and analyze your workflow; it does not replace state-specific legal, licensing, title, tax, accounting, or other professional advice.'));
+  layout.append(sidebar,detail);wrap.appendChild(layout);return wrap;
+}
+
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 51;
+const TUTORIAL_VERSION = 52;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2330,6 +2630,8 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'me',selector:'.founder-program-card',min:0,release:36,when:()=>!!state.user?.founderLaunchPosition,title:'First 100 Founding Member',copy:'As one of the first 100 qualifying members, your profile carries Founding Member recognition and includes two weeks of complimentary Platinum access. Your referral link is ready to share with your network.'},
  {view:'feed',selector:'.topquick',min:0,release:31,title:'Quick options',copy:'Open your customizable shortcut menu from anywhere. Choose the platform actions you use most, customize up to six shortcuts, and use Back to return to your saved Quick Options without closing the menu.'},
  {view:'settings',selector:'.market-settings',min:0,release:29,title:'Investment markets',copy:'Choose the states you work in. They boost relevant properties in For You without hiding opportunities elsewhere.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:52,title:'Meet your Better Guide',copy:'Your Better Guide lives beside Settings. Open him anytime for platform help, contextual guidance, tutorials, support, and the free Learn Wholesaling course built around Better Real Estate.'},
+ {view:'learn',selector:'.better-learning-page',min:0,release:52,title:'Learn wholesaling inside Better',copy:'The free course teaches the wholesaling workflow while showing where to do each step in Better — research a property, build your network, post a deal, manage buyers, and move the transaction forward.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
  ].filter(x=>rank>=x.min&&(!x.when||x.when()));
@@ -2388,8 +2690,10 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
  const move=delta=>{const next=Math.max(0,Math.min(steps.length-1,i+delta));if(next===i&&delta>0)return finish();i=next;draw();};
  const draw=async()=>{
    if(closed)return; const step=steps[i]; card.innerHTML='';
-   card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));
+   card.appendChild(el('div',{class:'guide-tutor-head'},[el('img',{src:'/better-guide-mascot.webp',alt:'Better Guide'}),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':'I’ll show you around')])]));
+   card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));
    card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
+   if(i===0&&!onlyNew&&!releaseOnly)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{cleanup();state.guideCourseModule=state.user?.settings?.guideCourseLastModule||'foundations';go('learn');}},'I’m new to wholesaling — start the free course'));
    card.appendChild(el('div',{class:'tutorialmembership'},`Showing ${tier==='wholesale'?'Team':tier[0].toUpperCase()+tier.slice(1)} access`));
    const actions=el('div',{class:'tutorialactions'});
    actions.appendChild(el('button',{type:'button',class:'btn-ghost',disabled:i===0?'disabled':null,onclick:()=>move(-1)},'Back'));
@@ -3462,7 +3766,10 @@ function renderSettings() {
     const { settings } = await api('PATCH', '/api/me/settings', { showMembershipLevel: on }); state.user.settings = settings; toast(on ? 'Membership level is visible' : 'Membership level hidden', 'ok');
   }));
   sbox.appendChild(toggleRow('Show activity status', 'Shows Active now or Active recently on your public profile without exposing an exact timestamp.', s.showActivityStatus !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{showActivityStatus:on}); state.user.settings=settings; }));
-  sbox.appendChild(el('button', { class:'btn-ghost', style:'margin:0 16px 16px;width:calc(100% - 32px)', onclick:()=>startTutorial(true) }, 'Restart platform tutorial'));
+  sbox.appendChild(toggleRow('Better Guide contextual tips', 'Lets the mascot tailor help to the Better page you are currently using. No fake activity or invented deal facts.', s.guideContextTips !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{guideContextTips:on}); state.user.settings=settings; }));
+  sbox.appendChild(toggleRow('Better Guide animations', 'Keeps mascot movement subtle. Reduced-motion system settings are always respected.', s.guideAnimations !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{guideAnimations:on}); state.user.settings=settings; }));
+  const guideActions=el('div',{class:'guide-settings-actions'},[el('button',{class:'btn-ghost',onclick:()=>startTutorial(true)},'Restart platform tutorial'),el('button',{class:'btn-ghost',onclick:()=>go('learn')},'Open free wholesaling course')]);
+  sbox.appendChild(guideActions);
   wrap.appendChild(sbox);
 
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Account & security'));

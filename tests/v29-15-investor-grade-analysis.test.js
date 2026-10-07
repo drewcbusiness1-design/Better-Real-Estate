@@ -32,7 +32,7 @@ const rehab=intel.estimateRehab(subject,[{sourceKey:'web:zillow.com',summary:'ne
 assert.equal(rehab.recommendedKey,'heavy');assert.equal(rehab.scenarios.length,3);assert(rehab.scenarios.find(x=>x.key==='heavy').estimate>60000);assert(rehab.scenarios.find(x=>x.key==='heavy').high>rehab.scenarios.find(x=>x.key==='heavy').low);
 
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),src=fs.readFileSync('dealSources.js','utf8'),cache=fs.readFileSync('dealResearchCache.js','utf8');
-assert(app.includes('const TUTORIAL_VERSION = 51;')&&app.includes("release:46,title:'Investor-grade analysis'")&&app.includes("release:47,title:'Multi-source investor intelligence'"));
+assert(app.includes('const TUTORIAL_VERSION = 52;')&&app.includes("release:46,title:'Investor-grade analysis'")&&app.includes("release:47,title:'Multi-source investor intelligence'"));
 for(const token of ['deal-intel-snapshot','evidence-summary-line','View source detail and provenance','Repair planning','Current ask'])assert(app.includes(token),token);
 for(const token of ['.dealbuilderpage{width:min(1080px,100%)','.evidence-field-grid{grid-template-columns:repeat(3','.rehab-scenario-grid{display:grid','.deal-intel-snapshot{display:grid'])assert(css.includes(token),token);
 assert(src.includes("u.searchParams.set('token',token)")&&src.includes("'x-regrid-token':token"),'Regrid auth must support documented token forms');

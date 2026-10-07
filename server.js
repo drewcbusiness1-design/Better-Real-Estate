@@ -232,6 +232,11 @@ const defaultSettings = () => ({
   tutorialCompletedKeys: [],
   tutorialHighestRank: -1,
   firstLookCompleted: false,
+  guideContextTips: true,
+  guideAnimations: true,
+  guideCourseCompleted: [],
+  guideCourseQuizPassed: [],
+  guideCourseLastModule: 'foundations',
   // Admin-only preference. Undefined on older accounts intentionally behaves
   // as ON so the site owner starts receiving signup notifications immediately.
   notifyOnNewSignup: true
@@ -868,6 +873,11 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (typeof body.showMembershipLevel === 'boolean') next.showMembershipLevel = body.showMembershipLevel;
   if (typeof body.showActivityStatus === 'boolean') next.showActivityStatus = body.showActivityStatus;
   if (typeof body.firstLookCompleted === 'boolean') next.firstLookCompleted = body.firstLookCompleted;
+  if (typeof body.guideContextTips === 'boolean') next.guideContextTips = body.guideContextTips;
+  if (typeof body.guideAnimations === 'boolean') next.guideAnimations = body.guideAnimations;
+  if (Array.isArray(body.guideCourseCompleted)) next.guideCourseCompleted = [...new Set(body.guideCourseCompleted.map(x => safeText(x,40)).filter(Boolean))].slice(0,24);
+  if (Array.isArray(body.guideCourseQuizPassed)) next.guideCourseQuizPassed = [...new Set(body.guideCourseQuizPassed.map(x => safeText(x,40)).filter(Boolean))].slice(0,24);
+  if (body.guideCourseLastModule !== undefined) next.guideCourseLastModule = safeText(body.guideCourseLastModule,40) || 'foundations';
   if (Array.isArray(body.quickOptions)) { const allowed=new Set(['compose','dealbuilder','buyercrm','pipeline','buybox','search','messages','liked','admin']); next.quickOptions=[...new Set(body.quickOptions.map(String).filter(x=>allowed.has(x)))].slice(0,6); if(!isAdminUser(req.user)) next.quickOptions=next.quickOptions.filter(x=>x!=='admin'); }
   if (body.tutorialCompletedVersion !== undefined) next.tutorialCompletedVersion = Math.max(0, Number(body.tutorialCompletedVersion)||0);
   if (body.tutorialDismissedVersion !== undefined) next.tutorialDismissedVersion = Math.max(0, Number(body.tutorialDismissedVersion)||0);
