@@ -1296,60 +1296,29 @@ html.better-guide-open,body.better-guide-open{overflow:hidden}
 @media(max-width:760px){.better-guide-trigger{width:54px;height:44px;min-width:54px;flex-basis:54px;margin-left:5px}.better-guide-trigger .better-mascot-stage{width:58px;height:54px}.better-guide-trigger .better-mascot-rig{width:66px}.guide-mascot-stage.is-panel{width:76px;flex-basis:76px}.guide-mascot-stage.is-panel .better-mascot-rig{width:80px}.guide-course-mascot .better-mascot-rig{width:108px;transform:translateY(10px)}}
 @media(prefers-reduced-motion:reduce){.better-mascot-rig *{animation:none!important;transition:none!important}.better-mascot-rig{transform:none!important}}
 
+
 /* =====================================================================
-   v29.30 — Live mascot character system: multi-pose, contextual, alive
+   v29.31 — True live Better mascot: continuous procedural character rig
    ===================================================================== */
-.better-guide-trigger{width:74px;height:56px;min-width:74px;flex-basis:74px;margin-left:8px;align-self:center;display:inline-grid;place-items:center;overflow:visible!important;background:transparent!important;padding:0}
-.better-guide-trigger .better-mascot-stage{width:76px;height:62px;display:grid;place-items:end center;overflow:visible!important}
+.better-guide-trigger{width:66px;height:52px;min-width:66px;flex-basis:66px;margin-left:8px;align-self:center;display:inline-grid;place-items:center;overflow:visible!important;background:transparent!important;padding:0;border:0}
 .better-guide-trigger:hover,.better-guide-trigger:focus-visible,.better-guide-trigger.is-open{background:transparent!important;box-shadow:none!important;transform:none!important}
+.better-guide-trigger .better-mascot-stage{width:68px;height:58px;display:grid;place-items:end center;overflow:visible!important;mask-image:none!important;-webkit-mask-image:none!important;filter:none}
 
-.living-better-mascot{--tilt-x:0deg;--tilt-y:0deg;position:relative;display:inline-grid;place-items:end center;pointer-events:none;isolation:isolate;transform-origin:50% 100%}
-.living-mascot-stage{position:relative;display:block;width:100%;height:100%;overflow:visible}
-.living-mascot-shadow{position:absolute;left:50%;bottom:4px;width:46px;height:12px;border-radius:999px;background:radial-gradient(circle,rgba(0,0,0,.26) 0%,rgba(0,0,0,.1) 52%,rgba(0,0,0,0) 76%);transform:translateX(-50%);opacity:.58;filter:blur(2px)}
-.living-mascot-deck{position:absolute;left:0;right:0;top:0;bottom:0;overflow:visible}
-.living-mascot-pose{position:absolute;left:50%;bottom:-2px;height:86px;width:auto;max-width:none;transform:translateX(-50%) rotateX(calc(var(--tilt-y)*.45)) rotateY(var(--tilt-x)) translateY(0) scale(.98);transform-origin:50% 100%;opacity:0;filter:drop-shadow(0 7px 14px rgba(0,0,0,.18));transition:opacity .22s ease,transform .24s cubic-bezier(.22,.86,.26,1)}
-.living-mascot-pose.is-active{opacity:1}
-.living-better-mascot.mascot-header{width:72px;height:62px}
-.living-better-mascot.mascot-header .living-mascot-pose{height:94px;clip-path:inset(0 0 18% 0)}
-.living-better-mascot.mascot-panel{width:96px;height:84px}.living-better-mascot.mascot-panel .living-mascot-pose{height:124px;bottom:-10px}
-.living-better-mascot.mascot-tutorial{width:72px;height:62px}.living-better-mascot.mascot-tutorial .living-mascot-pose{height:92px;bottom:-4px}
-.living-better-mascot.mascot-course{width:180px;height:196px}.living-better-mascot.mascot-course .living-mascot-pose{height:212px;bottom:-8px}
+.better-mascot-rig{--head-x:0px;--head-y:0px;--head-r:0deg;--body-x:0px;--body-y:0px;--body-r:0deg;--body-s:1;--paw-r:0deg;--paw-x:0px;--paw-y:0px;--ear-l:0deg;--ear-r:0deg;--tail-r:0deg;--tail-s:1;position:relative;display:block;width:74px;aspect-ratio:576/720;pointer-events:none;filter:drop-shadow(0 6px 10px rgba(0,0,0,.16));transform-origin:50% 88%;isolation:isolate;perspective:240px}
+.better-mascot-rig .mascot-piece{position:absolute;display:block;will-change:transform;animation:none!important;transition:none!important}
+.better-mascot-rig .mascot-piece>img{display:block;width:100%;height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none;pointer-events:none;animation:none!important;transition:none!important}
+.better-mascot-rig .mascot-body{left:13.0208%;top:1.3889%;width:83.3333%;height:95.5556%;z-index:3;transform-origin:50% 78%;transform:translate(var(--body-x),var(--body-y)) rotate(var(--body-r)) scale(var(--body-s))}
+.better-mascot-rig .mascot-head{left:27.4306%;top:1.5278%;width:48.9583%;height:40.9722%;z-index:7;transform-origin:50% 82%;transform:translate(var(--head-x),var(--head-y)) rotate(var(--head-r))}
+.better-mascot-rig .mascot-ear-left{left:27.4306%;top:7.3611%;width:17.0139%;height:26.25%;z-index:5;transform-origin:86% 22%;transform:rotate(var(--ear-l))}
+.better-mascot-rig .mascot-ear-right{left:57.2917%;top:6.3889%;width:23.2639%;height:27.3611%;z-index:5;transform-origin:15% 24%;transform:rotate(var(--ear-r))}
+.better-mascot-rig .mascot-paw{left:13.0208%;top:37.0833%;width:30.2083%;height:30.2778%;z-index:8;transform-origin:72% 20%;transform:translate(var(--paw-x),var(--paw-y)) rotate(var(--paw-r))}
+.better-mascot-rig .mascot-tail{left:64.2361%;top:54.7222%;width:32.1181%;height:31.5278%;z-index:1;transform-origin:20% 66%;transform:rotate(var(--tail-r)) scale(var(--tail-s))}
+.better-mascot-rig .mascot-face-glint{position:absolute;z-index:12;left:37%;top:12%;width:28%;height:7%;border-radius:999px;opacity:0;transform:rotate(-11deg);background:linear-gradient(100deg,transparent 5%,rgba(255,255,255,.78) 50%,transparent 95%);mix-blend-mode:screen}
+.better-mascot-rig.is-celebrate .mascot-face-glint{animation:bre-kinetic-glint .8s ease 1!important}
+@keyframes bre-kinetic-glint{0%,100%{opacity:0;transform:translateX(-10px) rotate(-11deg)}40%{opacity:.8}72%{opacity:0;transform:translateX(16px) rotate(-11deg)}}
 
-.living-mascot-bubble{position:absolute;right:-14px;top:-18px;max-width:185px;padding:9px 11px;border-radius:14px;background:color-mix(in srgb,var(--surface) 94%,white 6%);border:1px solid color-mix(in srgb,var(--line) 80%,var(--accent) 20%);box-shadow:0 10px 26px rgba(15,23,42,.16);color:var(--ink);font-size:11.5px;line-height:1.35;font-weight:700;opacity:0;transform:translateY(10px) scale(.94);transform-origin:85% 100%;transition:opacity .18s ease,transform .22s cubic-bezier(.2,.9,.25,1.2);pointer-events:none;z-index:24}
-.living-mascot-bubble:after{content:'';position:absolute;right:18px;bottom:-8px;width:14px;height:14px;background:inherit;border-right:1px solid color-mix(in srgb,var(--line) 80%,var(--accent) 20%);border-bottom:1px solid color-mix(in srgb,var(--line) 80%,var(--accent) 20%);transform:rotate(45deg)}
-.living-better-mascot.show-bubble .living-mascot-bubble,.better-guide-trigger:hover .living-mascot-bubble,.better-guide-trigger:focus-visible .living-mascot-bubble,.better-guide-trigger.is-open .living-mascot-bubble{opacity:1;transform:translateY(0) scale(1)}
-.living-better-mascot.is-engaged .living-mascot-pose.is-active{transform:translateX(-50%) translateY(-2px) rotateX(calc(var(--tilt-y)*.45)) rotateY(var(--tilt-x)) scale(1.02)}
-.living-better-mascot.is-guiding .living-mascot-pose.is-active{transform:translateX(-50%) translateY(-2px) rotateX(calc(var(--tilt-y)*.45)) rotateY(var(--tilt-x)) scale(1.02)}
-.living-better-mascot.is-reacting .living-mascot-pose.is-active{animation:bre-live-pop .4s cubic-bezier(.2,.85,.3,1.2)}
-.living-better-mascot:not(.motion-off) .living-mascot-pose.is-active{animation:bre-live-float 4.8s ease-in-out infinite}
-.living-better-mascot[data-pose='wave']:not(.motion-off) .living-mascot-pose.is-active{animation:bre-live-wave .96s ease-in-out 1,bre-live-float 4.8s ease-in-out infinite .96s}
-.living-better-mascot[data-pose='welcome']:not(.motion-off) .living-mascot-pose.is-active{animation:bre-live-welcome 1s cubic-bezier(.22,.85,.28,1.1) 1,bre-live-float 4.8s ease-in-out infinite 1s}
-.living-better-mascot[data-pose='point']:not(.motion-off) .living-mascot-pose.is-active{animation:bre-live-point 1s ease-in-out 1,bre-live-float 4.8s ease-in-out infinite 1s}
-.living-better-mascot[data-pose='celebrate']:not(.motion-off) .living-mascot-pose.is-active{animation:bre-live-celebrate 1.18s cubic-bezier(.2,.9,.2,1) 1,bre-live-float 4.8s ease-in-out infinite 1.18s}
-.living-better-mascot[data-pose='excited']:not(.motion-off) .living-mascot-pose.is-active{animation:bre-live-excited 1.08s ease-in-out 1,bre-live-float 4.8s ease-in-out infinite 1.08s}
-.living-better-mascot:not(.motion-off) .living-mascot-shadow{animation:bre-live-shadow 4.8s ease-in-out infinite}
+.guide-mascot-stage{overflow:visible!important;mask-image:none!important;-webkit-mask-image:none!important}.guide-mascot-stage .better-mascot-rig{width:88px}.guide-mascot-stage.is-panel{height:80px;width:92px;flex-basis:92px}.guide-mascot-stage.is-panel .better-mascot-rig{width:96px}.guide-mascot-stage.is-tutorial{height:62px;width:70px;flex-basis:70px}.guide-mascot-stage.is-tutorial .better-mascot-rig{width:72px}
+.guide-course-mascot{display:grid;place-items:center;overflow:hidden}.guide-course-mascot .better-mascot-rig{width:180px;transform:translateY(12px)}.guide-course-logo{z-index:20}
 
-.guide-mascot-stage .living-better-mascot{pointer-events:none}.guide-mascot-stage.is-panel{height:88px;width:96px;flex-basis:96px}.guide-mascot-stage.is-tutorial{height:64px;width:72px;flex-basis:72px}
-.guide-course-mascot{display:grid;place-items:center;overflow:visible}
-.guide-course-logo{z-index:20}
-
-@keyframes bre-live-float{0%,100%{transform:translateX(-50%) rotateX(calc(var(--tilt-y)*.45)) rotateY(var(--tilt-x)) translateY(0) scale(.98)}50%{transform:translateX(-50%) rotateX(calc(var(--tilt-y)*.45)) rotateY(var(--tilt-x)) translateY(-3px) scale(1)}}
-@keyframes bre-live-wave{0%,100%{transform:translateX(-50%) rotateX(calc(var(--tilt-y)*.45)) rotateY(var(--tilt-x)) translateY(0) rotate(-1deg)}28%{transform:translateX(-50%) translateY(-3px) rotate(4deg) scale(1.03)}56%{transform:translateX(-50%) translateY(-1px) rotate(-3deg)}}
-@keyframes bre-live-welcome{0%,100%{transform:translateX(-50%) translateY(0) scale(.98)}35%{transform:translateX(-50%) translateY(-4px) scale(1.035)}70%{transform:translateX(-50%) translateY(-1px) scale(1.01)}}
-@keyframes bre-live-point{0%,100%{transform:translateX(-50%) translateY(0) rotateX(calc(var(--tilt-y)*.45)) rotateY(var(--tilt-x))}40%{transform:translateX(-50%) translateY(-3px) rotate(2deg) rotateX(calc(var(--tilt-y)*.45)) rotateY(calc(var(--tilt-x) + 5deg))}}
-@keyframes bre-live-celebrate{0%,100%{transform:translateX(-50%) translateY(0) scale(.98)}20%{transform:translateX(-50%) translateY(-6px) scale(1.04)}45%{transform:translateX(-50%) translateY(-2px) scale(1.01)}70%{transform:translateX(-50%) translateY(-5px) scale(1.03)}}
-@keyframes bre-live-excited{0%,100%{transform:translateX(-50%) translateY(0) rotate(-1deg)}24%{transform:translateX(-50%) translateY(-3px) rotate(3deg)}48%{transform:translateX(-50%) translateY(0) rotate(-3deg)}72%{transform:translateX(-50%) translateY(-2px) rotate(2deg)}}
-@keyframes bre-live-shadow{0%,100%{transform:translateX(-50%) scale(1);opacity:.58}50%{transform:translateX(-50%) scale(.94);opacity:.44}}
-@keyframes bre-live-pop{0%{transform:translateX(-50%) scale(.92)}100%{transform:translateX(-50%) scale(1)}}
-
-@media(max-width:760px){
-  .better-guide-trigger{width:60px;height:50px;min-width:60px;flex-basis:60px;margin-left:4px}
-  .better-guide-trigger .better-mascot-stage{width:62px;height:54px}
-  .living-better-mascot.mascot-header{width:60px;height:54px}
-  .living-better-mascot.mascot-header .living-mascot-pose{height:82px;clip-path:inset(0 0 20% 0)}
-  .living-mascot-bubble{display:none}
-  .guide-mascot-stage.is-panel{width:82px;flex-basis:82px;height:78px}
-  .living-better-mascot.mascot-panel{width:82px;height:78px}.living-better-mascot.mascot-panel .living-mascot-pose{height:108px}
-  .living-better-mascot.mascot-course{width:114px;height:126px}.living-better-mascot.mascot-course .living-mascot-pose{height:136px}
-}
-@media(prefers-reduced-motion:reduce){.living-better-mascot *{animation:none!important;transition:none!important}.living-better-mascot{transform:none!important}}
+@media(max-width:760px){.better-guide-trigger{width:56px;height:46px;min-width:56px;flex-basis:56px;margin-left:4px}.better-guide-trigger .better-mascot-stage{width:58px;height:52px}.better-guide-trigger .better-mascot-rig{width:66px}.guide-mascot-stage.is-panel{width:78px;flex-basis:78px}.guide-mascot-stage.is-panel .better-mascot-rig{width:82px}.guide-course-mascot .better-mascot-rig{width:110px;transform:translateY(10px)}}
+@media(prefers-reduced-motion:reduce){.better-mascot-rig,.better-mascot-rig *{animation:none!important;transition:none!important}}

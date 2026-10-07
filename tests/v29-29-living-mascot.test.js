@@ -1,6 +1,6 @@
 const fs=require('fs'),assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),pkg=require('../package.json');
-assert(['2.9.29','2.9.30'].includes(pkg.version),'package version must be at least v29.29');
+assert(['2.9.29','2.9.30','2.9.31'].includes(pkg.version),'package version must be at least v29.29');
 assert(app.includes('function createBetterMascotRig'),'layered mascot rig factory missing');
 assert(app.includes('function wireBetterMascotRig'),'mascot interaction wiring missing');
 assert(app.includes('function aimBetterMascotAt'),'tutorial target awareness missing');

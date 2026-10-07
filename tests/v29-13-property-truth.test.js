@@ -3,7 +3,7 @@ const fs=require('fs');
 const ds=require('../dealSources');
 const pkg=require('../package.json');
 
-assert(['2.9.29','2.9.30'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31'].includes(pkg.version));
 
 // Wrong-parcel candidates must lose even if they are returned first.
 const wrong={properties:{fields:{address:'99 Main St',scity:'Trenton',state2:'NJ',szip:'08608',num_bedrooms:4,num_bath:4}}};
