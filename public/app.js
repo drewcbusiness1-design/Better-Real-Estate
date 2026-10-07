@@ -338,140 +338,128 @@ window.addEventListener('popstate', () => {
 });
 
 
-const BETTER_MASCOT_PARTS = [
-  ['tail','/mascot-v2/tail.webp'],
-  ['torso','/mascot-v2/torso.webp'],
-  ['arm-left','/mascot-v2/arm-left.webp'],
-  ['arm-right','/mascot-v2/arm-right.webp'],
-  ['paw-left','/mascot-v2/paw-left.webp'],
-  ['paw-right','/mascot-v2/paw-right.webp'],
-  ['head','/mascot-v2/head.webp'],
-  ['ear-left','/mascot-v2/ear-left.webp'],
-  ['ear-right','/mascot-v2/ear-right.webp'],
-  ['muzzle','/mascot-v2/muzzle.webp']
-];
 const BETTER_MASCOT_DEFAULTS={
+  rootY:0,rootR:0,rootS:1,
   torsoX:0,torsoY:0,torsoR:0,torsoSX:1,torsoSY:1,
   headX:0,headY:0,headR:0,headSX:1,headSY:1,
   muzzleX:0,muzzleY:0,muzzleR:0,muzzleS:1,
   earL:0,earR:0,
   armLX:0,armLY:0,armLR:0,armRX:0,armRY:0,armRR:0,
   pawLX:0,pawLY:0,pawLR:0,pawRX:0,pawRY:0,pawRR:0,
-  tailR:0,tailS:1,rootY:0
+  tailR:0,tailS:1
 };
+function mascotNeutral(){return {...BETTER_MASCOT_DEFAULTS};}
 function createBetterMascotRig({variant='header',label='Better mascot',hidden=false}={}){
-  const attrs={class:`better-mascot-rig mascot-${variant}`,'data-life':'articulated-v2'};
+  const attrs={class:`better-mascot-rig mascot-${variant}`,'data-life':'header-character-v4','data-posture':'sit'};
   if(hidden)attrs['aria-hidden']='true';else{attrs.role='img';attrs['aria-label']=label;}
   const rig=el('span',attrs);
-  const stage=el('span',{class:'mascot-articulated-stage'});
-  const asset=name=>BETTER_MASCOT_PARTS.find(([part])=>part===name)?.[1];
-  const img=name=>el('img',{src:asset(name),alt:'',draggable:'false'});
-  const tail=el('span',{class:'mascot-joint mascot-tail'},img('tail'));
-  const torso=el('span',{class:'mascot-joint mascot-torso'},img('torso'));
-  const leftArm=el('span',{class:'mascot-joint mascot-arm-left'},[img('arm-left'),el('span',{class:'mascot-joint-local mascot-paw-left'},img('paw-left'))]);
-  const rightArm=el('span',{class:'mascot-joint mascot-arm-right'},[img('arm-right'),el('span',{class:'mascot-joint-local mascot-paw-right'},img('paw-right'))]);
-  const head=el('span',{class:'mascot-joint mascot-head'},[img('head'),el('span',{class:'mascot-joint-local mascot-ear-left'},img('ear-left')),el('span',{class:'mascot-joint-local mascot-ear-right'},img('ear-right')),el('span',{class:'mascot-joint-local mascot-muzzle'},img('muzzle'))]);
-  stage.append(tail,torso,leftArm,rightArm,head);
-  rig.appendChild(stage);
-  rig._mascot={
-    current:{...BETTER_MASCOT_DEFAULTS},target:{...BETTER_MASCOT_DEFAULTS},velocity:{},
-    mood:'rest',pointer:{x:0,y:0,seen:false,last:0},gaze:{x:0,y:0},lastTs:0,
-    nextIdle:performance.now()+5000+Math.random()*3500,sequenceUntil:0,actionToken:0
-  };
-  wireBetterMascotRig(rig);
-  return rig;
+  rig.innerHTML=`<svg class="mascot-svg" viewBox="0 0 120 150" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="breFur" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7bd62"/><stop offset=".55" stop-color="#dd8d32"/><stop offset="1" stop-color="#b96220"/></linearGradient>
+      <linearGradient id="breFurLight" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe0a3"/><stop offset="1" stop-color="#eda04a"/></linearGradient>
+      <linearGradient id="breLens" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#292929"/><stop offset="1" stop-color="#050505"/></linearGradient>
+    </defs>
+    <g class="mascot-tail"><path d="M87 111 C101 108 109 101 113 92" fill="none" stroke="url(#breFur)" stroke-width="14" stroke-linecap="round"/><path d="M98 107 C105 104 109 99 111 94" fill="none" stroke="#efaa4d" stroke-width="4" stroke-linecap="round" opacity=".7"/></g>
+    <g class="mascot-torso">
+      <path d="M33 83 C37 70 47 66 60 66 C73 66 83 70 87 83 C93 101 91 127 82 142 L38 142 C29 127 27 101 33 83 Z" fill="url(#breFur)"/>
+      <path d="M48 78 C53 74 67 74 72 78 L78 113 L60 130 L42 113 Z" fill="#171717" stroke="#dfa33b" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M45 86 L60 99 L75 86" fill="none" stroke="#f0b44a" stroke-width="1.6"/>
+      <path d="M48 76 Q52 84 56 77 Q60 86 64 77 Q68 84 72 76" fill="#f3bd69" opacity=".9"/>
+      <ellipse cx="42" cy="141" rx="15" ry="6" fill="#bd6b24"/><ellipse cx="78" cy="141" rx="15" ry="6" fill="#bd6b24"/>
+    </g>
+    <g class="mascot-arm-left"><path d="M38 83 C32 94 30 108 34 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-left"><ellipse cx="34" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M28 121 Q34 117 40 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="30" cy="124" r="1.4" fill="#5d3824"/><circle cx="34" cy="126" r="1.5" fill="#5d3824"/><circle cx="38" cy="124" r="1.4" fill="#5d3824"/></g></g>
+    <g class="mascot-arm-right"><path d="M82 83 C88 94 90 108 86 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-right"><ellipse cx="86" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M80 121 Q86 117 92 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="82" cy="124" r="1.4" fill="#5d3824"/><circle cx="86" cy="126" r="1.5" fill="#5d3824"/><circle cx="90" cy="124" r="1.4" fill="#5d3824"/></g></g>
+    <g class="mascot-head">
+      <g class="mascot-ear-left"><path d="M34 34 C20 29 14 41 17 56 C19 69 25 78 32 76 C39 73 40 61 38 48 Z" fill="#b96622"/><path d="M30 39 C23 41 22 55 28 67" fill="none" stroke="#d98531" stroke-width="3" stroke-linecap="round"/></g>
+      <g class="mascot-ear-right"><path d="M86 34 C100 29 106 41 103 56 C101 69 95 78 88 76 C81 73 80 61 82 48 Z" fill="#b96622"/><path d="M90 39 C97 41 98 55 92 67" fill="none" stroke="#d98531" stroke-width="3" stroke-linecap="round"/></g>
+      <path d="M60 20 C43 18 31 28 28 45 C25 61 35 76 49 80 C53 82 56 83 60 83 C64 83 67 82 71 80 C85 76 95 61 92 45 C89 28 77 18 60 20 Z" fill="url(#breFur)"/>
+      <path d="M48 24 L53 17 L58 23 L62 16 L67 23 L72 19 L73 27" fill="url(#breFur)"/>
+      <path d="M34 47 Q43 39 54 44" fill="none" stroke="#9e551e" stroke-width="1.8" opacity=".45"/><path d="M66 44 Q77 39 86 47" fill="none" stroke="#9e551e" stroke-width="1.8" opacity=".45"/>
+      <g class="mascot-muzzle"><ellipse cx="60" cy="62" rx="22" ry="15" fill="#f6d29a"/><ellipse cx="60" cy="56" rx="7.5" ry="5.5" fill="#2b1c18"/><path d="M60 61 Q53 67 47 64 M60 61 Q67 67 73 64" fill="none" stroke="#6a3b26" stroke-width="1.7" stroke-linecap="round"/><path d="M50 69 Q60 77 70 69 Q67 80 60 81 Q53 80 50 69" fill="#3a211d"/><path d="M56 73 Q60 77 64 73" fill="#ef7f78"/></g>
+      <g class="mascot-glasses"><path d="M31 42 Q43 37 55 41 L53 54 Q42 58 35 52 Z" fill="url(#breLens)" stroke="#d8a13a" stroke-width="1.5"/><path d="M65 41 Q77 37 89 42 L85 52 Q78 58 67 54 Z" fill="url(#breLens)" stroke="#d8a13a" stroke-width="1.5"/><path d="M54 44 Q60 41 66 44" fill="none" stroke="#d8a13a" stroke-width="2"/><path d="M35 44 L29 42 M85 44 L91 42" stroke="#d8a13a" stroke-width="1.5"/></g>
+    </g>
+  </svg>`;
+  const now=performance.now();
+  rig._mascot={current:mascotNeutral(),target:mascotNeutral(),velocity:{},mood:'idle',pointer:{x:0,y:0,last:0},gaze:{x:0,y:0},lastTs:0,born:now,nextIdle:now+7000+Math.random()*4500,sequenceUntil:0,actionToken:0,breathPhase:Math.random()*Math.PI*2};
+  wireBetterMascotRig(rig);return rig;
 }
 function mascotSetTarget(rig,patch={},mood){if(!rig?._mascot)return;Object.assign(rig._mascot.target,patch);if(mood)rig._mascot.mood=mood;}
 function mascotApply(rig){
-  const c=rig._mascot.current,st=rig.style;
-  const set=(n,v,u='')=>st.setProperty(n,Number(v).toFixed(u==='scale'?3:2)+(u==='scale'?'':u));
-  set('--root-y',c.rootY,'px');set('--torso-x',c.torsoX,'px');set('--torso-y',c.torsoY,'px');set('--torso-r',c.torsoR,'deg');set('--torso-sx',c.torsoSX,'scale');set('--torso-sy',c.torsoSY,'scale');
+  const c=rig._mascot.current,st=rig.style,set=(n,v,u='')=>st.setProperty(n,Number(v).toFixed(u==='scale'?4:2)+(u==='scale'?'':u));
+  set('--root-y',c.rootY,'px');set('--root-r',c.rootR,'deg');set('--root-s',c.rootS,'scale');
+  set('--torso-x',c.torsoX,'px');set('--torso-y',c.torsoY,'px');set('--torso-r',c.torsoR,'deg');set('--torso-sx',c.torsoSX,'scale');set('--torso-sy',c.torsoSY,'scale');
   set('--head-x',c.headX,'px');set('--head-y',c.headY,'px');set('--head-r',c.headR,'deg');set('--head-sx',c.headSX,'scale');set('--head-sy',c.headSY,'scale');
   set('--muzzle-x',c.muzzleX,'px');set('--muzzle-y',c.muzzleY,'px');set('--muzzle-r',c.muzzleR,'deg');set('--muzzle-s',c.muzzleS,'scale');
   set('--ear-l',c.earL,'deg');set('--ear-r',c.earR,'deg');
   set('--arm-lx',c.armLX,'px');set('--arm-ly',c.armLY,'px');set('--arm-lr',c.armLR,'deg');set('--arm-rx',c.armRX,'px');set('--arm-ry',c.armRY,'px');set('--arm-rr',c.armRR,'deg');
-  set('--paw-lx',c.pawLX,'px');set('--paw-ly',c.pawLY,'px');set('--paw-lr',c.pawLR,'deg');set('--paw-rx',c.pawRX,'px');set('--paw-ry',c.pawRY,'px');set('--paw-rr',c.pawRR,'deg');
-  set('--tail-r',c.tailR,'deg');set('--tail-s',c.tailS,'scale');
+  set('--paw-lx',c.pawLX,'px');set('--paw-ly',c.pawLY,'px');set('--paw-lr',c.pawLR,'deg');set('--paw-rx',c.pawRX,'px');set('--paw-ry',c.pawRY,'px');set('--paw-rr',c.pawRR,'deg');set('--tail-r',c.tailR,'deg');set('--tail-s',c.tailS,'scale');
 }
 function mascotSpringStep(rig,dt){
-  const m=rig._mascot;if(!m)return;
-  const k=m.mood==='celebrate'?18:m.mood==='guide'?14:m.mood==='react'?13:9.5;
-  const damping=m.mood==='celebrate'?.72:.82;
-  for(const key of Object.keys(BETTER_MASCOT_DEFAULTS)){
-    let v=m.velocity[key]||0;const cur=m.current[key],target=m.target[key];
-    v+=(target-cur)*k*dt;v*=Math.pow(damping,dt*60);m.current[key]=cur+v*dt*60;m.velocity[key]=v;
-  }
+  const m=rig._mascot;if(!m)return;const stiffness=m.mood==='celebrate'?8.2:m.mood==='guide'?6.8:m.mood==='react'?6.2:4.4,damping=.86;
+  for(const key of Object.keys(BETTER_MASCOT_DEFAULTS)){let v=m.velocity[key]||0,cur=m.current[key],target=m.target[key];v+=(target-cur)*stiffness*dt;v*=Math.pow(damping,dt*60);m.current[key]=cur+v*dt*60;m.velocity[key]=v;}
   mascotApply(rig);
 }
-function mascotRestTarget(){return {...BETTER_MASCOT_DEFAULTS,torsoY:1.4,headY:.6,armLR:24,armRR:-24,pawLY:8,pawRY:8,pawLR:10,pawRR:-10,tailR:-4};}
+function mascotReturnHome(rig,delay=0){
+  const go=()=>{if(!rig?.isConnected||!rig._mascot)return;rig.dataset.posture='sit';mascotSetTarget(rig,mascotNeutral(),'idle');rig._mascot.nextIdle=performance.now()+6000+Math.random()*5000;};
+  if(delay)setTimeout(go,delay);else go();
+}
 function mascotIdleSequence(rig,now){
-  const m=rig._mascot;if(!m||now<m.nextIdle||now<m.sequenceUntil||m.pointer.seen)return;
-  const token=++m.actionToken;
+  const m=rig._mascot;if(!m||now<m.nextIdle||now<m.sequenceUntil)return;const token=++m.actionToken;
   const sequences=[
-    [{t:0,p:{headR:-4,headX:-1.2,earL:-5,earR:2}},{t:950,p:{headR:2,headX:.6,earL:1,earR:4}},{t:1850,p:mascotRestTarget()}],
-    [{t:0,p:{torsoY:-1.2,torsoSY:1.012,headY:-1.6,earL:-3,earR:-3,tailR:6}},{t:1200,p:mascotRestTarget()}],
-    [{t:0,p:{armLR:-10,pawLR:-8,pawLY:-2,headR:-2}},{t:800,p:{armLR:6,pawLR:3,pawLY:0}},{t:1500,p:mascotRestTarget()}],
-    [{t:0,p:{headY:1.8,muzzleY:1.2,earL:3,earR:3,torsoY:2.2}},{t:1350,p:mascotRestTarget()}]
+    [{t:0,p:{headR:-4.2,headX:-.8,earL:-3.5,earR:1.2,tailR:3}},{t:1250,p:{headR:2.2,headX:.4,earL:1,earR:-2}},{t:2400,p:mascotNeutral()}],
+    [{t:0,p:{torsoY:-.55,torsoSY:1.008,headY:-.75,muzzleY:.18,earL:-1.8,earR:-1.8}},{t:1500,p:mascotNeutral()}],
+    [{t:0,p:{tailR:8,headR:1.8}},{t:520,p:{tailR:-5,headR:-1.2}},{t:1040,p:{tailR:5,headR:.8}},{t:1600,p:mascotNeutral()}],
+    [{t:0,p:{armLR:34,armLY:-1,pawLY:-1,pawLR:8,headR:-2.5,tailR:6}},{t:850,p:{armLR:18,pawLR:4}},{t:1700,p:mascotNeutral()}],
+    [{t:0,p:{rootY:-2.2,torsoY:-1.3,torsoSY:1.026,headY:-1.3,armLY:1.2,armRY:1.2,earL:-3,earR:-3,tailR:5}},{t:1550,p:{rootY:-.8,torsoY:-.4,torsoSY:1.01,headY:-.5}},{t:2500,p:mascotNeutral()}],
+    [{t:0,p:{torsoY:.9,torsoSY:.995,headY:.7,muzzleY:.15,earL:2,earR:2}},{t:1700,p:mascotNeutral()}]
   ];
-  const seq=sequences[Math.floor(Math.random()*sequences.length)];m.sequenceUntil=now+(seq.at(-1)?.t||1500)+400;
-  for(const step of seq)setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token&&rig._mascot.mood==='idle')mascotSetTarget(rig,{...mascotRestTarget(),...step.p},'idle');},step.t);
-  m.nextIdle=now+6500+Math.random()*5500;
+  const seq=sequences[Math.floor(Math.random()*sequences.length)],end=(seq.at(-1)?.t||1800)+350;m.sequenceUntil=now+end;m.mood='idle';
+  for(const step of seq)setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token&&rig._mascot.mood==='idle')mascotSetTarget(rig,{...mascotNeutral(),...step.p},'idle');},step.t);
+  m.nextIdle=now+9000+Math.random()*7000;
 }
 function mascotLifeFrame(rig,ts){
-  if(!rig.isConnected){rig._cleanupMascot?.();return;}const m=rig._mascot;if(!m)return;
-  if(!m.lastTs)m.lastTs=ts;const dt=Math.min(.033,(ts-m.lastTs)/1000||.016);m.lastTs=ts;
-  const pointerFresh=m.pointer.last&&performance.now()-m.pointer.last<900;
-  m.pointer.seen=!!pointerFresh;
-  if(pointerFresh&&m.mood!=='guide'&&m.mood!=='celebrate'&&m.mood!=='react'){
-    const rr=rig.getBoundingClientRect(),dx=m.pointer.x-(rr.left+rr.width/2),dy=m.pointer.y-(rr.top+rr.height/2);
-    const dist=Math.hypot(dx,dy),influence=Math.max(0,1-Math.max(0,dist-100)/500);
-    const gx=Math.max(-1,Math.min(1,dx/300))*influence,gy=Math.max(-1,Math.min(1,dy/260))*influence;
-    m.gaze.x+=(gx-m.gaze.x)*Math.min(1,dt*2.1);m.gaze.y+=(gy-m.gaze.y)*Math.min(1,dt*1.8);
-    mascotSetTarget(rig,{...mascotRestTarget(),headX:m.gaze.x*2.2,headY:m.gaze.y*1.2,headR:m.gaze.x*5.2,muzzleX:m.gaze.x*.45,muzzleY:m.gaze.y*.32,earL:-m.gaze.x*1.7,earR:m.gaze.x*1.7,torsoR:m.gaze.x*.7},'watch');
-  }else if(m.mood==='watch'){
-    m.gaze.x*=Math.max(0,1-dt*2.4);m.gaze.y*=Math.max(0,1-dt*2.4);if(Math.abs(m.gaze.x)<.02&&Math.abs(m.gaze.y)<.02)mascotSetTarget(rig,mascotRestTarget(),'idle');
+  if(!rig.isConnected){rig._cleanupMascot?.();return;}const m=rig._mascot;if(!m)return;if(!m.lastTs)m.lastTs=ts;const dt=Math.min(.032,(ts-m.lastTs)/1000||.016);m.lastTs=ts;
+  const pointerFresh=m.pointer.last&&performance.now()-m.pointer.last<700,motionLocked=['guide','celebrate','react'].includes(m.mood);
+  if(pointerFresh&&!motionLocked){
+    const rr=rig.getBoundingClientRect(),dx=m.pointer.x-(rr.left+rr.width/2),dy=m.pointer.y-(rr.top+rr.height/2),dist=Math.hypot(dx,dy),dead=70;
+    if(dist>dead){const influence=Math.max(0,1-(dist-dead)/720),gx=Math.max(-1,Math.min(1,dx/430))*influence,gy=Math.max(-1,Math.min(1,dy/360))*influence;m.gaze.x+=(gx-m.gaze.x)*Math.min(1,dt*1.25);m.gaze.y+=(gy-m.gaze.y)*Math.min(1,dt*1.05);mascotSetTarget(rig,{...mascotNeutral(),headX:m.gaze.x*1.35,headY:m.gaze.y*.7,headR:m.gaze.x*3.2,muzzleX:m.gaze.x*.2,muzzleY:m.gaze.y*.12,earL:-m.gaze.x*.8,earR:m.gaze.x*.8,torsoR:m.gaze.x*.35},'watch');}
+  } else if(m.mood==='watch'){m.gaze.x*=Math.max(0,1-dt*1.2);m.gaze.y*=Math.max(0,1-dt*1.2);if(Math.abs(m.gaze.x)<.015&&Math.abs(m.gaze.y)<.015)mascotReturnHome(rig);}
+  if(m.mood==='idle'){
+    const breath=Math.sin((ts-m.born)/1500+m.breathPhase);m.target.torsoSY=1+breath*.0035;m.target.torsoY=-breath*.16;m.target.headY=-breath*.09;m.target.muzzleY=breath*.035;mascotIdleSequence(rig,ts);
   }
-  if(m.mood==='idle')mascotIdleSequence(rig,ts);
   mascotSpringStep(rig,dt);rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));
 }
-function mascotPerform(rig,name='ack',duration=1100,side=0){
-  if(!rig||rig.classList.contains('motion-off')||!rig._mascot)return;
-  const m=rig._mascot,token=++m.actionToken;m.sequenceUntil=performance.now()+duration;
+function mascotPerform(rig,name='ack',duration=1250,side=0){
+  if(!rig||rig.classList.contains('motion-off')||!rig._mascot)return;const m=rig._mascot,token=++m.actionToken;m.sequenceUntil=performance.now()+duration+250;
   const plans={
-    ack:{headY:-2,headR:side*3,torsoY:-1,tailR:10,armRR:-18,pawRY:-4,pawRR:-10},
-    curious:{headR:-7,headX:-2,earL:-8,earR:5,torsoR:-1.2},
-    paw:{armLR:-24,pawLY:-6,pawLR:-14,headR:-3,tailR:9},
-    celebrate:{rootY:-2.5,torsoY:-3,torsoSY:1.025,headY:-4,earL:-7,earR:-7,armLR:-26,armRR:26,pawLY:-7,pawRY:-7,pawLR:-16,pawRR:16,tailR:18,tailS:1.08},
-    perk:{torsoY:-2,headY:-2.2,earL:-5,earR:-5,tailR:8},
-    stand:{rootY:-3,torsoY:-2.5,torsoSY:1.04,headY:-2.2,armLR:13,armRR:-13,pawLY:3,pawRY:3,earL:-4,earR:-4,tailR:7},
-    lean:{torsoR:side*4,headR:side*-5,headX:side*-1.2,armLR:22+side*3,armRR:-22+side*3,tailR:side*-8},
-    settle:{torsoY:2.8,torsoSY:.985,headY:2.2,muzzleY:.7,earL:3,earR:3,armLR:10,armRR:-10}
+    ack:{headY:-1.2,headR:side*2.2,torsoY:-.45,tailR:7,earL:-2,earR:-2},
+    curious:{headR:-6,headX:-.8,earL:-5,earR:3,torsoR:-.7},
+    paw:{armLR:42,armLY:-1.4,pawLY:-1.4,pawLR:10,headR:-2.5,tailR:7},
+    celebrate:{rootY:-1.4,torsoY:-1.4,torsoSY:1.012,headY:-2,earL:-5,earR:-5,armLR:38,armRR:-38,pawLY:-1.8,pawRY:-1.8,pawLR:8,pawRR:-8,tailR:12,tailS:1.03},
+    perk:{torsoY:-.8,headY:-1.2,earL:-4,earR:-4,tailR:6},
+    stand:{rootY:-2.4,torsoY:-1.5,torsoSY:1.028,headY:-1.4,armLY:1.5,armRY:1.5,pawLY:2.2,pawRY:2.2,earL:-3,earR:-3,tailR:5},
+    lean:{torsoR:side*2.6,headR:side*-3.5,headX:side*-.8,rootR:side*.5,tailR:side*-5},
+    settle:{torsoY:1.1,torsoSY:.994,headY:.85,muzzleY:.18,earL:2.2,earR:2.2,armLY:.5,armRY:.5}
   };
-  mascotSetTarget(rig,{...mascotRestTarget(),...(plans[name]||plans.ack)},name==='celebrate'?'celebrate':'react');
-  clearTimeout(rig._mascotBehaviorTimer);rig._mascotBehaviorTimer=setTimeout(()=>{if(!rig.isConnected||rig._mascot?.actionToken!==token)return;mascotSetTarget(rig,mascotRestTarget(),'idle');rig._mascot.nextIdle=performance.now()+4500+Math.random()*3500;},duration);
+  rig.dataset.posture=name==='stand'?'stand':name==='settle'?'settle':'sit';mascotSetTarget(rig,{...mascotNeutral(),...(plans[name]||plans.ack)},name==='celebrate'?'celebrate':'react');
+  clearTimeout(m._behaviorTimer);m._behaviorTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},duration);
 }
-function playBetterMascotBehavior(rig,kind='ack',duration=900){
-  const map={celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);
-}
+function playBetterMascotBehavior(rig,kind='ack',duration=1000){const map={celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);}
 function wireBetterMascotRig(rig){
-  const motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  mascotSetTarget(rig,mascotRestTarget(),'idle');
-  if(motionOff){rig.classList.add('motion-off');Object.assign(rig._mascot.current,mascotRestTarget());mascotApply(rig);return rig;}
-  const onPointer=e=>{if(!rig.isConnected||!rig._mascot)return;rig._mascot.pointer.x=e.clientX;rig._mascot.pointer.y=e.clientY;rig._mascot.pointer.last=performance.now();};
-  const onAction=e=>{if(!rig.isConnected||!rig._mascot||e.target?.closest?.('.better-guide-trigger'))return;const target=e.target?.closest?.('button,a,[role="button"],input,select,textarea');if(!target)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),side=Math.sign((tr.left+tr.width/2)-(rr.left+rr.width/2));mascotPerform(rig,'ack',900,side);};
+  const motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;mascotSetTarget(rig,mascotNeutral(),'idle');
+  if(motionOff){rig.classList.add('motion-off');Object.assign(rig._mascot.current,mascotNeutral());mascotApply(rig);return rig;}
+  let lastPointerSample=0;
+  const onPointer=e=>{const now=performance.now();if(now-lastPointerSample<45||!rig.isConnected||!rig._mascot)return;lastPointerSample=now;rig._mascot.pointer.x=e.clientX;rig._mascot.pointer.y=e.clientY;rig._mascot.pointer.last=now;};
+  const onAction=e=>{if(!rig.isConnected||!rig._mascot||e.target?.closest?.('.better-guide-trigger'))return;const target=e.target?.closest?.('button,a,[role="button"],input,select,textarea');if(!target)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),side=Math.sign((tr.left+tr.width/2)-(rr.left+rr.width/2));mascotPerform(rig,'lean',850,side||1);};
   document.addEventListener('pointermove',onPointer,{passive:true});document.addEventListener('pointerdown',onAction,{passive:true});
-  rig._cleanupMascot=()=>{document.removeEventListener('pointermove',onPointer);document.removeEventListener('pointerdown',onAction);};
-  rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));return rig;
+  rig._cleanupMascot=()=>{document.removeEventListener('pointermove',onPointer);document.removeEventListener('pointerdown',onAction);cancelAnimationFrame(rig._lifeRaf);};rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));return rig;
 }
 function aimBetterMascotAt(rig,target){
-  if(!rig||!target||rig.classList.contains('motion-off')||!rig._mascot)return;
-  const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect();const dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2);const right=dx>=0,nx=Math.max(-1,Math.min(1,dx/360)),ny=Math.max(-1,Math.min(1,dy/260));
-  const patch={...mascotRestTarget(),headX:nx*2.6,headY:ny*1.5,headR:nx*6,torsoR:nx*.9,earL:-nx*2,earR:nx*2,tailR:-nx*5};
-  if(right)Object.assign(patch,{armRR:34,armRY:-5,pawRX:7,pawRY:-8,pawRR:38});else Object.assign(patch,{armLR:-34,armLY:-5,pawLX:-7,pawLY:-8,pawLR:-38});
-  const token=++rig._mascot.actionToken;rig._mascot.sequenceUntil=performance.now()+1900;mascotSetTarget(rig,patch,'guide');
-  clearTimeout(rig._guideResetTimer);rig._guideResetTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotSetTarget(rig,mascotRestTarget(),'idle');},1800);
+  if(!rig||!target||rig.classList.contains('motion-off')||!rig._mascot)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2),right=dx>=0,nx=Math.max(-1,Math.min(1,dx/420)),ny=Math.max(-1,Math.min(1,dy/340));
+  const patch={...mascotNeutral(),headX:nx*1.6,headY:ny*.8,headR:nx*3.8,torsoR:nx*.45,earL:-nx,earR:nx,tailR:-nx*4};
+  if(right)Object.assign(patch,{armRR:-58,armRY:-1.2,pawRX:1.8,pawRY:-1.2,pawRR:-12});else Object.assign(patch,{armLR:58,armLY:-1.2,pawLX:-1.8,pawLY:-1.2,pawLR:12});
+  const token=++rig._mascot.actionToken;rig._mascot.sequenceUntil=performance.now()+2200;mascotSetTarget(rig,patch,'guide');clearTimeout(rig._guideResetTimer);rig._guideResetTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},2050);
 }
-
 
 function renderTop() {
   const brandEl = document.querySelector('.brand');

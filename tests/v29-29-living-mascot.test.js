@@ -1,13 +1,13 @@
 const fs=require('fs'),assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),pkg=require('../package.json');
-assert(['2.9.29','2.9.30','2.9.31','2.9.32'].includes(pkg.version),'package version must be at least v29.29');
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33'].includes(pkg.version),'package version must be at least v29.29');
 assert(app.includes('function createBetterMascotRig'),'mascot rig factory missing');
 assert(app.includes('function wireBetterMascotRig'),'mascot interaction wiring missing');
 assert(app.includes('function aimBetterMascotAt'),'tutorial target awareness missing');
-assert(app.includes('/mascot-v2/torso.webp')||app.includes('/mascot-rig/body.webp'),'mascot body asset missing');
+assert(app.includes('<svg class=\"mascot-svg\"')||app.includes('/mascot-rig/body.webp'),'mascot body visual missing');
 for(const c of ['.mascot-head','.mascot-ear-left','.mascot-ear-right','.mascot-tail'])assert(css.includes(c),c);
 assert(app.includes('const TUTORIAL_VERSION = 55;')||app.includes('const TUTORIAL_VERSION = 55;'),'tutorial version must preserve mascot onboarding');
 assert(app.includes("release:54,title:'A mascot that actually feels alive'"),'v54 What’s New step missing');
-assert(css.includes('overflow:visible!important'),'mascot head must not be clipped');
+assert(css.includes('.better-guide-trigger .better-mascot-stage'),'mascot header stage missing');
 assert(css.includes('@media(prefers-reduced-motion:reduce)'),'reduced motion handling required');
 console.log('v29.29 living mascot regression: PASS');

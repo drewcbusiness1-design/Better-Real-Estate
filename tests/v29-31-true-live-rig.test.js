@@ -4,7 +4,7 @@ const assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/style.css','utf8');
 const pkg=require('../package.json');
-assert(['2.9.31','2.9.32'].includes(pkg.version),'package version must be at least v29.31');
+assert(['2.9.31','2.9.32','2.9.33'].includes(pkg.version),'package version must be at least v29.31');
 for(const token of ['function mascotSpringStep','function mascotLifeFrame','function aimBetterMascotAt']) assert(app.includes(token),token+' missing');
 assert(app.includes('function mascotIdleSequence')||app.includes('function mascotIdlePlan'),'idle life planner missing');
 assert(app.includes('m.gaze.x+=')||app.includes('respondToPointer'),'continuous gaze missing');
@@ -12,7 +12,7 @@ for(const token of ['--head-x','--tail-r','.mascot-head','.mascot-tail']) assert
 assert(app.includes("title:'The mascot now reacts continuously'"),'tutorial update missing');
 assert(!app.includes('Need help posting, learning'),'removed mascot bubble copy returned');
 assert(!app.includes('BETTER_MASCOT_POSES'),'slideshow system returned');
-const modern=fs.existsSync(path.join(__dirname,'..','public','mascot-v2','torso.webp'));
+const inline=app.includes('<svg class=\"mascot-svg\"');
 const legacy=fs.existsSync(path.join(__dirname,'..','public','mascot-rig','body.webp'));
-assert(modern||legacy,'live rig assets missing');
+assert(inline||legacy,'live rig visual missing');
 console.log('v29.31 true live rig regression: PASS');

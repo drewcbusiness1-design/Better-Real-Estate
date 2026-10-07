@@ -1,0 +1,16 @@
+const fs=require('fs');const path=require('path');const assert=(c,m)=>{if(!c)throw new Error(m)};const root=path.join(__dirname,'..');
+const app=fs.readFileSync(path.join(root,'public','app.js'),'utf8');const css=fs.readFileSync(path.join(root,'public','style.css'),'utf8');
+assert(app.includes("data-life':'header-character-v4'"),'new header character rig missing');
+assert(app.includes('<svg class="mascot-svg"'),'single coherent SVG mascot missing');
+assert(app.includes('function mascotLifeFrame'),'continuous life controller missing');
+assert(app.includes('function mascotIdleSequence'),'autonomous idle behavior missing');
+assert(app.includes("stand:{"),'stand behavior missing');assert(app.includes("settle:{"),'settle behavior missing');assert(app.includes("lean:{"),'lean behavior missing');assert(app.includes("paw:{"),'paw behavior missing');
+assert(app.includes('function aimBetterMascotAt'),'tutorial pointing behavior missing');
+assert(app.includes('now-lastPointerSample<45'),'pointer sampling/filtering missing');
+assert(app.includes('dt*1.25')&&app.includes('dt*1.05'),'slow gaze interpolation missing');
+assert(!app.includes('Need help posting, learning'),'forbidden help bubble copy returned');
+assert(!app.includes('mascot-poses/'),'slideshow assets returned');assert(!app.includes('mascot-v2/'),'old photographic cut-part rig returned');
+assert(css.includes('.better-guide-trigger .better-mascot-stage')&&css.includes('overflow:hidden!important'),'header home clipping missing');
+assert(css.includes('.mascot-svg .mascot-head')&&css.includes('.mascot-svg .mascot-arm-left')&&css.includes('.mascot-svg .mascot-tail'),'articulated SVG joints missing');
+assert(css.includes('@media(prefers-reduced-motion:reduce)'),'reduced-motion support missing');
+console.log('v29.33 header-resident living character regression: PASS');

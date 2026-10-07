@@ -4,7 +4,7 @@ const ds=require('../dealSources');
 const di=require('../dealIntelligence');
 const pkg=require('../package.json');
 
-assert(['2.9.29','2.9.30','2.9.31','2.9.32'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33'].includes(pkg.version));
 
 // Production regression: directional words/abbreviations and Regrid context must not reject the real parcel.
 const palestine={properties:{headline:'503 West Grand Prairie Street',context:{headline:'Palestine, IL',path:'/us/il/crawford/palestine'},score:96,ll_uuid:'parcel-503',fields:{

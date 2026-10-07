@@ -3,7 +3,7 @@ const assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/style.css','utf8');
 assert(app.includes('function createBetterMascotRig'),'mascot rig factory missing');
-assert(app.includes("data-life':'kinetic")||app.includes("data-life':'articulated-v2"),'continuous character marker missing');
+assert(app.includes("data-life':'kinetic")||app.includes("data-life':'articulated-v2")||app.includes("data-life':'header-character-v4"),'continuous character marker missing');
 assert(!app.includes('BETTER_MASCOT_POSES'),'slideshow pose map must not remain');
 assert(!app.includes('mascot-poses/'),'whole-pose slideshow assets must not drive mascot');
 assert(!css.includes('.living-mascot-bubble'),'mascot speech bubble must be removed');

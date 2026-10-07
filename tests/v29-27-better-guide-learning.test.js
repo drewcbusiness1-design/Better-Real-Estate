@@ -9,7 +9,7 @@ const css = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-assert(['2.9.29','2.9.30','2.9.31','2.9.32'].includes(pkg.version), 'package version must include the v29.27 Guide baseline');
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33'].includes(pkg.version), 'package version must include the v29.27 Guide baseline');
 assert(app.includes("'learn'"), 'Learn route missing');
 assert(app.includes('function openBetterGuide()'), 'Better Guide panel missing');
 assert(app.includes('function renderLearnWholesaling()'), 'course renderer missing');
@@ -38,9 +38,8 @@ const logoA = fs.readFileSync(path.join(root, 'BRE- Logo.png'));
 const logoB = fs.readFileSync(path.join(root, 'public/better-guide-logo.png'));
 const hash = b => crypto.createHash('sha256').update(b).digest('hex');
 assert.equal(hash(logoA), hash(logoB), 'Guide must use the exact canonical Better logo bytes');
-const mascotPath = fs.existsSync(path.join(root,'public','mascot-v2','torso.webp')) ? path.join(root,'public','mascot-v2','torso.webp') : path.join(root,'public','better-guide-mascot.webp');
-const mascotSize = fs.statSync(mascotPath).size;
-assert(mascotSize < 150 * 1024, `mascot asset should stay lightweight; got ${mascotSize} bytes`);
+const hasInlineMascot=app.includes('<svg class=\"mascot-svg\"');
+if(!hasInlineMascot){const mascotPath=path.join(root,'public','better-guide-mascot.webp');assert(fs.existsSync(mascotPath),'mascot visual missing');assert(fs.statSync(mascotPath).size<150*1024,'mascot asset should stay lightweight');}
 
 for (const forbidden of ['3 buyers are waiting','thousands of buyers','guaranteed closing','guaranteed deal']) {
   assert(!app.toLowerCase().includes(forbidden.toLowerCase()), `fabricated/hype copy detected: ${forbidden}`);
