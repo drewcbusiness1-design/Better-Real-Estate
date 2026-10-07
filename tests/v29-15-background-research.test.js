@@ -19,7 +19,7 @@ assert(sources.includes('webIdentitySources')&&sources.includes('webIdentitySour
 assert(sources.includes('verifyWebCompDistances')&&sources.includes("limit','1'"),'web sold comps should use bounded Regrid exact-address coordinate verification when subject coordinates exist');
 assert(sources.includes("/api/v2/parcels/query")&&sources.includes("fields[saleprice][gt]")&&sources.includes("fields[saledate][gte]")&&sources.includes('REGRID_NEARBY_LIMIT = 40'),'nearby Regrid research must request recent sold parcels directly instead of billing for 100 arbitrary nearby parcels');
 assert(sources.includes('rankWebCompsForVerification'),'web comp coordinate checks must spend Regrid lookups on the strongest candidates first');
-assert(app.includes('const TUTORIAL_VERSION = 56;')||app.includes('const TUTORIAL_VERSION = 56;')&&app.includes("release:45,title:'Deep background property research'"),'tutorial v45 missing');
+assert(app.includes('const TUTORIAL_VERSION = 57;')||app.includes('const TUTORIAL_VERSION = 57;')&&app.includes("release:45,title:'Deep background property research'"),'tutorial v45 missing');
 
 // Exact-address strong web evidence may establish identity without pretending that one portal verified the facts.
 const ds=require('../dealSources');

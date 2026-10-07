@@ -1,0 +1,17 @@
+const fs=require('fs'),assert=require('assert');
+const app=fs.readFileSync('public/app.js','utf8');
+assert(app.includes("mascotAwareness: { lastHumanActivity"));
+assert(app.includes('function mascotPersistentAwareness'));
+assert(app.includes('quietFor>75000'));
+assert(app.includes("state.unreadCount>0"));
+assert(app.includes("button[title=\"Messages\"]"));
+assert(app.includes('function wireMascotSituationalAwareness'));
+assert(app.includes("'focusin'"));
+assert(app.includes("aimBetterMascotAt(r,t,false)"));
+assert(app.includes("undercontract:['stand','joy']"));
+assert(app.includes("closed:['celebrate','joy']"));
+assert(app.includes("stage.value==='closed'"));
+assert(app.includes("['title','closing'].includes(stage.value)"));
+assert(app.includes('const TUTORIAL_VERSION = 57;'));
+assert(!app.includes('setInterval(mascotPersistentAwareness'));
+console.log('v29.35 mascot situational-awareness regression checks passed');

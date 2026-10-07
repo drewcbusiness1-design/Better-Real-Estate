@@ -5,7 +5,7 @@ let state = {
   networkTab: 'discover', networkQ: '', networkRole: 'all', chatUserId: null, unreadCount: 0, friendRequestCount: 0, notificationSummary: { profile:0, destinations:{} },
   companyId: null, companyInviteToken: null, buyerPortalType: null, buyerPortalId: null,
   pendingReferral: null, leaderboardPeriod: 'all', postAuthTarget: null, feedMode: 'for-you', searchQ: '',
-  detailPreview: null
+  detailPreview: null, mascotAwareness: { lastHumanActivity: Date.now(), lastPersistentCue: 0, activeField: null }
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -431,6 +431,7 @@ function mascotLifeFrame(rig,ts){
     const rr=rig.getBoundingClientRect(),dx=m.pointer.x-(rr.left+rr.width/2),dy=m.pointer.y-(rr.top+rr.height/2),dist=Math.hypot(dx,dy),dead=70;
     if(dist>dead){const influence=Math.max(0,1-(dist-dead)/720),gx=Math.max(-1,Math.min(1,dx/430))*influence,gy=Math.max(-1,Math.min(1,dy/360))*influence;m.gaze.x+=(gx-m.gaze.x)*Math.min(1,dt*1.25);m.gaze.y+=(gy-m.gaze.y)*Math.min(1,dt*1.05);mascotSetTarget(rig,{...mascotNeutral(),headX:m.gaze.x*1.35,headY:m.gaze.y*.7,headR:m.gaze.x*3.2,muzzleX:m.gaze.x*.2,muzzleY:m.gaze.y*.12,earL:-m.gaze.x*.8,earR:m.gaze.x*.8,torsoR:m.gaze.x*.35},'watch');}
   } else if(m.mood==='watch'){m.gaze.x*=Math.max(0,1-dt*1.2);m.gaze.y*=Math.max(0,1-dt*1.2);if(Math.abs(m.gaze.x)<.015&&Math.abs(m.gaze.y)<.015)mascotReturnHome(rig);}
+  mascotPersistentAwareness(rig,ts);
   if(m.mood==='idle'){
     const breath=Math.sin((ts-m.born)/1500+m.breathPhase);m.target.torsoSY=1+breath*.0035;m.target.torsoY=-breath*.16;m.target.headY=-breath*.09;m.target.muzzleY=breath*.035;mascotIdleSequence(rig,ts);
   }
@@ -462,7 +463,7 @@ function wireBetterMascotRig(rig){
   document.addEventListener('pointermove',onPointer,{passive:true});document.addEventListener('pointerdown',onAction,{passive:true});
   rig._cleanupMascot=()=>{document.removeEventListener('pointermove',onPointer);document.removeEventListener('pointerdown',onAction);cancelAnimationFrame(rig._lifeRaf);};rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));return rig;
 }
-function aimBetterMascotAt(rig,target){
+function aimBetterMascotAt(rig,target,point=true){
   if(!rig||!target||rig.classList.contains('motion-off')||!rig._mascot)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),dx=(tr.left+tr.width/2)-(rr.left+rr.width/2),dy=(tr.top+tr.height/2)-(rr.top+rr.height/2),right=dx>=0,nx=Math.max(-1,Math.min(1,dx/420)),ny=Math.max(-1,Math.min(1,dy/340));
   const patch={...mascotNeutral(),headX:nx*1.6,headY:ny*.8,headR:nx*3.8,torsoR:nx*.45,earL:-nx,earR:nx,tailR:-nx*4};
   if(right)Object.assign(patch,{armRR:-58,armRY:-1.2,pawRX:1.8,pawRY:-1.2,pawRR:-12});else Object.assign(patch,{armLR:58,armLY:-1.2,pawLX:-1.8,pawLY:-1.2,pawLR:12});
@@ -1318,7 +1319,7 @@ async function renderDetail() {
       const paintTasks=()=>{taskList.innerHTML='';tasks.forEach((t,i)=>{const cb=el('input',{type:'checkbox'});cb.checked=!!t.done;cb.onchange=()=>t.done=cb.checked;const tx=el('input',{value:t.text,placeholder:'Task'});tx.oninput=()=>t.text=tx.value;const rm=el('button',{class:'iconremove',title:'Remove task',onclick:()=>{tasks.splice(i,1);paintTasks();}},'×');taskList.appendChild(el('div',{class:'dealtask'},[cb,tx,rm]));});}; paintTasks();
       const addTask=el('button',{class:'btn-ghost compactbtn',onclick:()=>{tasks.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),text:'',done:false});paintTasks();}},'+ Add task');
       const save=el('button',{class:'btn-primary'},'Save deal room');
-      save.onclick=async()=>{try{const was=room.stage;await withButtonBusy(save,()=>api('PATCH','/api/listings/'+listing.id+'/deal-room',{stage:stage.value,nextAction:next.value,privateNotes:notes.value,tasks}));toast('Deal room saved','ok');if(stage.value==='closed'&&was!=='closed')showClosingCelebration(listing);}catch(e){toast(e.message,'err')}};
+      save.onclick=async()=>{try{const was=room.stage;await withButtonBusy(save,()=>api('PATCH','/api/listings/'+listing.id+'/deal-room',{stage:stage.value,nextAction:next.value,privateNotes:notes.value,tasks}));toast('Deal room saved','ok');if(stage.value!==was){if(stage.value==='closed'){mascotSiteEvent('closed');showClosingCelebration(listing);}else if(['title','closing'].includes(stage.value))mascotSiteEvent('undercontract');else mascotSiteEvent('dealprogress');}}catch(e){toast(e.message,'err')}};
       command.appendChild(dealMilestones(room.stage));
       command.appendChild(el('div',{class:'dealcommandgrid'},[el('div',{},[el('label',{},'Stage'),stage]),el('div',{},[el('label',{},'Next action'),next])]));
       command.appendChild(el('label',{},'Tasks')); command.appendChild(taskList); command.appendChild(addTask); command.appendChild(el('label',{},'Private notes')); command.appendChild(notes); command.appendChild(save);
@@ -2645,7 +2646,25 @@ function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remov
 function reactBetterMascot(kind='ack',expression=null){
   document.querySelectorAll('.better-mascot-rig').forEach(rig=>{if(expression)mascotExpression(rig,expression,kind==='celebrate'?1600:1050);playBetterMascotBehavior(rig,kind,kind==='celebrate'?1250:760);});
 }
-function mascotSiteEvent(type){const map={message:['tail','alert'],follow:['ack','happy'],listing:['celebrate','joy'],saved:['paw','happy'],error:['curious','concerned'],success:['ack','happy'],tutorial:['curious','focused']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
+function mascotSiteEvent(type){const map={message:['tail','alert'],follow:['ack','happy'],listing:['celebrate','joy'],saved:['paw','happy'],error:['curious','concerned'],success:['ack','happy'],tutorial:['curious','focused'],dealprogress:['perk','focused'],undercontract:['stand','joy'],closed:['celebrate','joy'],wake:['curious','alert']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
+function mascotMarkHumanActivity(){
+  const a=state.mascotAwareness||(state.mascotAwareness={lastHumanActivity:Date.now(),lastPersistentCue:0,activeField:null}),wasIdle=Date.now()-Number(a.lastHumanActivity||0)>75000;
+  a.lastHumanActivity=Date.now();if(wasIdle&&state.user)setTimeout(()=>mascotSiteEvent('wake'),40);
+}
+function mascotPersistentAwareness(rig,now){
+  if(!rig?._mascot||rig.classList.contains('motion-off'))return false;const a=state.mascotAwareness||(state.mascotAwareness={lastHumanActivity:Date.now(),lastPersistentCue:0,activeField:null}),quietFor=Date.now()-Number(a.lastHumanActivity||Date.now());
+  if(quietFor>75000&&rig._mascot.mood==='idle'){if(rig.dataset.expression!=='sleepy')mascotExpression(rig,'sleepy');mascotSetTarget(rig,{...mascotNeutral(),headY:.75,torsoY:.65,torsoSY:.996,earL:2.5,earR:2.5,muzzleY:.14},'idle');return true;}
+  if(rig.dataset.expression==='sleepy'&&quietFor<75000)mascotExpression(rig,'content');
+  if(state.unreadCount>0&&rig._mascot.mood==='idle'&&now-Number(a.lastPersistentCue||0)>11000){a.lastPersistentCue=now;const msg=document.querySelector('button[title="Messages"]');if(msg){mascotExpression(rig,'alert',2100);aimBetterMascotAt(rig,msg,false);return true;}}
+  return false;
+}
+function wireMascotSituationalAwareness(){
+  if(window.__betterMascotAwarenessWired)return;window.__betterMascotAwarenessWired=true;
+  ['pointerdown','keydown','touchstart','wheel'].forEach(type=>document.addEventListener(type,mascotMarkHumanActivity,{passive:true}));
+  document.addEventListener('focusin',e=>{const t=e.target;if(!t?.matches?.('input,textarea,select,[contenteditable="true"]'))return;mascotMarkHumanActivity();state.mascotAwareness.activeField=t;document.querySelectorAll('.better-mascot-rig').forEach(r=>{mascotExpression(r,'focused',1200);aimBetterMascotAt(r,t,false);});});
+  document.addEventListener('focusout',e=>{if(state.mascotAwareness?.activeField===e.target)state.mascotAwareness.activeField=null;});
+}
+wireMascotSituationalAwareness();
 function navigateFromGuide(view,module){closeBetterGuide();if(module)state.guideCourseModule=module;go(view);}
 function openBetterGuide(){
   if(!state.user)return go('auth'); closeBetterGuide();
@@ -2709,7 +2728,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 56;
+const TUTORIAL_VERSION = 57;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2779,6 +2798,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:56,title:'More expression, more context',copy:'Better Guide now changes facial expression and body response for meaningful moments such as guidance, success, errors and new attention — while staying grounded in the header.'},
  {view:'detail',selector:'.owner-ops',min:0,release:56,title:'Edit your property posts',copy:'On a property you own, use Edit property to update pricing, facts, notes, photos, video, deadline and JV availability without recreating the post.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:57,title:'The mascot now remembers what needs attention',copy:'The Better mascot can keep an eye on unread messages, follow the field you are actively working in, react when a deal advances, celebrate under-contract and closed milestones, and settle into a sleepy state after real inactivity. These cues use existing page state without adding a new polling service.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
  ].filter(x=>rank>=x.min&&(!x.when||x.when()));

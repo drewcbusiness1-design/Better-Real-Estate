@@ -2,7 +2,7 @@ const fs=require('fs'),assert=require('assert'),path=require('path');
 const app=fs.readFileSync(path.join(__dirname,'../public/app.js'),'utf8');
 const css=fs.readFileSync(path.join(__dirname,'../public/style.css'),'utf8');
 const server=fs.readFileSync(path.join(__dirname,'../server.js'),'utf8');
-for(const t of ['TUTORIAL_VERSION = 56','tutorialTier()','tutorialStepsFor','tutorialCompletedKeys','tutorialHighestRank','NEW FEATURE TOUR','Skip entire tour','tour-focus-ring','Showing ${tier','dealbuildersearch','buyercrmpage','workspacepage']) assert(app.includes(t),t);
+for(const t of ['TUTORIAL_VERSION = 57','tutorialTier()','tutorialStepsFor','tutorialCompletedKeys','tutorialHighestRank','NEW FEATURE TOUR','Skip entire tour','tour-focus-ring','Showing ${tier','dealbuildersearch','buyercrmpage','workspacepage']) assert(app.includes(t),t);
 for(const t of ['tutorialCompletedKeys','tutorialHighestRank']) assert(server.includes(t),t);
 for(const t of ['.guided-tour-card','.tour-focus-ring','.dealbuilderentry','.aisummaryhead','.aisummarypoints']) assert(css.includes(t),t);
 assert(/background:#fff/.test(css),'tutorial card must be opaque in light mode');
