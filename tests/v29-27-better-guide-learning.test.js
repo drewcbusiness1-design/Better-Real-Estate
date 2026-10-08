@@ -9,7 +9,7 @@ const css = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41'].includes(pkg.version), 'package version must include the v29.27 Guide baseline');
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.42'].includes(pkg.version), 'package version must include the v29.27 Guide baseline');
 assert(app.includes("'learn'"), 'Learn route missing');
 assert(app.includes('function openBetterGuide()'), 'Better Guide panel missing');
 assert(app.includes('function renderLearnWholesaling()'), 'course renderer missing');

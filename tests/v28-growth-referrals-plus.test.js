@@ -1,6 +1,6 @@
 const assert=require('assert');const fs=require('fs');
 const server=fs.readFileSync('server.js','utf8'),client=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),store=fs.readFileSync('store.js','utf8'),social=fs.readFileSync('social.js','utf8'),pkg=require('../package.json'),lock=require('../package-lock.json');
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41'].includes(pkg.version));assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41'].includes(lock.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.42'].includes(pkg.version));assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.42'].includes(lock.version));
 assert.ok(server.includes("label: 'Better Plus'"),'$30 plan must display as Better Plus');
 assert.ok(server.includes("plusToolAllowance(req.user, 'listingAi', 2)"),'Plus AI listing quota missing');
 assert.ok(server.includes("plusToolAllowance(req.user, 'dispoAi', 3)"),'Plus Better Dispo quota missing');
