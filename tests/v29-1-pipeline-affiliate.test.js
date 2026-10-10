@@ -3,7 +3,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/style.css','utf8');
 assert(app.includes("'forgot','buyerportal','affiliate']"),'affiliate must be public landing route');
 assert(app.includes("state.postAuthTarget={view:'affiliate'}"),'affiliate signup/login must return to affiliate center');
-assert(app.includes('Earn 30% promoting Better Real Estate'),'affiliate landing proposition missing');
+assert(app.includes('Earn 30–40% promoting Better Real Estate'),'affiliate landing proposition missing');
 assert(css.includes('.pipelinepage{max-width:1180px}'),'pipeline desktop workspace width regression');
 assert(css.includes('.pipelinepage .pipeline-col{min-width:190px}'),'pipeline columns need complete minimum width');
 assert(css.includes('.pipelinepage>.pageheadrow>.btn-primary{flex:0 0 auto;min-width:118px;white-space:nowrap'),'Add lead must stay on one line');
