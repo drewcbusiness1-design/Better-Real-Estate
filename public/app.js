@@ -47,7 +47,8 @@ function membershipBadge(label) { return label ? el('span', { class:'membershipl
 const ACCOUNT_ROLE_OPTIONS = [
   ['buyer','Buyer / Investor','Find and acquire deals'],
   ['seller','Seller / Wholesaler','Post and move properties'],
-  ['lender','Lender / Funder','Provide capital and connect with deals']
+  ['lender','Lender / Funder','Provide capital and connect with deals'],
+  ['affiliate','Marketing / Affiliate only','Promote Better and apply for affiliate access. Hidden from the real estate Network.']
 ];
 const ACCOUNT_ROLE_LABELS = Object.fromEntries(ACCOUNT_ROLE_OPTIONS.map(([value,label]) => [value,label]));
 function userRoles(user) {
@@ -79,7 +80,8 @@ function buildRoleSelector(initialRoles = [], onChange = () => {}) {
     ]);
     button.dataset.role = value;
     button.onclick = () => {
-      if (selected.has(value)) selected.delete(value); else selected.add(value);
+      if (selected.has(value)) selected.delete(value);
+      else { if (value === 'affiliate') selected.clear(); else selected.delete('affiliate'); selected.add(value); }
       sync();
     };
     tabs.appendChild(button);
@@ -256,7 +258,7 @@ async function boot() {
   if (state.verifyToken) state.view = 'verify';
   else if (state.resetToken) state.view = 'reset';
   else if (state.companyInviteToken && state.user) state.view = 'companyjoin';
-  else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : 'feed';
+  else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed');
   else if (state.companyInviteToken) { state.view = 'auth'; state.authMode = 'signup'; }
   else {
     const publicWithoutAccount = new Set(['home','auth','about','terms','privacy','contact','faq','forgot','buyerportal','affiliate']);
@@ -344,7 +346,7 @@ function render() {
 window.addEventListener('popstate', () => {
   const params = new URLSearchParams(location.search);
   const requested = applyRouteParams(params);
-  if (state.user) state.view = requested && ROUTED_VIEWS.has(requested) && !['home','auth'].includes(requested) ? requested : 'feed';
+  if (state.user) state.view = requested && ROUTED_VIEWS.has(requested) && !['home','auth'].includes(requested) ? requested : (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed');
   else state.view = requested && ROUTED_VIEWS.has(requested) ? requested : 'home';
   window.scrollTo(0, 0);
   render();
@@ -492,7 +494,7 @@ function renderTop() {
   const brandEl = document.querySelector('.brand');
   if (brandEl && !brandEl.dataset.wired) {
     brandEl.dataset.wired = '1';
-    brandEl.onclick = () => go(state.user ? 'feed' : 'home');
+    brandEl.onclick = () => go(state.user ? (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed') : 'home');
   }
   const nav = document.getElementById('navlinks');
   nav.innerHTML = '';
@@ -527,7 +529,7 @@ function renderTabs() {
   const tabs = document.getElementById('tabbar');
   tabs.innerHTML = '';
   if (!state.user) return;
-  const items = [['feed','home','Feed'], ['shop','shop','Shop'], ['compose','plus','Post'], ['network','network','Network'], ['me','user','Profile']];
+  const items = hasRole(state.user,'affiliate') ? [['affiliate','grid','Affiliate'],['wallet','wallet','Wallet'],['settings','settings','Settings']] : [['feed','home','Feed'], ['shop','shop','Shop'], ['compose','plus','Post'], ['network','network','Network'], ['me','user','Profile']];
   items.forEach(([v, ic, label]) => {
     const active = state.view === v || (v === 'shop' && ['shopitem','sellitem','shopmanage','shopedit'].includes(state.view));
     const icon = el('span', { class: 'ic' }, iconSvg(ic, 21));
@@ -676,7 +678,7 @@ function renderAuth() {
   wrap.appendChild(el('h2', {}, isSignup ? 'Create your account' : 'Welcome back'));
   wrap.appendChild(el('div', { class: 'sub' }, state.companyInviteToken ? (isSignup ? 'Create your account to join your company workspace.' : 'Sign in with the email that received your company invitation.') : (isSignup ? `Free to join. No card required.${state.pricing?.signupTrialDays ? ` New accounts also get ${state.pricing.signupTrialDays} days of full access.` : ''}` : 'Sign in to continue.')));
 
-  let roles = [];
+  let roles = isSignup && state.postAuthTarget?.view === 'affiliate' ? ['affiliate'] : [];
   const name = el('input', { placeholder: 'Jordan Alvarez' });
   const email = el('input', { type: 'text', autocomplete: 'username', placeholder: isSignup ? 'you@email.com' : 'Email or @username' });
   const pass = el('input', { type: 'password', placeholder: isSignup ? 'At least 6 characters' : 'Your password' });
@@ -686,9 +688,9 @@ function renderAuth() {
 
   if (isSignup) {
     wrap.appendChild(el('label', {}, "How do you work in real estate?"));
-    const rolePicker = buildRoleSelector([], next => { roles = next; });
+    const rolePicker = buildRoleSelector(roles, next => { roles = next; });
     wrap.appendChild(rolePicker.element);
-    wrap.appendChild(el('div', { class: 'hint' }, 'Choose all that apply. This helps the right people find you and never limits what you can do on Better.'));
+    wrap.appendChild(el('div', { class: 'hint' }, 'Choose all that apply for real estate, or choose Marketing / Affiliate only to keep your account separate from Network. Affiliate links require application approval.'));
     wrap.appendChild(el('label', {}, 'Name')); wrap.appendChild(name);
   }
   wrap.appendChild(el('label', {}, 'Email')); wrap.appendChild(email);
@@ -723,7 +725,7 @@ function renderAuth() {
       else if (state.postAuthTarget) {
         const target = state.postAuthTarget; state.postAuthTarget = null;
         go(target.view || 'feed', { detailId: target.detailId, profileId: target.profileId, companyId: target.companyId, shopItemId: target.shopItemId, networkTab: target.networkTab || 'discover' });
-      } else go('feed');
+      } else go(hasRole(state.user,'affiliate') ? 'affiliate' : 'feed');
       });
     } catch (e) { err.textContent = e.message; }
   };
@@ -2765,7 +2767,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 63;
+const TUTORIAL_VERSION = 65;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2819,6 +2821,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'insights',selector:'.insightspage',min:0,title:'Demand Insights',copy:'See where published buyer demand is concentrated by market, property type and strategy.'},
  {view:'workspace',selector:'.workspacepage',min:2,title:'Investor Workspace',copy:'Compare saved properties and keep private deal notes in one place.'},
  {view:'companyworkspace',selector:'.companyhero',min:3,release:29,title:'Wholesale Team workspace',copy:'Team access adds shared buyer CRM, pipeline assignments, internal notes, activity and analytics while each teammate keeps a separate login.'},
+ {view:'affiliate',selector:'.affiliate-center',min:0,release:65,title:'Marketing and affiliate accounts',copy:'Choose Marketing / Affiliate only at signup to keep your account separate from the real estate Network. Affiliate access still requires approval. Open Affiliate in the footer beside FAQ and Contact.'},
  {view:'admin',selector:'.admin-activity',min:4,release:29,title:'Admin activity & user analytics',copy:'See who is active now, unique users over preset or custom periods, market activity, funnel signals and inspect individual accounts. Ordinary members never see this step.'},
  {view:'admin',selector:'.demo-account-card',min:4,release:37,title:'Demo accounts',copy:'Create controlled demo accounts for presentations and testing. Demo accounts never consume First 50 Founder places, never count in growth analytics, and cannot generate real billing, referral rewards, affiliate commissions or payouts.'},
  {view:'admin',selector:'.demo-preview-card',min:4,release:38,title:'Preview experiences',copy:'Use a demo account to safely replay Founder welcome, onboarding, and What’s New experiences without consuming Founder places, issuing access, changing analytics, or creating money.'},
@@ -2835,6 +2838,8 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:56,title:'More expression, more context',copy:'Better Guide now changes facial expression and body response for meaningful moments such as guidance, success, errors and new attention — while staying grounded in the header.'},
  {view:'detail',selector:'.owner-ops',min:0,release:56,title:'Edit your property posts',copy:'On a property you own, use Edit property to update pricing, facts, notes, photos, video, deadline and JV availability without recreating the post.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
+ {view:'affiliate',selector:'.affiliate-center',min:0,release:65,title:'Marketing and affiliate accounts',copy:'Choose Marketing / Affiliate only at signup to keep your account separate from the real estate Network. Affiliate access still requires approval. Open Affiliate in the footer beside FAQ and Contact.'},
+ {view:'admin',selector:'.admin-activity',min:4,release:65,title:'All-time user activity',copy:'Choose All time to view all available recorded activity. Demo accounts are excluded. Older event detail may have been pruned.'},
  {view:'me',selector:'.founder-program-card',min:0,release:63,when:()=>!!state.user?.founderLaunchPosition,title:'First 50 Founders',copy:'Founder recognition and two weeks of complimentary Platinum are limited to the first 50 qualifying accounts. Your signup rank and bonus dates appear here; paid memberships and separate admin grants remain independent.'},
  {view:'dealbuilder',selector:'.verified-comps-card',min:1,release:62,title:'Sold comps and working ARV',copy:'Review selected and excluded closed sales, adjusted prices and source links. A corroborated working range can support deal math when subject size and identity are established; missing distance or recorded subject details keep it separate from a precise ARV. Add or remove comps to update the calculator.'},
  {view:'dealbuilder',selector:'.dealbuildersearch',min:0,release:61,title:'Clear property evidence and deal numbers',copy:'Better preserves full and half bathroom details, labels unresolved facts and keeps withheld ARV out of the calculator. Number cards fit desktop and mobile. Research skips sold-comp expansion when the subject cannot be located; review source details before underwriting.'},
@@ -2846,7 +2851,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:57,title:'The mascot now remembers what needs attention',copy:'The Better mascot can keep an eye on unread messages, follow the field you are actively working in, react when a deal advances, celebrate under-contract and closed milestones, and settle into a sleepy state after real inactivity. These cues use existing page state without adding a new polling service.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
- ].filter(x=>rank>=x.min&&(!x.when||x.when()));
+ ].filter(x=>rank>=x.min&&(!x.when||x.when())&&(!hasRole(state.user,'affiliate')||['affiliate','settings','wallet'].includes(x.view)));
 }
 function tutorialKey(tier=tutorialTier()){return `v${TUTORIAL_VERSION}:${tier}`;}
 async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
@@ -3977,7 +3982,7 @@ function renderSettings() {
     wrap.appendChild(el('div', { class: 'sectiontitle' }, 'How you work'));
     let selectedRoles = userRoles(state.user);
     const roleBox = el('div', { class:'card role-settings' }, [
-      el('div', { class:'settings-copy' }, [el('b', {}, 'Your real estate roles'), el('div', { class:'hint' }, 'Choose all that apply. These appear on your profile and help buyers, wholesalers, investors and funders find the right people.')])
+      el('div', { class:'settings-copy' }, [el('b', {}, 'Your account type and roles'), el('div', { class:'hint' }, 'Choose real estate roles to appear in Network, or Marketing / Affiliate only to stay separate. Changing your account type does not approve or remove affiliate access.')])
     ]);
     const rolePicker = buildRoleSelector(selectedRoles, next => { selectedRoles = next; });
     roleBox.appendChild(rolePicker.element);
@@ -4667,7 +4672,7 @@ async function renderAffiliateCenter(){
   ]));
   return wrap;
  }
- const d=await api('GET','/api/affiliate/me');wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER AFFILIATES'),el('h2',{},'Affiliate center'),el('div',{class:'sub'},'Earn a 30% one-time cash commission on a qualifying referred customer’s first eligible paid membership transaction.')]),el('div',{class:'affiliate-rate'},[el('strong',{},'30%'),el('span',{},'one-time commission')]) ]));
+ const d=await api('GET','/api/affiliate/me');if(hasRole(state.user,'affiliate'))wrap.appendChild(el('div',{class:'card affiliate-account-note'},[el('b',{},'Marketing / Affiliate-only account'),el('p',{},'Your account is separate from the real estate Network. Manage your application, tracked link and earnings here. Memberships and account history stay intact.')]));wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER AFFILIATES'),el('h2',{},'Affiliate center'),el('div',{class:'sub'},'Earn a 30% one-time cash commission on a qualifying referred customer’s first eligible paid membership transaction.')]),el('div',{class:'affiliate-rate'},[el('strong',{},'30%'),el('span',{},'one-time commission')]) ]));
  if(state.access?.adminUnlimited){try{const ad=await api('GET','/api/admin/affiliates');const panel=el('section',{class:'hub-panel affiliate-admin'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'ADMIN'),el('h3',{},'Affiliate approvals')]),el('span',{class:'sub'},`${ad.applications.length} applications · ${cents(ad.totals.pending)} pending commissions`)])]);if(!ad.applications.length)panel.appendChild(el('div',{class:'hub-empty'},'No affiliate applications yet.'));const affiliateActions=x=>{if(x.status==='pending')return [['approved','Approve','btn-primary'],['denied','Deny','btn-ghost']];if(x.status==='approved')return [['suspended','Suspend','btn-ghost'],['revoked','Terminate','dangerbtn']];if(x.status==='suspended')return [['approved','Resume','btn-primary'],['revoked','Terminate','dangerbtn']];if(x.status==='denied')return [['approved','Approve','btn-primary']];return [];};ad.applications.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).forEach(x=>panel.appendChild(el('div',{class:'affiliate-admin-row'},[el('div',{class:'grow'},[el('b',{},x.name+' · '+x.status),el('span',{},x.channels||x.audience||x.email),el('small',{},`${x.metrics.sales} sales · ${cents(x.metrics.paid)} paid`)]),el('div',{class:'affiliate-admin-actions'},affiliateActions(x).map(([status,label,cls])=>el('button',{class:cls,onclick:async()=>{await api('POST','/api/admin/affiliates/'+x.id+'/status',{status});toast(`Affiliate ${label.toLowerCase()} action completed`,'ok');await refreshUnread();render();}},label))) ])));wrap.appendChild(panel);}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));}}
  if(!d.application){const card=el('section',{class:'affiliate-hero'},[el('h3',{},'Apply to become a Better affiliate'),el('p',{},'Tell us how you plan to introduce Better Real Estate to your audience. Every application is reviewed before affiliate links are activated.'),el('button',{class:'btn-primary',onclick:()=>openFormModal('Affiliate application',[{key:'audience',label:'Your audience',type:'textarea',placeholder:'Who do you reach and approximately how?'},{key:'channels',label:'Channels',placeholder:'Instagram, YouTube, REIA, newsletter…'},{key:'why',label:'Why Better Real Estate?',type:'textarea',placeholder:'How would you promote the platform responsibly?'}],'Submit application',async v=>{await api('POST','/api/affiliate/apply',v);toast('Affiliate application submitted','ok');render();})},'Request affiliate access')]);wrap.appendChild(card);return wrap;}
  const a=d.application;wrap.appendChild(el('div',{class:'affiliate-status '+a.status},[el('div',{},[el('small',{},'APPLICATION STATUS'),el('b',{},a.status.charAt(0).toUpperCase()+a.status.slice(1))]),a.status==='approved'?el('span',{},'Admin approved'):el('span',{},a.status==='pending'?'Waiting for admin review':'Contact support if you have questions') ]));if(a.status!=='approved')return wrap;
@@ -4686,6 +4691,7 @@ document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLower
 const STATE_CODES=['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
 function miniMetric(value,label){return el('div',{class:'mini-metric'},[el('b',{},String(value)),el('span',{},label)]);}
 function quickOptionCatalog(){
+ if(hasRole(state.user,'affiliate'))return [{id:'affiliate',title:'Affiliate center',desc:'Application, tracked link and earnings',view:'affiliate'},{id:'wallet',title:'Wallet & payouts',desc:'Manage your cash balance',view:'wallet'},{id:'settings',title:'Settings',desc:'Account type, profile and help',view:'settings'}];
  const base=[
   {id:'compose',title:'Post a property',desc:'Create or import a listing',view:'compose'},
   {id:'dealbuilder',title:'Analyze a deal',desc:'Open AI Deal Builder',view:'dealbuilder'},
@@ -4701,7 +4707,7 @@ function quickOptionCatalog(){
  if(state.access?.adminUnlimited) base.push({id:'admin',title:'Admin users',desc:'User activity and account controls',view:'admin'});
  return base;
 }
-function selectedQuickOptions(){const allowed=new Set(quickOptionCatalog().map(x=>x.id));const saved=state.user?.settings?.quickOptions;const defaults=state.access?.adminUnlimited?['admin','transactionhub','compose','dealbuilder','pipeline']:['transactionhub','compose','dealbuilder','pipeline','liked'];return (Array.isArray(saved)?saved:defaults).filter(x=>allowed.has(x)).slice(0,6);}
+function selectedQuickOptions(){const allowed=new Set(quickOptionCatalog().map(x=>x.id));const saved=state.user?.settings?.quickOptions;const defaults=hasRole(state.user,'affiliate')?['affiliate','wallet','settings']:state.access?.adminUnlimited?['admin','transactionhub','compose','dealbuilder','pipeline']:['transactionhub','compose','dealbuilder','pipeline','liked'];return (Array.isArray(saved)?saved:defaults).filter(x=>allowed.has(x)).slice(0,6);}
 async function saveQuickOptions(ids){const {settings}=await api('PATCH','/api/me/settings',{quickOptions:ids});state.user.settings=settings;}
 function openQuickOptions(){
  const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card'});
@@ -4782,8 +4788,8 @@ async function renderAdmin() {
   wrap.appendChild(el('div',{class:'sectiontitle'},'User activity'));
   const activityCard=el('div',{class:'card admin-activity'}),activityControls=el('div',{class:'activity-controls'}),activityHost=el('div');
   const customStart=el('input',{type:'datetime-local'}),customEnd=el('input',{type:'datetime-local'});let activityPreset='24h';
-  const loadActivity=async()=>{let url='/api/admin/activity?preset='+activityPreset;if(activityPreset==='custom')url+=`&start=${encodeURIComponent(customStart.value)}&end=${encodeURIComponent(customEnd.value)}`;const d=await api('GET',url);activityHost.innerHTML='';activityHost.appendChild(el('div',{class:'statgrid'},[stat(d.metrics.activeNow,'Active now'),stat(d.metrics.uniqueActive,'Unique active'),stat(d.metrics.returning,'Returning'),stat(d.metrics.signups,'New signups'),stat(d.metrics.listings,'Listings'),stat(d.metrics.messages,'Messages'),stat(d.metrics.dealBuilderRuns,'Deal analyses'),stat(d.metrics.profilesCompleted,'Profiles set up'),stat(d.metrics.engaged,'Engaged users'),stat(d.metrics.paid,'Paid access')]));if(d.activeNow.length){activityHost.appendChild(el('div',{class:'admin-active-list'},[el('b',{},'On the site now'),...d.activeNow.map(u=>el('div',{class:'admin-active-user'},[el('span',{},u.name),el('small',{},[u.plan,...(u.markets||[])].filter(Boolean).join(' · '))]))]));}if(d.markets.length)activityHost.appendChild(el('div',{class:'market-mini'},d.markets.map(m=>el('span',{},`${m.state} · ${m.count}`))));if(d.plans)activityHost.appendChild(el('div',{class:'market-mini'},Object.entries(d.plans).map(([p,n])=>el('span',{},`${p} · ${n}`))));};
-  [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
+  const loadActivity=async()=>{let url='/api/admin/activity?preset='+activityPreset;if(activityPreset==='custom')url+=`&start=${encodeURIComponent(customStart.value)}&end=${encodeURIComponent(customEnd.value)}`;const d=await api('GET',url);activityHost.innerHTML='';if(d.historyNote)activityHost.appendChild(el('p',{class:'sub'},d.historyNote));activityHost.appendChild(el('div',{class:'statgrid'},[stat(d.metrics.activeNow,'Active now'),stat(d.metrics.uniqueActive,'Unique active'),stat(d.metrics.returning,'Returning'),stat(d.metrics.signups,'New signups'),stat(d.metrics.listings,'Listings'),stat(d.metrics.messages,'Messages'),stat(d.metrics.dealBuilderRuns,'Deal analyses'),stat(d.metrics.profilesCompleted,'Profiles set up'),stat(d.metrics.engaged,'Engaged users'),stat(d.metrics.paid,'Paid access')]));if(d.activeNow.length){activityHost.appendChild(el('div',{class:'admin-active-list'},[el('b',{},'On the site now'),...d.activeNow.map(u=>el('div',{class:'admin-active-user'},[el('span',{},u.name),el('small',{},[u.plan,...(u.markets||[])].filter(Boolean).join(' · '))]))]));}if(d.markets.length)activityHost.appendChild(el('div',{class:'market-mini'},d.markets.map(m=>el('span',{},`${m.state} · ${m.count}`))));if(d.plans)activityHost.appendChild(el('div',{class:'market-mini'},Object.entries(d.plans).map(([p,n])=>el('span',{},`${p} · ${n}`))));};
+  [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['all','All time'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
   customStart.style.display=customEnd.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd);activityCard.append(activityControls,activityHost);wrap.appendChild(activityCard);await loadActivity();
   wrap.appendChild(el('div',{class:'sectiontitle'},'Demo accounts'));
   const demoCard=el('div',{class:'card demo-account-card'});
@@ -4892,7 +4898,7 @@ function renderFooter() {
   const f = document.getElementById('sitefooter');
   if (!f) return;
   f.innerHTML = '';
-  const links = [['about','About'],['faq','FAQ'],['terms','Terms'],['privacy','Privacy'],['contact','Contact']];
+  const links = [['about','About'],['faq','FAQ'],['affiliate','Affiliate'],['terms','Terms'],['privacy','Privacy'],['contact','Contact']];
   const row = el('div', { class: 'footlinks' });
   links.forEach(([v, l]) => row.appendChild(el('a', { onclick: () => go(v) }, l)));
   f.appendChild(el('div', { class: 'footinner' }, [
@@ -4905,7 +4911,7 @@ function renderFooter() {
 
 const staticPage = (title, sub, blocks) => {
   const wrap = el('div', { class: 'page staticpage' });
-  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.user ? 'feed' : 'home') }, '← Back'));
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.user ? (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed') : 'home') }, '← Back'));
   wrap.appendChild(el('h2', {}, title));
   if (sub) wrap.appendChild(el('div', { class: 'sub' }, sub));
   blocks.forEach(([h, body]) => {
@@ -5001,7 +5007,7 @@ function pagePrivacy() {
 
 function pageContact() {
   const wrap = el('div', { class: 'page staticpage' });
-  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.user ? 'feed' : 'home') }, '← Back'));
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.user ? (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed') : 'home') }, '← Back'));
   wrap.appendChild(el('h2', {}, 'Contact'));
   wrap.appendChild(el('div', { class: 'sub' }, 'A real person reads these.'));
   wrap.appendChild(el('div', { class: 'card', style: 'padding:22px' }, [

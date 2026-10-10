@@ -1,0 +1,38 @@
+const assert=require('assert'),fs=require('fs'),vm=require('vm');
+const accounts=require('../affiliateAccounts'),policy=require('../policy'),social=require('../social');
+process.env.ADMIN_EMAILS='owner@example.test';
+const user=(id,role='buyer')=>({id,name:id,email:id+'@example.test',role,roles:[role],plan:'platinum',planUntil:'2030-01-01',stripeAccountId:'acct-'+id,points:33,founderPlatinumUntil:'2026-12-01'});
+const db={users:[user('approved'),user('pending'),user('denied'),user('future'),{...user('admin','admin')},{...user('owner'),email:'owner@example.test'},{...user('demo'),demo:true}],affiliateApplications:['approved','pending','denied','admin','owner','demo'].map(id=>({id,userId:id,status:['pending','denied'].includes(id)?id:'approved'})),affiliateCommissions:[{id:'cash',affiliateUserId:'approved',amountCents:7000,status:'available'}],listings:[],follows:[],friendships:[],friendRequests:[]};
+const money=JSON.stringify(db.affiliateCommissions),before={...db.users[0]};
+assert(accounts.migrateCurrentAffiliates(db,'2026-10-10T00:00:00Z'));
+assert.deepEqual(db.users[0].roles,['affiliate']);assert.deepEqual(db.users[0].affiliatePreviousRoles,['buyer']);
+for(const key of ['plan','planUntil','stripeAccountId','points','founderPlatinumUntil'])assert.equal(db.users[0][key],before[key]);
+assert.equal(JSON.stringify(db.affiliateCommissions),money);
+assert.deepEqual(db.accountMigrations[0].userIds,['approved']);
+for(const id of ['pending','denied','future','owner','demo'])assert.equal(db.users.find(u=>u.id===id).role,'buyer');
+assert.equal(db.users.find(u=>u.id==='admin').role,'admin');
+db.affiliateApplications.push({id:'later',userId:'future',status:'approved'});
+const reloaded=JSON.parse(JSON.stringify(db));assert.equal(accounts.migrateCurrentAffiliates(reloaded),false);assert.equal(reloaded.users.find(u=>u.id==='future').role,'buyer');
+assert.deepEqual(policy.normalizeSignupRoles(['seller','affiliate','lender','admin']),['affiliate']);
+assert.equal(policy.resolveRole('owner@example.test','affiliate'),'admin');
+assert(!social.searchUsers(db,'future').some(u=>u.id==='approved'));
+assert(social.searchUsers(db,'future').some(u=>u.id==='pending'));
+db.follows.push({followerId:'approved',followingId:'future'});db.friendships.push({userAId:'approved',userBId:'future'});assert.equal(social.socialUserCard(db,'pending',db.users.find(u=>u.id==='future')).friendCount,0);assert.equal(social.socialUserCard(db,'pending',db.users.find(u=>u.id==='future')).followerCount,0);
+const src=fs.readFileSync('server.js','utf8');
+const notificationContext={isAffiliateOnlyUser:accounts.isAffiliateOnlyUser,isAdminUser:u=>u?.role==='admin',Object,Number};
+vm.runInNewContext(src.match(/function notificationSummaryFor\([^]*?\n\}/)[0],notificationContext);
+db.friendRequests.push({fromUserId:'approved',toUserId:'future',status:'pending'});
+assert.equal(notificationContext.notificationSummaryFor(db,db.users.find(u=>u.id==='future')).destinations.network,0);
+db.friendRequests.push({fromUserId:'pending',toUserId:'future',status:'pending'});
+assert.equal(notificationContext.notificationSummaryFor(db,db.users.find(u=>u.id==='future')).destinations.network,1);
+const context={isAffiliateOnlyUser:accounts.isAffiliateOnlyUser,getBuyBoxes:u=>u.boxes||[],buyBoxHasBuyerIntent:()=>true,buyBoxMatchesListing:()=>true,socialUserCard:(db,id,u)=>u};
+for(const name of ['buyerMatchesForListing','publicBuyerDemand'])vm.runInNewContext(src.match(new RegExp('function '+name+'\\([^]*?\\n\\}'))[0],context);
+const fixture={users:[{...db.users[0],boxes:[{public:true}]},{...user('buyer'),boxes:[{public:true}]}],companies:[]};
+assert.equal(context.buyerMatchesForListing(fixture,{ownerId:'seller'}).length,1);assert.equal(context.publicBuyerDemand(fixture,'viewer').length,1);
+// Execute the actual public profile route: hidden from guests/regular users, available to owner/Admin.
+let handler;const profileRoute=src.slice(src.indexOf("app.get('/api/users/:id/listings'"),src.indexOf("\n});",src.indexOf("app.get('/api/users/:id/listings'"))+4);
+const profileDB={...db,reviews:[],messages:[],saves:[],companies:[]};
+vm.runInNewContext(profileRoute,{app:{get:(path,fn)=>handler=fn},loadDB:async()=>profileDB,isAffiliateOnlyUser:accounts.isAffiliateOnlyUser,isAdminUser:u=>u?.role==='admin',publicProfileUser:social.publicProfileUser,publicMembershipLabel:()=>null,publicCompany:x=>x,friendRelationship:()=>({}),gateListing:x=>x,listingFreshness:()=>({}),Set});
+(async()=>{for(const viewer of [null,'future','approved','admin']){let status=200,payload;await handler({params:{id:'approved'},session:{userId:viewer}},{status:n=>{status=n;return {json:x=>payload=x}},json:x=>payload=x});assert.equal(status,['approved','admin'].includes(viewer)?200:404);}
+assert(accounts.migrationSQL.includes('ON CONFLICT (id) DO NOTHING RETURNING id'));assert(accounts.migrationSQL.includes('WHERE EXISTS (SELECT 1 FROM marker)'));
+console.log('v29.44 migration once, future approvals, Admin/demo protection, preserved balances, exclusive role, Network/buyers and profile access: PASS');})().catch(e=>{console.error(e);process.exitCode=1});

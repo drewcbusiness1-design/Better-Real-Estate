@@ -9,14 +9,14 @@ const css = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.42'].includes(pkg.version), 'package version must include the v29.27 Guide baseline');
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.44'].includes(pkg.version), 'package version must include the v29.27 Guide baseline');
 assert(app.includes("'learn'"), 'Learn route missing');
 assert(app.includes('function openBetterGuide()'), 'Better Guide panel missing');
 assert(app.includes('function renderLearnWholesaling()'), 'course renderer missing');
 assert(app.includes("selector:'.better-guide-trigger'"), 'Guide tutorial step missing');
 assert(app.includes("release:52,title:'Meet your Better Guide'"), 'v52 Guide What’s New step missing');
 assert(app.includes("release:52,title:'Learn wholesaling inside Better'"), 'v52 course What’s New step missing');
-assert(app.includes("const TUTORIAL_VERSION = 63;"), 'tutorial version must preserve and advance the Guide onboarding');
+assert(app.includes("const TUTORIAL_VERSION = 65;"), 'tutorial version must preserve and advance the Guide onboarding');
 assert(app.includes('BETTER_GUIDE_COURSE'), 'course curriculum missing');
 for (let n = 1; n <= 12; n++) assert(app.includes(`number:${n},`), `course module ${n} missing`);
 for (const required of ['Deal Intelligence','Network','Deal Pipeline','Buyer CRM','Better Dispo','Transaction Hub','Command Center']) {

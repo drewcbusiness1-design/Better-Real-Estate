@@ -25,7 +25,10 @@ let neon = null, Pool = null;
 try { ({ neon } = require('@neondatabase/serverless')); } catch {}
 try { ({ Pool } = require('pg')); } catch {}
 
+const affiliateAccounts = require('./affiliateAccounts');
+const policy = require('./policy');
 const COLLECTIONS = [
+  'accountMigrations',
   'users','companies','companyInvites','listings','saves','follows','friendRequests','friendships','messages','ledger','unlocks',
   'shopItems','orders','offers','reviews','views','promotions','payouts',
   'alerts','tokens','suppliers','supplierOrders','reports','dealNotes','buyerLeads','emailBroadcasts','membershipGrants','shareEvents','buyerCrm','dealAnalyses',
@@ -117,6 +120,7 @@ async function init() {
         )`);
       }));
     }
+    await sql(affiliateAccounts.migrationSQL, [affiliateAccounts.MIGRATION_ID, new Date().toISOString(), policy.adminEmails()]);
     const indexRows = await sql(`SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`);
     const existingIndexes = new Set((indexRows || []).map(r => r.indexname));
     const indexSql = [];
@@ -143,10 +147,13 @@ function fileLoad() {
   if (!fsMod.existsSync(FILE_PATH)) {
     const fresh = {}; COLLECTIONS.forEach(c => fresh[c] = []);
     fsMod.writeFileSync(FILE_PATH, JSON.stringify(fresh, null, 2));
+    affiliateAccounts.migrateCurrentAffiliates(fresh);
+    fsMod.writeFileSync(FILE_PATH, JSON.stringify(fresh, null, 2));
     return fresh;
   }
   const db = JSON.parse(fsMod.readFileSync(FILE_PATH, 'utf8'));
   COLLECTIONS.forEach(c => { if (!db[c]) db[c] = []; });
+  if (affiliateAccounts.migrateCurrentAffiliates(db)) fsMod.writeFileSync(FILE_PATH, JSON.stringify(db, null, 2));
   return db;
 }
 

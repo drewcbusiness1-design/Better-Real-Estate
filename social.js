@@ -1,3 +1,4 @@
+const {isAffiliateOnlyUser} = require('./affiliateAccounts');
 function publicProfileUser(u) {
   return u ? {
     id: u.id,
@@ -41,8 +42,8 @@ function socialUserCard(db, viewerId, u) {
   return {
     ...publicProfileUser(u),
     listingCount: listings.length,
-    followerCount: (db.follows || []).filter(f => f.followingId === u.id).length,
-    friendCount: (db.friendships || []).filter(f => f.userAId === u.id || f.userBId === u.id).length,
+    followerCount: (db.follows || []).filter(f => f.followingId === u.id && !isAffiliateOnlyUser(db.users.find(x => x.id === f.followerId))).length,
+    friendCount: (db.friendships || []).filter(f => (f.userAId === u.id || f.userBId === u.id) && !isAffiliateOnlyUser(db.users.find(x => x.id === (f.userAId === u.id ? f.userBId : f.userAId)))).length,
     markets,
     company: company ? { id: company.id, name: company.name, slug: company.slug || null, logoUrl: company.logoUrl || null } : null,
     following: !!viewerId && (db.follows || []).some(f => f.followerId === viewerId && f.followingId === u.id),
@@ -55,7 +56,7 @@ function searchUsers(db, viewerId, q = '', role = '') {
   const query = String(q || '').trim().toLowerCase().slice(0, 100);
   const roleFilter = String(role || '').trim().toLowerCase();
   const words = query.split(/\s+/).filter(Boolean);
-  let users = (db.users || []).filter(u => u.id !== viewerId);
+  let users = (db.users || []).filter(u => u.id !== viewerId && !isAffiliateOnlyUser(u));
   if (roleFilter && roleFilter !== 'all') users = users.filter(u => {
     const roles = u.role === 'admin' ? ['admin'] : (Array.isArray(u.roles) && u.roles.length ? u.roles : [u.role]);
     return roles.map(x => String(x || '').toLowerCase()).includes(roleFilter);

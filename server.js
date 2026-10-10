@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const mailer = require('./mailer');
 
 const { loadDB, saveDB, appendRecord } = require('./store');
+const {isAffiliateOnlyUser} = require('./affiliateAccounts');
 const { writeImage, readImage, writeDocument, readDocument } = require('./storage');
 const dropship = require('./dropship');
 const cjAdapter = require('./cj-adapter');
@@ -498,7 +499,7 @@ function revokeMembershipGrant(db, user, revokedBy = null) {
 }
 
 function leaderboardRows(db, period = 'all') {
-  const users = db.users.filter(u => u.role !== 'admin');
+  const users = db.users.filter(u => u.role !== 'admin' && !isAffiliateOnlyUser(u));
   const monthStart = new Date();
   monthStart.setUTCDate(1); monthStart.setUTCHours(0,0,0,0);
   const pointsByUser = new Map();
@@ -1115,7 +1116,7 @@ app.get('/api/companies/:id', async (req, res) => {
   if (!company) return res.status(404).json({ error: 'Company not found.' });
   const viewer = db.users.find(u => u.id === req.session.userId);
   const memberIds = new Set(companyMemberIds(db, company));
-  const members = db.users.filter(u => u.companyId === company.id).map(publicProfileUser);
+  const members = db.users.filter(u => u.companyId === company.id && (!isAffiliateOnlyUser(u) || viewer?.id === u.id || isAdminUser(viewer))).map(publicProfileUser);
   const listings = db.listings.filter(l => (l.companyId === company.id || memberIds.has(l.ownerId)) && listingFreshness(l).availabilityStatus !== 'archived').map(l => gateListing(l, viewer, db));
   res.json({ company: publicCompany(company), members, listings });
 });
@@ -1498,7 +1499,7 @@ function buyBoxHasBuyerIntent(bb) {
   return !!bb.updatedAt || bb.public === true || hasLocation || hasType || hasNumbers || hasStrategy || hasRehabPreference;
 }
 function buyerMatchesForListing(db, listing) {
-  return (db.users || []).filter(u => u.id !== listing.ownerId && u.demo !== true && String(u.buyingStatus || 'active') !== 'paused').map(u => {
+  return (db.users || []).filter(u => !isAffiliateOnlyUser(u) && u.id !== listing.ownerId && u.demo !== true && String(u.buyingStatus || 'active') !== 'paused').map(u => {
     const boxes = getBuyBoxes(u).filter(bb => buyBoxHasBuyerIntent(bb) && buyBoxMatchesListing(bb, listing));
     return boxes.length ? { user: u, boxes } : null;
   }).filter(Boolean);
@@ -1506,7 +1507,7 @@ function buyerMatchesForListing(db, listing) {
 function publicBuyerDemand(db, viewerId) {
   const out = [];
   for (const u of db.users || []) {
-    if (String(u.buyingStatus || 'active') === 'paused') continue;
+    if (isAffiliateOnlyUser(u) || String(u.buyingStatus || 'active') === 'paused') continue;
     const company = u.companyId ? (db.companies || []).find(c => c.id === u.companyId) : null;
     getBuyBoxes(u).forEach((bb, index) => {
       if (bb.active === false || bb.public !== true) return;
@@ -1973,7 +1974,7 @@ app.get('/s/property/:id', async (req, res) => {
 app.get('/s/profile/:id', async (req, res) => {
   const db = await loadDB();
   const user = db.users.find(u => u.id === req.params.id || normalizeUsername(u.username) === normalizeUsername(req.params.id));
-  if (!user) return res.status(404).type('html').send('Profile not found.');
+  if (!user || isAffiliateOnlyUser(user)) return res.status(404).type('html').send('Profile not found.');
   const referral = sanitizedReferral(req.query.ref);
   const listingCount = db.listings.filter(l => l.ownerId === user.id && listingFreshness(l).availabilityStatus !== 'archived').length;
   const destination = destinationWithRef(`/?view=profile&user=${encodeURIComponent(user.id)}`, referral);
@@ -2133,7 +2134,7 @@ app.post('/api/listings', requireAuth, async (req, res) => {
 // algorithm — a real estate alert should be simple to reason about.
 async function notifyPlatinumMatches(db, listing) {
   const candidates = db.users.filter(u =>
-    isPlatinum(u) && u.id !== listing.ownerId && u.settings?.notifyOnMatch !== false
+    !isAffiliateOnlyUser(u) && isPlatinum(u) && u.id !== listing.ownerId && u.settings?.notifyOnMatch !== false
   );
   for (const u of candidates) {
     const boxes = getBuyBoxes(u);
@@ -2225,6 +2226,7 @@ app.get('/api/users/:id/listings', async (req, res) => {
   const owner = db.users.find(u => u.id === req.params.id);
   if (!owner) return res.status(404).json({ error: 'User not found.' });
   const viewer = db.users.find(u => u.id === req.session.userId);
+  if (isAffiliateOnlyUser(owner) && viewer?.id !== owner.id && !isAdminUser(viewer)) return res.status(404).json({error:'User not found.'});
   const ownerCompany = owner.companyId ? db.companies.find(c => c.id === owner.companyId) : null;
   const inbound=(db.messages||[]).filter(m=>m.toUserId===owner.id), outbound=(db.messages||[]).filter(m=>m.fromUserId===owner.id);
   const inboundPeople=new Set(inbound.map(m=>m.fromUserId).filter(Boolean)), respondedPeople=new Set(outbound.map(m=>m.toUserId).filter(id=>inboundPeople.has(id)));
@@ -2234,8 +2236,8 @@ app.get('/api/users/:id/listings', async (req, res) => {
     publicMembership: publicMembershipLabel(owner),
     company: ownerCompany ? publicCompany(ownerCompany) : null,
     listings: db.listings.filter(l => l.ownerId === owner.id && (viewer?.id === owner.id || listingFreshness(l).availabilityStatus !== 'archived')).map(l => gateListing(l, viewer, db)),
-    followerCount: db.follows.filter(f => f.followingId === owner.id).length,
-    friendCount: db.friendships.filter(f => f.userAId === owner.id || f.userBId === owner.id).length,
+    followerCount: db.follows.filter(f => f.followingId === owner.id && !isAffiliateOnlyUser(db.users.find(u => u.id === f.followerId))).length,
+    friendCount: db.friendships.filter(f => (f.userAId === owner.id || f.userBId === owner.id) && !isAffiliateOnlyUser(db.users.find(u => u.id === (f.userAId === owner.id ? f.userBId : f.userAId)))).length,
     friendship: viewer ? friendRelationship(db, viewer.id, owner.id) : { status: 'none', requestId: null },
     reviews: db.reviews.filter(r => r.aboutUserId === owner.id),
     credibility
@@ -2406,7 +2408,7 @@ const activityWindowMs = { '24h':86400000, '7d':7*86400000, '30d':30*86400000 };
 function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,roles:Array.isArray(u.roles)?u.roles:[u.role].filter(Boolean),plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
 function notificationSummaryFor(db,user){
   const messages=(db.messages||[]).filter(m=>m.toUserId===user.id&&!m.read).length;
-  const network=(db.friendRequests||[]).filter(r=>r.status==='pending'&&r.toUserId===user.id).length;
+  const network=(db.friendRequests||[]).filter(r=>r.status==='pending'&&r.toUserId===user.id&&!isAffiliateOnlyUser(db.users.find(u=>u.id===r.fromUserId))).length;
   const savedsearches=(db.dealNotifications||[]).filter(n=>n.userId===user.id&&!n.read).length;
   const admin=isAdminUser(user);
   const affiliate=admin?(db.affiliateApplications||[]).filter(a=>a.status==='pending').length:0;
@@ -2432,17 +2434,18 @@ app.get('/api/notifications', requireAuth, async (req,res)=>{const rows=(req.db.
 app.post('/api/notifications/read', requireAuth, async (req,res)=>{for(const n of (req.db.dealNotifications||[]))if(n.userId===req.user.id)n.read=true;await saveDB(req.db);res.json({ok:true});});
 app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
   const now=Date.now(), preset=String(req.query.preset||'24h'); let start;
-  if(preset==='custom'){ const d=new Date(req.query.start); start=Number.isFinite(d.getTime())?d.getTime():now-86400000; } else start=now-(activityWindowMs[preset]||86400000);
+  if(preset==='all'){ start=0; } else if(preset==='custom'){ const d=new Date(req.query.start); start=Number.isFinite(d.getTime())?d.getTime():now-86400000; } else start=now-(activityWindowMs[preset]||86400000);
   const endQ=new Date(req.query.end); const end=preset==='custom'&&Number.isFinite(endQ.getTime())?Math.min(now,endQ.getTime()):now;
-  const inRange=u=>{const t=new Date(u.lastActiveAt||0).getTime();return t>=start&&t<=end};
+  const activityInRange=value=>{const t=value?new Date(value).getTime():NaN;return Number.isFinite(t)&&t>=start&&t<=end};
+  const inRange=u=>activityInRange(u.lastActiveAt);
   const activeNow=req.db.users.filter(u=>!isDemoUser(u)&&now-new Date(u.lastActiveAt||0).getTime()<=2*60_000).map(safeActivityUser).sort((a,b)=>String(b.lastActiveAt).localeCompare(String(a.lastActiveAt)));
-  const historicalIds=new Set((req.db.activityEvents||[]).filter(e=>{const t=new Date(e.at||0).getTime();return t>=start&&t<=end}).map(e=>e.userId)); const activeUsers=req.db.users.filter(u=>!isDemoUser(u)&&(historicalIds.has(u.id)||inRange(u))).map(safeActivityUser).sort((a,b)=>String(b.lastActiveAt).localeCompare(String(a.lastActiveAt)));
-  const demoIds=new Set(req.db.users.filter(isDemoUser).map(u=>u.id)); const listings=req.db.listings.filter(l=>!demoIds.has(l.ownerId)).filter(l=>{const t=new Date(l.createdAt||0).getTime();return t>=start&&t<=end});
-  const messages=req.db.messages.filter(m=>!demoIds.has(m.fromUserId)&&!demoIds.has(m.toUserId)).filter(m=>{const t=new Date(m.at||m.createdAt||0).getTime();return t>=start&&t<=end});
-  const analyses=(req.db.dealAnalyses||[]).filter(x=>!demoIds.has(x.userId)).filter(x=>{const t=new Date(x.createdAt||x.at||0).getTime();return t>=start&&t<=end});
-  const signups=req.db.users.filter(u=>!isDemoUser(u)).filter(u=>{const t=new Date(u.createdAt||0).getTime();return t>=start&&t<=end});
+  const historicalIds=new Set((req.db.activityEvents||[]).filter(e=>{return activityInRange(e.at)}).map(e=>e.userId)); const activeUsers=req.db.users.filter(u=>!isDemoUser(u)&&(historicalIds.has(u.id)||inRange(u))).map(safeActivityUser).sort((a,b)=>String(b.lastActiveAt).localeCompare(String(a.lastActiveAt)));
+  const demoIds=new Set(req.db.users.filter(isDemoUser).map(u=>u.id)); const listings=req.db.listings.filter(l=>!demoIds.has(l.ownerId)).filter(l=>{return activityInRange(l.createdAt)});
+  const messages=req.db.messages.filter(m=>!demoIds.has(m.fromUserId)&&!demoIds.has(m.toUserId)).filter(m=>{return activityInRange(m.at||m.createdAt)});
+  const analyses=(req.db.dealAnalyses||[]).filter(x=>!demoIds.has(x.userId)).filter(x=>{return activityInRange(x.createdAt||x.at)});
+  const signups=req.db.users.filter(u=>!isDemoUser(u)).filter(u=>{return activityInRange(u.createdAt)});
   const marketCounts={}; for(const u of activeUsers) for(const m of (u.markets||[])) marketCounts[m]=(marketCounts[m]||0)+1;
-  res.json({preset,start:new Date(start).toISOString(),end:new Date(end).toISOString(),activeNow,activeUsers,metrics:{activeNow:activeNow.length,uniqueActive:activeUsers.length,returning:activeUsers.filter(u=>new Date(u.createdAt||0).getTime()<start).length,signups:signups.length,profilesCompleted:req.db.users.filter(u=>!isDemoUser(u)&&(u.bio||u.avatarUrl||(u.investmentMarkets||[]).length)).length,engaged:req.db.users.filter(u=>!isDemoUser(u)&&(req.db.listings.some(l=>l.ownerId===u.id)||req.db.messages.some(m=>m.fromUserId===u.id)||req.db.saves.some(x=>x.userId===u.id))).length,paid:req.db.users.filter(u=>!isDemoUser(u)&&(isPro(u)||isPlatinum(u)||isWholesale(u))).length,listings:listings.length,messages:messages.length,dealBuilderRuns:analyses.length},plans:req.db.users.filter(u=>!isDemoUser(u)).reduce((o,u)=>{const p=actualPlanLabel(u);o[p]=(o[p]||0)+1;return o;},{}),markets:Object.entries(marketCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([state,count])=>({state,count}))});
+  res.json({preset,historyNote:preset==='all'?'All available recorded activity. Older event detail may have been pruned; users with recorded activity remain included through their last activity.':null,start:new Date(start).toISOString(),end:new Date(end).toISOString(),activeNow,activeUsers,metrics:{activeNow:activeNow.length,uniqueActive:activeUsers.length,returning:activeUsers.filter(u=>new Date(u.createdAt||0).getTime()<start).length,signups:signups.length,profilesCompleted:req.db.users.filter(u=>!isDemoUser(u)&&(u.bio||u.avatarUrl||(u.investmentMarkets||[]).length)).length,engaged:req.db.users.filter(u=>!isDemoUser(u)&&(req.db.listings.some(l=>l.ownerId===u.id)||req.db.messages.some(m=>m.fromUserId===u.id)||req.db.saves.some(x=>x.userId===u.id))).length,paid:req.db.users.filter(u=>!isDemoUser(u)&&(isPro(u)||isPlatinum(u)||isWholesale(u))).length,listings:listings.length,messages:messages.length,dealBuilderRuns:analyses.length},plans:req.db.users.filter(u=>!isDemoUser(u)).reduce((o,u)=>{const p=actualPlanLabel(u);o[p]=(o[p]||0)+1;return o;},{}),markets:Object.entries(marketCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([state,count])=>({state,count}))});
 });
 app.get('/api/admin/user-inspector', requireAuth, requireAdmin, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(); const awards=req.db.founderAwards||[]; const users=req.db.users.filter(u=>!q||[u.name,u.email,u.username].some(v=>String(v||'').toLowerCase().includes(q))).slice().sort((a,b)=>{const ta=new Date(a.createdAt||0).getTime(),tb=new Date(b.createdAt||0).getTime();return tb-ta||String(b.id).localeCompare(String(a.id));}).slice(0,40).map(u=>{ const award=awards.find(a=>a.userId===u.id&&!a.voidedAt&&!a.limitExcludedAt)||null; return {...safeActivityUser(u),listings:req.db.listings.filter(l=>l.ownerId===u.id).length,saves:req.db.saves.filter(s=>s.userId===u.id).length,messages:req.db.messages.filter(m=>m.fromUserId===u.id||m.toUserId===u.id).length,paidPlan:u.plan||'free',paidPlanUntil:u.planUntil||null,grant:membershipGrantSummary(u),access:accessFor(u),founderAward:award}; }); res.json({users}); });
 app.patch('/api/me/markets', requireAuth, async (req,res)=>{ req.user.investmentMarkets=cleanStates(req.body?.states); await saveDB(req.db); res.json({states:req.user.investmentMarkets}); });
@@ -2452,14 +2455,14 @@ function searchMatchesListing(s,l){ if(!s||!l)return false; const q=String(s.que
 app.get('/api/saved-searches', requireAuth, async (req,res)=>{ const rows=(req.db.savedSearches||[]).filter(x=>x.userId===req.user.id); res.json({searches:rows.map(x=>({...x,matchCount:req.db.listings.filter(l=>listingFreshness(l).availabilityStatus!=='archived'&&searchMatchesListing(x,l)).length}))}); });
 app.post('/api/saved-searches', requireAuth, async (req,res)=>{ req.db.savedSearches=req.db.savedSearches||[]; const b=req.body||{}; const row={id:crypto.randomUUID(),userId:req.user.id,name:String(b.name||'Deal alert').trim().slice(0,60),query:String(b.query||'').trim().slice(0,100),states:cleanStates(b.states),propertyTypes:Array.isArray(b.propertyTypes)?b.propertyTypes.slice(0,8).map(String):[],minPrice:Math.max(0,Number(b.minPrice)||0),maxPrice:Math.max(0,Number(b.maxPrice)||0),alerts:b.alerts!==false,createdAt:new Date().toISOString()}; req.db.savedSearches.push(row); await saveDB(req.db); res.json({search:row}); });
 app.delete('/api/saved-searches/:id', requireAuth, async (req,res)=>{ req.db.savedSearches=(req.db.savedSearches||[]).filter(x=>!(x.id===req.params.id&&x.userId===req.user.id)); await saveDB(req.db); res.json({ok:true}); });
-app.get('/api/search', requireAuth, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(),stateQ=String(req.query.state||'').trim().toUpperCase(),max=Number(req.query.maxPrice)||0,type=String(req.query.type||''); const listings=req.db.listings.filter(l=>listingFreshness(l).availabilityStatus!=='archived').filter(l=>(!q||`${l.address||''} ${l.city||''} ${l.propertyType||''}`.toLowerCase().includes(q))&&(!stateQ||String(l.city||'').toUpperCase().includes(stateQ))&&(!max||Number(l.asking)<=max)&&(!type||l.propertyType===type)).slice(0,60).map(l=>gateListing(l,req.user,req.db)); const people=req.db.users.filter(u=>u.id!==req.user.id&&(!q||`${u.name||''} ${u.username||''} ${(u.investmentMarkets||[]).join(' ')}`.toLowerCase().includes(q))).slice(0,30).map(publicProfileUser); const companies=(req.db.companies||[]).filter(c=>!q||`${c.name||''} ${c.slug||''} ${(c.markets||[]).join(' ')}`.toLowerCase().includes(q)).slice(0,20).map(publicCompany); const buyers=publicBuyerDemand(req.db,req.user.id).filter(x=>!q||`${x.user?.name||''} ${x.label||''} ${(x.cities||[]).join(' ')} ${x.strategy||''}`.toLowerCase().includes(q)).slice(0,20); const marketSet=new Set();for(const l of req.db.listings){const st=listingState(l);if(st)marketSet.add(st);}for(const u of req.db.users)for(const st of (u.investmentMarkets||[]))marketSet.add(st);const markets=[...marketSet].filter(x=>!q||x.toLowerCase().includes(q)).slice(0,20); res.json({listings,people,companies,buyers,markets}); });
+app.get('/api/search', requireAuth, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(),stateQ=String(req.query.state||'').trim().toUpperCase(),max=Number(req.query.maxPrice)||0,type=String(req.query.type||''); const listings=req.db.listings.filter(l=>listingFreshness(l).availabilityStatus!=='archived').filter(l=>(!q||`${l.address||''} ${l.city||''} ${l.propertyType||''}`.toLowerCase().includes(q))&&(!stateQ||String(l.city||'').toUpperCase().includes(stateQ))&&(!max||Number(l.asking)<=max)&&(!type||l.propertyType===type)).slice(0,60).map(l=>gateListing(l,req.user,req.db)); const people=req.db.users.filter(u=>!isAffiliateOnlyUser(u)&&u.id!==req.user.id&&(!q||`${u.name||''} ${u.username||''} ${(u.investmentMarkets||[]).join(' ')}`.toLowerCase().includes(q))).slice(0,30).map(publicProfileUser); const companies=(req.db.companies||[]).filter(c=>!q||`${c.name||''} ${c.slug||''} ${(c.markets||[]).join(' ')}`.toLowerCase().includes(q)).slice(0,20).map(publicCompany); const buyers=publicBuyerDemand(req.db,req.user.id).filter(x=>!q||`${x.user?.name||''} ${x.label||''} ${(x.cities||[]).join(' ')} ${x.strategy||''}`.toLowerCase().includes(q)).slice(0,20); const marketSet=new Set();for(const l of req.db.listings){const st=listingState(l);if(st)marketSet.add(st);}for(const u of req.db.users.filter(u=>!isAffiliateOnlyUser(u)))for(const st of (u.investmentMarkets||[]))marketSet.add(st);const markets=[...marketSet].filter(x=>!q||x.toLowerCase().includes(q)).slice(0,20); res.json({listings,people,companies,buyers,markets}); });
 app.get('/api/pipeline', requireAuth, async (req,res)=>{ const rows=(req.db.pipelineDeals||[]).filter(x=>x.userId===req.user.id|| (req.user.companyId&&x.companyId===req.user.companyId)); res.json({deals:rows}); });
 app.post('/api/pipeline', requireAuth, async (req,res)=>{ req.db.pipelineDeals=req.db.pipelineDeals||[]; const b=req.body||{},listing=b.listingId?req.db.listings.find(l=>l.id===b.listingId):null; let row=b.id&&req.db.pipelineDeals.find(x=>x.id===b.id&&(x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId))); if(!row){row={id:crypto.randomUUID(),userId:req.user.id,companyId:req.user.companyId||null,createdAt:new Date().toISOString()};req.db.pipelineDeals.push(row);} row.listingId=String(b.listingId||row.listingId||'');row.title=String(b.title||row.title||listing?.address||'Untitled deal').slice(0,120);row.stage=['lead','analyzing','contacted','contract','dispo','closing','closed','dead'].includes(b.stage)?b.stage:(row.stage||'lead');row.nextAction=String(b.nextAction||row.nextAction||'').slice(0,180);if(b.notes!==undefined)row.notes=String(b.notes||'').slice(0,2000);if(b.assignedTo!==undefined){const member=req.db.users.find(u=>u.id===b.assignedTo&&u.companyId===req.user.companyId);row.assignedTo=member?member.id:null;}row.updatedAt=new Date().toISOString();await saveDB(req.db);res.json({deal:row}); });
 app.delete('/api/pipeline/:id', requireAuth, async (req,res)=>{ req.db.pipelineDeals=(req.db.pipelineDeals||[]).filter(x=>!(x.id===req.params.id&&(x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId))));await saveDB(req.db);res.json({ok:true}); });
 app.get('/api/deal-calendar', requireAuth, async (req,res)=>{ let events=(req.db.dealCalendarEvents||[]).filter(x=>x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId)); const owned=new Set(req.db.listings.filter(l=>l.ownerId===req.user.id||(req.user.companyId&&l.companyId===req.user.companyId)).map(l=>l.id)); for(const l of req.db.listings.filter(l=>owned.has(l.id)&&l.contractDeadline)){const at=new Date(l.contractDeadline+'T17:00:00');if(Number.isFinite(at.getTime()))events.push({id:'contract-'+l.id,listingId:l.id,title:`Contract deadline · ${l.address}`,at:at.toISOString(),kind:'contract deadline',system:true});} for(const o of req.db.offers.filter(o=>(o.buyerId===req.user.id||o.sellerId===req.user.id)&&o.expiresAt)){events.push({id:'offer-'+o.id,listingId:o.listingId,title:`Offer expires · ${o.listingAddress}`,at:o.expiresAt,kind:'offer expiration',system:true});} events=events.sort((a,b)=>String(a.at).localeCompare(String(b.at))); res.json({events}); });
 app.post('/api/deal-calendar', requireAuth, async (req,res)=>{ req.db.dealCalendarEvents=req.db.dealCalendarEvents||[]; const b=req.body||{},d=new Date(b.at); if(!Number.isFinite(d.getTime()))return res.status(400).json({error:'Choose a valid date.'}); const row={id:crypto.randomUUID(),userId:req.user.id,companyId:req.user.companyId||null,listingId:String(b.listingId||''),title:String(b.title||'Deal deadline').slice(0,120),at:d.toISOString(),kind:String(b.kind||'follow-up').slice(0,40),createdAt:new Date().toISOString()};req.db.dealCalendarEvents.push(row);await saveDB(req.db);res.json({event:row}); });
 app.delete('/api/deal-calendar/:id', requireAuth, async (req,res)=>{req.db.dealCalendarEvents=(req.db.dealCalendarEvents||[]).filter(x=>!(x.id===req.params.id&&(x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId))));await saveDB(req.db);res.json({ok:true});});
-app.get('/api/market-hubs', requireAuth, async (req,res)=>{ const states={}; for(const l of req.db.listings.filter(x=>listingFreshness(x).availabilityStatus!=='archived')){const m=String(l.city||'').match(/,\s*([A-Z]{2})(?:\s|$)/);if(!m)continue;states[m[1]]=states[m[1]]||{state:m[1],listings:0,buyers:0,investors:0};states[m[1]].listings++;} for(const u of req.db.users)for(const st of (u.investmentMarkets||[])){states[st]=states[st]||{state:st,listings:0,buyers:0,investors:0};states[st].investors++;} for(const u of req.db.users)for(const bb of getBuyBoxes(u))for(const c of (bb.cities||[])){const m=String(c).match(/\b([A-Z]{2})\b/);if(m){states[m[1]]=states[m[1]]||{state:m[1],listings:0,buyers:0,investors:0};states[m[1]].buyers++;}} res.json({markets:Object.values(states).sort((a,b)=>(b.listings+b.buyers+b.investors)-(a.listings+a.buyers+a.investors))}); });
+app.get('/api/market-hubs', requireAuth, async (req,res)=>{ const states={}; for(const l of req.db.listings.filter(x=>listingFreshness(x).availabilityStatus!=='archived')){const m=String(l.city||'').match(/,\s*([A-Z]{2})(?:\s|$)/);if(!m)continue;states[m[1]]=states[m[1]]||{state:m[1],listings:0,buyers:0,investors:0};states[m[1]].listings++;} for(const u of req.db.users.filter(u=>!isAffiliateOnlyUser(u)))for(const st of (u.investmentMarkets||[])){states[st]=states[st]||{state:st,listings:0,buyers:0,investors:0};states[st].investors++;} for(const u of req.db.users.filter(u=>!isAffiliateOnlyUser(u)))for(const bb of getBuyBoxes(u))for(const c of (bb.cities||[])){const m=String(c).match(/\b([A-Z]{2})\b/);if(m){states[m[1]]=states[m[1]]||{state:m[1],listings:0,buyers:0,investors:0};states[m[1]].buyers++;}} res.json({markets:Object.values(states).sort((a,b)=>(b.listings+b.buyers+b.investors)-(a.listings+a.buyers+a.investors))}); });
 function dashboardSummary(db,user){
   const markets=user.investmentMarkets||[];
   const matched=db.listings.filter(l=>listingFreshness(l).availabilityStatus!=='archived'&&markets.some(m=>String(l.city||'').includes(m))).length;
@@ -2517,7 +2520,7 @@ app.post('/api/deals/:listingId/outcome', requireAuth, async(req,res)=>{if(!canA
 
 app.get('/api/deals/:listingId/comp-board', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});const board=(req.db.compBoards||[]).find(x=>x.listingId===req.params.listingId)||{listingId:req.params.listingId,comps:[],notes:''};res.json({board});});
 app.post('/api/deals/:listingId/comp-board', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});req.db.compBoards=req.db.compBoards||[];let board=req.db.compBoards.find(x=>x.listingId===req.params.listingId);if(!board){board={id:crypto.randomUUID(),listingId:req.params.listingId,comps:[],notes:'',createdAt:new Date().toISOString()};req.db.compBoards.push(board);}if(Array.isArray(req.body?.comps))board.comps=req.body.comps.slice(0,30).map(c=>({address:safeText(c.address,180),salePrice:Number(c.salePrice)||0,distance:safeText(c.distance,40),notes:safeText(c.notes,300),included:c.included!==false}));if('notes'in(req.body||{}))board.notes=safeText(req.body.notes,2000);board.updatedAt=new Date().toISOString();logDealActivity(req.db,req.params.listingId,req.user,'comps','Collaborative comp board updated');await saveDB(req.db);res.json({board});});
-app.get('/api/service-providers', requireAuth, async(req,res)=>{const q=safeText(req.query.q,80).toLowerCase(),market=safeText(req.query.market,40).toUpperCase();const rows=req.db.users.filter(u=>u.id!==req.user.id&&u.settings?.serviceProvider===true).filter(u=>!q||[u.name,u.bio,...(u.settings?.serviceTypes||[])].join(' ').toLowerCase().includes(q)).filter(u=>!market||(u.investmentMarkets||[]).includes(market)).slice(0,100).map(publicUser);res.json({providers:rows});});
+app.get('/api/service-providers', requireAuth, async(req,res)=>{const q=safeText(req.query.q,80).toLowerCase(),market=safeText(req.query.market,40).toUpperCase();const rows=req.db.users.filter(u=>!isAffiliateOnlyUser(u)&&u.id!==req.user.id&&u.settings?.serviceProvider===true).filter(u=>!q||[u.name,u.bio,...(u.settings?.serviceTypes||[])].join(' ').toLowerCase().includes(q)).filter(u=>!market||(u.investmentMarkets||[]).includes(market)).slice(0,100).map(publicUser);res.json({providers:rows});});
 
 app.get('/api/offers/compare/:listingId', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the seller/team can compare offers.'});res.json({listing:{id:l.id,address:l.address},offers:req.db.offers.filter(o=>o.listingId===l.id).sort((a,b)=>Number(b.amount)-Number(a.amount))});});
 app.get('/api/buyer-matches/:listingId', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the listing owner/team can view buyer matches.'});const rows=buyerMatchesForListing(req.db,l).map(x=>{const u=req.db.users.find(u=>u.id===(x.userId||x.id));const reasons=[];if(u?.investmentMarkets?.some(m=>String(l.city||'').includes(m)))reasons.push('Works in this market');if(getBuyBoxes(u||{}).some(bb=>(bb.cities||[]).some(c=>String(l.city||'').toLowerCase().includes(String(c).toLowerCase()))))reasons.push('Buy box location match');if((req.db.saves||[]).some(s=>s.userId===u?.id))reasons.push('Active property saver');return {...x,reasons:reasons.length?reasons:['Matches stated buying criteria']};});res.json({matches:rows});});
@@ -2551,7 +2554,7 @@ app.get('/api/listings/:id/network-intelligence', requireAuth, async(req,res)=>{
 });
 app.get('/api/onboarding/first-look', requireAuth, async(req,res)=>{
   const markets=req.user.investmentMarkets||[]; const deals=req.db.listings.filter(l=>l.ownerId!==req.user.id&&listingFreshness(l).availabilityStatus!=='archived'&&(!markets.length||markets.some(m=>String(l.city||'').includes(m)))).length;
-  const people=req.db.users.filter(u=>u.id!==req.user.id&&(!markets.length||(u.investmentMarkets||[]).some(m=>markets.includes(m)))).length;
+  const people=req.db.users.filter(u=>!isAffiliateOnlyUser(u)&&u.id!==req.user.id&&(!markets.length||(u.investmentMarkets||[]).some(m=>markets.includes(m)))).length;
   const mine=req.db.listings.filter(l=>l.ownerId===req.user.id); const matches=mine.reduce((n,l)=>n+buyerMatchesForListing(req.db,l).length,0);
   res.json({complete:!!req.user.settings?.firstLookCompleted,markets,deals,people,matches});
 });
@@ -3312,15 +3315,15 @@ app.get('/api/friends', requireAuth, async (req, res) => {
     if (f.userAId === req.user.id) ids.add(f.userBId);
     if (f.userBId === req.user.id) ids.add(f.userAId);
   });
-  const friends = [...ids].map(id => req.db.users.find(u => u.id === id)).filter(Boolean).map(u => socialUserCard(req.db, req.user.id, u));
+  const friends = [...ids].map(id => req.db.users.find(u => u.id === id)).filter(u => u && !isAffiliateOnlyUser(u)).map(u => socialUserCard(req.db, req.user.id, u));
   friends.sort((a, b) => a.name.localeCompare(b.name));
   res.json({ friends });
 });
 
 app.get('/api/friends/requests', requireAuth, async (req, res) => {
   const pending = req.db.friendRequests.filter(r => r.status === 'pending' && (r.fromUserId === req.user.id || r.toUserId === req.user.id));
-  const incoming = pending.filter(r => r.toUserId === req.user.id).map(r => ({ ...r, user: socialUserCard(req.db, req.user.id, req.db.users.find(u => u.id === r.fromUserId)) })).filter(r => r.user);
-  const outgoing = pending.filter(r => r.fromUserId === req.user.id).map(r => ({ ...r, user: socialUserCard(req.db, req.user.id, req.db.users.find(u => u.id === r.toUserId)) })).filter(r => r.user);
+  const incoming = pending.filter(r => r.toUserId === req.user.id).map(r => ({ ...r, user: socialUserCard(req.db, req.user.id, req.db.users.find(u => u.id === r.fromUserId)) })).filter(r => r.user && !isAffiliateOnlyUser(r.user));
+  const outgoing = pending.filter(r => r.fromUserId === req.user.id).map(r => ({ ...r, user: socialUserCard(req.db, req.user.id, req.db.users.find(u => u.id === r.toUserId)) })).filter(r => r.user && !isAffiliateOnlyUser(r.user));
   res.json({ incoming, outgoing });
 });
 
@@ -3333,6 +3336,7 @@ app.post('/api/friends/request', requireAuth, async (req, res) => {
   if (!userId || userId === req.user.id) return res.status(400).json({ error: "You can't friend yourself." });
   const other = req.db.users.find(u => u.id === userId);
   if (!other) return res.status(404).json({ error: 'User not found.' });
+  if (isAffiliateOnlyUser(other) || isAffiliateOnlyUser(req.user)) return res.status(403).json({error:'Affiliate-only accounts are separate from the real estate Network.'});
   const rel = friendRelationship(req.db, req.user.id, userId);
   if (rel.status === 'friends') return res.json({ status: 'friends' });
   const pendingOut = req.db.friendRequests.filter(r => r.fromUserId === req.user.id && r.status === 'pending').length;
@@ -3386,6 +3390,8 @@ app.delete('/api/friends/:userId', requireAuth, async (req, res) => {
 app.post('/api/follow', requireAuth, async (req, res) => {
   const { userId } = req.body || {};
   if (userId === req.user.id) return res.status(400).json({ error: "You can't follow yourself." });
+  const target = req.db.users.find(u => u.id === userId);
+  if (!target || isAffiliateOnlyUser(target) || isAffiliateOnlyUser(req.user)) return res.status(404).json({error:'Network user not found.'});
   const i = req.db.follows.findIndex(f => f.followerId === req.user.id && f.followingId === userId);
   if (i >= 0) { req.db.follows.splice(i, 1); await saveDB(req.db); return res.json({ following: false }); }
   req.db.follows.push({ followerId: req.user.id, followingId: userId, at: new Date().toISOString() });

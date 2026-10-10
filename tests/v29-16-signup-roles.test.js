@@ -3,7 +3,7 @@ const fs=require('fs');
 const policy=require('../policy');
 const social=require('../social');
 
-assert.deepEqual(policy.SIGNUP_ROLES,['buyer','seller','lender']);
+assert.deepEqual(policy.SIGNUP_ROLES,['buyer','seller','lender','affiliate']);
 assert.deepEqual(policy.normalizeSignupRoles(['buyer','lender','buyer','admin']),['buyer','lender']);
 assert.equal(policy.resolveRole('ordinary@example.test','lender'),'lender');
 
@@ -28,5 +28,5 @@ assert(app.includes("if (hasRole(owner, 'seller'))"),'multi-role seller behavior
 assert(server.includes('roles: selectedRoles'),'signup must persist roles');
 assert(server.includes("error: 'Choose at least one role.'"),'server role validation missing');
 assert(css.includes('.rolemultiselect'),'multi-role responsive styling missing');
-assert(app.includes('const TUTORIAL_VERSION = 63'),'tutorial version not advanced');
+assert(app.includes('const TUTORIAL_VERSION = 65'),'tutorial version not advanced');
 console.log('✓ v29.16 multi-role signup, discovery and profile regression passed');
