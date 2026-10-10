@@ -1,3 +1,4 @@
+const {isAffiliateOnlyUser}=require('../affiliateAccounts');
 const fs=require('fs'),assert=require('assert'),crypto=require('crypto');
 const src=fs.readFileSync('server.js','utf8');
 function fn(name){const re=new RegExp(`function ${name}\\([^]*?\\n\\}`);const m=src.match(re);if(!m)throw new Error('missing '+name);return m[0];}

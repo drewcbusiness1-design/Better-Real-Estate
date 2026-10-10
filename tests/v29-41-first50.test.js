@@ -1,3 +1,4 @@
+const {isAffiliateOnlyUser}=require('../affiliateAccounts');
 const assert=require('assert'),fs=require('fs'),crypto=require('crypto'),src=fs.readFileSync('server.js','utf8');
 const FOUNDER_PROGRAM_LIMIT=50,FOUNDER_PLATINUM_DAYS=14,isAdminUser=u=>u?.role==='admin';
 for(const name of ['founderProgramEligible','ensureFirst100FounderProgram'])eval(src.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0]);

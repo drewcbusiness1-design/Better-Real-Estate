@@ -112,7 +112,7 @@ assert.ok(client.includes('✨ Write listing with AI'), 'Platinum shop sellers n
 assert.ok(client.includes('✨ Draft property notes with AI'), 'Platinum property posts need AI drafting');
 assert.ok(client.includes('AI listing cleanup'), 'CJ review must expose the AI cleanup state');
 assert.ok(client.includes('setTimeout(() => runAi(true), 0)'), 'CJ review should automatically polish supplier copy when AI is configured');
-assert.ok(client.includes('marketingOptIn: marketingOpt.checked'), 'Signup must send explicit marketing consent');
+assert.ok(client.includes('marketingOptIn: true') && !client.includes('const marketingOpt ='), 'Signup uses terms enrollment without a checkbox');
 assert.ok(client.includes('Product & activity emails'), 'Settings must expose marketing preferences');
 assert.ok(client.includes('AI-assisted listing tools'), 'Privacy/terms must disclose AI processing');
 assert.ok(client.includes('Marketing email'), 'Privacy policy must disclose optional marketing email');

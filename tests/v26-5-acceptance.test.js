@@ -1,6 +1,6 @@
 const fs=require('fs'),assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8');
-assert(app.includes('const TUTORIAL_VERSION = 65;')||app.includes('const TUTORIAL_VERSION = 65;'),'tutorial version bumped');
+assert(app.includes('const TUTORIAL_VERSION = 66;')||app.includes('const TUTORIAL_VERSION = 66;'),'tutorial version bumped');
 assert(app.includes("type:'button',class:'btn-primary',onclick:()=>i===steps.length-1?finish():move(1)"),'Next has explicit working button handler');
 assert(app.includes('const waitForTarget=async selector=>'),'tour waits for rendered route target');
 assert(app.includes("selector:'.composepage .dealbuilderentry'"),'compose tutorial targets the actual address entry');

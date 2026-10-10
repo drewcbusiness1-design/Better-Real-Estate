@@ -1405,3 +1405,16 @@ html.better-guide-open,body.better-guide-open{overflow:hidden}
 /* Affiliate-only account context; membership and program approval stay separate. */
 .affiliate-account-note{padding:16px;margin-bottom:20px;border-radius:14px;line-height:1.5;overflow-wrap:anywhere}
 .affiliate-account-note p{margin:8px 0 0;color:var(--ink-soft)}
+
+/* Affiliate workbench shares the existing hub surfaces, typography and states. */
+.affiliate-tools{margin:20px 0;padding:18px;min-width:0}
+.affiliate-tool-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.affiliate-tool-card{padding:16px;margin:12px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface);min-width:0;overflow-wrap:anywhere}
+.affiliate-tool-card h4{margin:0 0 10px;font-size:16px}.affiliate-tool-card p{line-height:1.6;color:var(--ink-soft);white-space:pre-wrap}
+.affiliate-calculator{max-width:520px}.affiliate-calculator label{display:block;margin:10px 0 6px}.affiliate-calculator input{width:100%}.affiliate-calculator strong{display:block;margin-top:12px;color:var(--accent-text)}
+.affiliate-qr{display:block;width:180px;max-width:100%;height:auto;background:white;border-radius:8px;margin:12px 0}
+.affiliate-share-kit .btn-ghost{display:inline-flex;margin:4px 8px 4px 0;align-items:center;text-decoration:none}.affiliate-tracked-link{overflow-wrap:anywhere}
+.affiliate-prospect-row{padding:16px 0;border-top:1px solid var(--line);display:flex;gap:14px;margin-top:16px;align-items:flex-start;min-width:0}
+.affiliate-prospect-copy{flex:1;min-width:0;overflow-wrap:anywhere}.affiliate-prospect-copy small{display:block;color:var(--ink-soft);margin-top:6px}.affiliate-prospect-copy p{margin:8px 0}
+.affiliate-prospect-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.affiliate-prospect-actions select{max-width:220px;width:100%;margin:0}.affiliate-followup-due{color:var(--accent-text)!important}
+@media(max-width:640px){.affiliate-tool-grid{grid-template-columns:1fr}.affiliate-tools{padding:14px}.affiliate-prospect-row{flex-direction:column}.affiliate-prospect-actions{width:100%}.affiliate-prospect-actions select{max-width:none}.affiliate-prospect-actions button{flex:1;min-height:42px}}

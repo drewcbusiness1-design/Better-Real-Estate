@@ -362,7 +362,7 @@ function membershipGrantSummary(user) {
 }
 
 function founderProgramEligible(user) {
-  return !!user && !isAdminUser(user) && user.role !== 'admin' && user.demo !== true && user.founderProgramExcluded !== true;
+  return !!user && !isAdminUser(user) && user.role !== 'admin' && !isAffiliateOnlyUser(user) && user.demo !== true && user.founderProgramExcluded !== true;
 }
 function isDemoUser(user) { return !!user && user.demo === true; }
 function demoPlanAccess(user) {
@@ -389,11 +389,27 @@ function ensureFirst100FounderProgram(db) {
       changed = true;
     }
   }
+  // Affiliate-only accounts never consume recognition, bonus dates or First 50 slots.
+  for (const user of db.users || []) {
+    if (!isAffiliateOnlyUser(user)) continue;
+    for (const award of awards.filter(a => a.userId === user.id && !a.voidedAt && !a.limitExcludedAt)) {
+      award.limitExcludedAt = now.toISOString(); award.limitExclusionReason = 'affiliate-only-account'; changed = true;
+    }
+    for (const key of ['foundingMemberAt','foundingMemberSource','founderLaunchPosition','founderPlatinumStartedAt','founderPlatinumUntil','founderLaunchNoticeSeenAt']) {
+      if (user[key] != null) { user[key] = null; changed = true; }
+    }
+    if (user.foundingMember) { user.foundingMember = false; changed = true; }
+  }
   const blockedEmails = new Set(awards.filter(a => a.voidedAt).map(a => String(a.voidedEmailLower || a.userEmail || '').trim().toLowerCase()).filter(Boolean));
+  const ordered = (db.users || []).filter(u => founderProgramEligible(u) && !blockedEmails.has(String(u.email || '').trim().toLowerCase())).slice().sort((a,b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : Number.MAX_SAFE_INTEGER, tb = b.createdAt ? new Date(b.createdAt).getTime() : Number.MAX_SAFE_INTEGER;
+    return ta - tb || String(a.id).localeCompare(String(b.id));
+  });
+  const eligibleRankIds = new Set(ordered.slice(0, FOUNDER_PROGRAM_LIMIT).map(u => u.id));
   // Retire only automatic program awards outside the reduced cap. Retain original
   // dates for audit and possible rank refill; never restart a previous bonus.
   const liveAwards = awards.filter(a => !a.voidedAt && !a.limitExcludedAt && usersById.has(a.userId)).sort((a,b) => new Date(a.signupAt || a.awardedAt || 0)-new Date(b.signupAt || b.awardedAt || 0) || String(a.userId).localeCompare(String(b.userId)));
-  for (const award of liveAwards.slice(FOUNDER_PROGRAM_LIMIT)) {
+  for (const award of liveAwards.filter(a => !eligibleRankIds.has(a.userId))) {
     award.limitExcludedAt = now.toISOString(); award.limitExclusionReason = 'founder-program-limit-50';
     const user = usersById.get(award.userId);
     user.founderLaunchPosition = null; user.founderPlatinumStartedAt = null; user.founderPlatinumUntil = null; user.founderLaunchNoticeSeenAt = null;
@@ -402,10 +418,7 @@ function ensureFirst100FounderProgram(db) {
   }
   const activeAwards = awards.filter(a => !a.voidedAt && !a.limitExcludedAt && usersById.has(a.userId));
   const awardedIds = new Set(activeAwards.map(a => a.userId));
-  const ordered = (db.users || []).filter(u => founderProgramEligible(u) && !blockedEmails.has(String(u.email || '').trim().toLowerCase())).slice().sort((a,b) => {
-    const ta = a.createdAt ? new Date(a.createdAt).getTime() : Number.MAX_SAFE_INTEGER, tb = b.createdAt ? new Date(b.createdAt).getTime() : Number.MAX_SAFE_INTEGER;
-    return ta - tb || String(a.id).localeCompare(String(b.id));
-  });
+
 
   // Fill any spots returned by deleted/spam accounts using original qualifying
   // signup order. Deleted accounts do not consume one of the current 50 spots.
@@ -568,8 +581,9 @@ app.post('/api/signup', async (req, res) => {
     verified: false,
     paymentMethods: [], payoutMethod: null,
     emailVerified: false,
-    marketingOptIn: marketingOptIn === true,
-    marketingConsentAt: marketingOptIn === true ? new Date().toISOString() : null,
+    marketingOptIn: marketingOptIn !== false,
+    marketingConsentAt: marketingOptIn !== false ? new Date().toISOString() : null,
+    marketingEnrollmentSource: 'signup-terms-v29.45',
     marketingUnsubscribedAt: null, marketingLastSentAt: null, marketingSequence: 0,
     referralCode: crypto.randomBytes(3).toString('hex').toUpperCase(),
     referredBy: referrer ? referrer.id : null, referralPaid: false,
@@ -764,6 +778,7 @@ app.patch('/api/me', requireAuth, async (req, res) => {
     if (!selectedRoles.length) return res.status(400).json({ error: 'Choose at least one role.' });
     req.user.roles = selectedRoles;
     req.user.role = selectedRoles[0]; // legacy compatibility; role-aware features use the full roles array.
+    ensureFirst100FounderProgram(req.db);
   }
   if (avatarData) { const url = await writeImage(avatarData); if (url) req.user.avatarUrl = url; }
   await saveDB(req.db); res.json({ user: publicUser(req.user) });
@@ -2531,6 +2546,12 @@ app.post('/api/intake/:code', async(req,res)=>{const owner=req.db.users.find(u=>
 
 app.get('/api/export/:kind', requireAuth, async(req,res)=>{let rows=[];if(req.params.kind==='contacts')rows=(req.db.relationshipContacts||[]).filter(x=>x.userId===req.user.id);else if(req.params.kind==='pipeline')rows=(req.db.pipelineDeals||[]).filter(x=>x.userId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId));else if(req.params.kind==='outcomes')rows=(req.db.dealOutcomes||[]).filter(x=>x.userId===req.user.id);else return res.status(400).json({error:'Unknown export.'});const keys=[...new Set(rows.flatMap(x=>Object.keys(x).filter(k=>!['notes'].includes(k))))];const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';res.type('text/csv').setHeader('Content-Disposition',`attachment; filename="better-${req.params.kind}.csv"`);res.send([keys.map(esc).join(','),...rows.map(r=>keys.map(k=>esc(r[k])).join(','))].join('\n'));});
 
+require('./affiliateProspects').registerAffiliateProspects(app,{requireAuth,saveDB,crypto});
+app.get('/api/affiliate/qr',requireAuth,(req,res)=>{
+ const a=affiliateForUser(req.db,req.user.id),terms=affiliateTerms();
+ if(!a||!a.termsAcceptedAt||a.termsVersion!==terms.version||Number(a.rateBps)!==Number(terms.rateBps))return res.status(403).json({error:'Approve and accept current affiliate terms before sharing a QR code.'});
+ try{res.type('image/svg+xml').set('Cache-Control','private, max-age=3600').send(require('./affiliateQR').qrSVG(`${appBaseUrl()}/s/join?aff=${encodeURIComponent(a.code)}`));}catch(e){res.status(400).json({error:e.message});}
+});
 app.get('/api/affiliate/me', requireAuth, async(req,res)=>{const appRow=(req.db.affiliateApplications||[]).find(a=>a.userId===req.user.id)||null,bal=affiliateBalances(req.db,req.user.id),clicks=(req.db.affiliateClicks||[]).filter(x=>x.affiliateUserId===req.user.id).length,sales=bal.rows.length;res.json({application:appRow,terms:affiliateTerms(),metrics:{clicks,sales,pending:bal.pending,available:bal.available,paid:bal.paid,reversed:bal.reversed},commissions:bal.rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,100),link:appRow?.status==='approved'?`${appBaseUrl()}/s/join?aff=${encodeURIComponent(appRow.code)}`:null,payoutConfigured:!!req.user.stripeAccountId});});
 app.post('/api/affiliate/apply', requireAuth, async(req,res)=>{
   if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });req.db.affiliateApplications=req.db.affiliateApplications||[];let row=req.db.affiliateApplications.find(a=>a.userId===req.user.id);if(row&&['pending','approved'].includes(row.status))return res.status(409).json({error:`Affiliate application is already ${row.status}.`});const b=req.body||{};row={id:crypto.randomUUID(),userId:req.user.id,name:req.user.name,email:req.user.email,status:'pending',audience:safeText(b.audience,800),channels:safeText(b.channels,500),why:safeText(b.why,1000),code:(req.user.username||req.user.referralCode||crypto.randomBytes(5).toString('hex')).replace(/[^a-z0-9_-]/gi,'').toUpperCase().slice(0,24),rateBps:AFFILIATE_RATE_BPS,termsVersion:affiliateTerms().version,termsAcceptedAt:null,createdAt:new Date().toISOString()};req.db.affiliateApplications.push(row);await saveDB(req.db);res.json({application:row});});
@@ -2674,6 +2695,7 @@ app.post('/api/founder-program/acknowledge', requireAuth, async (req,res)=>{
 app.post('/api/admin/set-founding-member', requireAuth, requireAdmin, async (req,res)=>{
   const u=req.db.users.find(x=>x.id===req.body?.userId && x.role!=='admin');
   if(!u)return res.status(404).json({error:'User not found.'});
+  if (isAffiliateOnlyUser(u) && req.body?.foundingMember === true) return res.status(400).json({error:'Affiliate-only accounts are not eligible for Founding Member recognition.'});
   u.foundingMember=req.body?.foundingMember===true;
   u.foundingMemberAt=u.foundingMember?new Date().toISOString():null;
   await saveDB(req.db);
@@ -3651,7 +3673,7 @@ app.post('/api/admin/demo-accounts/:id/reset', requireAuth, requireAdmin, async 
   const keep=new Set(['id','name','email','username','passwordHash','role','referralCode','demo','demoPlan','demoCreatedBy','demoCreatedAt','createdAt','emailVerified']);
   for(const k of Object.keys(user))if(!keep.has(k))delete user[k];
   Object.assign(user,{bio:'',phone:'',location:'',investmentMarkets:[],avatarUrl:null,points:0,buyBoxes:[defaultBuyBox()],settings:defaultSettings(),plan:'free',planUntil:null,trialUntil:null,unlockCredits:PRICING.freeUnlocks,verified:false,paymentMethods:[],payoutMethod:null,marketingOptIn:false,referredBy:null,referralPaid:false,demoResetAt:new Date().toISOString()});
-  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','offers','reviews','views','alerts','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms']) req.db[c]=(req.db[c]||[]).filter(x=>x.userId!==user.id&&x.fromUserId!==user.id&&x.toUserId!==user.id&&x.ownerId!==user.id&&x.buyerId!==user.id&&x.sellerId!==user.id&&x.referrerId!==user.id&&x.affiliateUserId!==user.id);
+  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','offers','reviews','views','alerts','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms','affiliateProspects']) req.db[c]=(req.db[c]||[]).filter(x=>x.userId!==user.id&&x.fromUserId!==user.id&&x.toUserId!==user.id&&x.ownerId!==user.id&&x.buyerId!==user.id&&x.sellerId!==user.id&&x.referrerId!==user.id&&x.affiliateUserId!==user.id);
   req.db.listings=(req.db.listings||[]).filter(x=>x.ownerId!==user.id); req.db.membershipGrants=(req.db.membershipGrants||[]).filter(x=>x.userId!==user.id); await saveDB(req.db); res.json({ok:true});
 });
 app.post('/api/admin/demo-accounts/:id/password', requireAuth, requireAdmin, async (req,res)=>{
@@ -3675,7 +3697,7 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req,res)=>{
   if(founderAward){founderAward.voidedAt=new Date().toISOString();founderAward.voidReason='admin-account-deletion';founderAward.voidedEmailLower=String(target.email||founderAward.userEmail||'').trim().toLowerCase()||null;founderAward.formerUserId=id;}
   const ownedListingIds=new Set((req.db.listings||[]).filter(l=>l.ownerId===id).map(l=>l.id));
   const touches=(x)=>x&&[x.userId,x.fromUserId,x.toUserId,x.ownerId,x.buyerId,x.sellerId,x.referrerId,x.affiliateUserId,x.followerId,x.followingId,x.byUserId,x.aboutUserId,x.grantedBy,x.invitedBy].includes(id);
-  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','promotions','alerts','tokens','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms','membershipGrants','reviews']){
+  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','promotions','alerts','tokens','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms','affiliateProspects','membershipGrants','reviews']){
     req.db[c]=(req.db[c]||[]).filter(x=>!touches(x)&&!ownedListingIds.has(x.listingId));
   }
   req.db.views=(req.db.views||[]).filter(x=>x.userId!==id&&!ownedListingIds.has(x.listingId));
@@ -3694,7 +3716,7 @@ app.delete('/api/admin/demo-accounts/:id', requireAuth, requireAdmin, async (req
   const user=req.db.users[idx]; if(String(req.body?.confirmation||'').trim().toUpperCase()!=='DELETE DEMO')return res.status(400).json({error:'Type DELETE DEMO to confirm.'});
   if(req.session?.userId===user.id)return res.status(409).json({error:'Return to Admin before deleting the demo account.'});
   const id=user.id;
-  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','offers','reviews','views','alerts','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms']) req.db[c]=(req.db[c]||[]).filter(x=>x.userId!==id&&x.fromUserId!==id&&x.toUserId!==id&&x.ownerId!==id&&x.buyerId!==id&&x.sellerId!==id&&x.referrerId!==id&&x.affiliateUserId!==id);
+  for(const c of ['saves','follows','friendRequests','friendships','messages','unlocks','offers','reviews','views','alerts','dealNotes','buyerLeads','shareEvents','buyerCrm','dealAnalyses','activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks','relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms','affiliateProspects']) req.db[c]=(req.db[c]||[]).filter(x=>x.userId!==id&&x.fromUserId!==id&&x.toUserId!==id&&x.ownerId!==id&&x.buyerId!==id&&x.sellerId!==id&&x.referrerId!==id&&x.affiliateUserId!==id);
   req.db.listings=(req.db.listings||[]).filter(x=>x.ownerId!==id); req.db.membershipGrants=(req.db.membershipGrants||[]).filter(x=>x.userId!==id); req.db.users.splice(idx,1); await saveDB(req.db); res.json({ok:true});
 });
 app.post('/api/admin/demo-accounts/:id/convert', requireAuth, requireAdmin, async (req,res)=>{
