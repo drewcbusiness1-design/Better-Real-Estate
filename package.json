@@ -1,6 +1,6 @@
 {
   "name": "better-real-estate",
-  "version": "2.9.45",
+  "version": "2.9.46",
   "private": true,
   "description": "Better Real Estate \u2014 social marketplace and operating network for real estate investors, wholesalers, buyers, sellers, lenders, funders and teams.",
   "main": "server.js",

@@ -2764,7 +2764,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 66;
+const TUTORIAL_VERSION = 67;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2774,6 +2774,8 @@ const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:1,admin:4};
 function tutorialStepsFor(tier=tutorialTier()){
  const rank=TUTORIAL_RANK[tier]??0;
  return [
+ {view:hasRole(state.user,'affiliate')?'affiliate':'feed',selector:null,min:0,release:67,title:'A tour that stays out of your way',copy:'The guide sits at the side on larger screens. Use Move left or Move right to switch sides; on phones it stays in a compact bottom panel. Scroll the guide to reach all controls, or skip anytime.'},
+ {view:'affiliate',selector:'.affiliate-product-guide',min:0,release:67,title:'Explain Better’s business value',copy:'Learn who Better helps, which tools solve their workflow problems, and how to guide someone from a free account to a useful first action. Review current plans before discussing paid access; free signups do not earn a paid-membership commission.'},
  {view:'feed',selector:null,min:0,title:'Welcome to Better Real Estate',copy:'We’ll walk through the workspace one feature at a time. The tour only includes tools available with your current membership.'},
  {view:'feed',selector:'.feedmode',min:0,release:29,title:'For You & Following',copy:'For You ranks deals using your markets, buy boxes and activity. Following keeps a predictable feed from people you chose to follow.'},
  {view:'commandcenter',selector:'.commandcenter',min:0,release:29,title:'Command center',copy:'See market matches, buyer matches, pending offers, property updates and your next deadline without hunting through the site.'},
@@ -2837,9 +2839,6 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:56,title:'More expression, more context',copy:'Better Guide now changes facial expression and body response for meaningful moments such as guidance, success, errors and new attention — while staying grounded in the header.'},
  {view:'detail',selector:'.owner-ops',min:0,release:56,title:'Edit your property posts',copy:'On a property you own, use Edit property to update pricing, facts, notes, photos, video, deadline and JV availability without recreating the post.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
- {view:'affiliate',selector:'.affiliate-tools',min:0,release:66,title:'Your affiliate workbench',copy:'Use call scripts and copyable messages, share your approved tracked link or QR code, and keep a private prospect list with stages and follow-up dates. Prospect stages are self-reported; commissions come only from actual eligible paid memberships. Affiliate-only accounts do not use a First 50 Founder slot.'},
- {view:'settings',selector:'#app .page',min:0,release:66,title:'Your account emails',copy:'New signups have product emails enabled under Terms. Turn them off in Settings or unsubscribe from a marketing email. Email-confirmation reminders stop when you verify.'},
- {view:'affiliate',selector:'.affiliate-center',min:0,release:65,title:'Marketing and affiliate accounts',copy:'Choose Marketing / Affiliate only at signup to keep your account separate from the real estate Network. Affiliate access still requires approval. Open Affiliate in the footer beside FAQ and Contact.'},
  {view:'admin',selector:'.admin-activity',min:4,release:65,title:'All-time user activity',copy:'Choose All time to view all available recorded activity. Demo accounts are excluded. Older event detail may have been pruned.'},
  {view:'me',selector:'.founder-program-card',min:0,release:63,when:()=>!!state.user?.founderLaunchPosition,title:'First 50 Founders',copy:'Founder recognition and two weeks of complimentary Platinum are limited to the first 50 qualifying accounts. Your signup rank and bonus dates appear here; paid memberships and separate admin grants remain independent.'},
  {view:'dealbuilder',selector:'.verified-comps-card',min:1,release:62,title:'Sold comps and working ARV',copy:'Review selected and excluded closed sales, adjusted prices and source links. A corroborated working range can support deal math when subject size and identity are established; missing distance or recorded subject details keep it separate from a precise ARV. Add or remove comps to update the calculator.'},
@@ -2855,6 +2854,16 @@ function tutorialStepsFor(tier=tutorialTier()){
  ].filter(x=>rank>=x.min&&(!x.when||x.when())&&(!hasRole(state.user,'affiliate')||['affiliate','settings','wallet'].includes(x.view)));
 }
 function tutorialKey(tier=tutorialTier()){return `v${TUTORIAL_VERSION}:${tier}`;}
+function tutorialDockLayout(vw,vh,height,box,preferredSide){
+ const mobile=vw<900,margin=mobile?12:16;
+ const width=mobile?vw-margin*2:Math.min(360,Math.floor(vw*.32));
+ const maxHeight=mobile?Math.max(100,Math.floor(vh*.44)):Math.max(100,vh-112);
+ let side=preferredSide||(box&&box.width<vw*.5&&box.left>vw*.5?'left':'right');
+ if(mobile)side='bottom';
+ const actualHeight=Math.min(height,maxHeight);
+ return {side,width,maxHeight,left:side==='left'?margin:vw-width-margin,
+  top:mobile?vh-actualHeight-margin:Math.min(96,Math.max(margin,vh-actualHeight-margin))};
+}
 async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
  if(!state.user)return;
  const tier=tutorialTier(),key=tutorialKey(tier);
@@ -2872,7 +2881,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
  const cleanup=()=>{closed=true;window.removeEventListener('resize',reposition);window.removeEventListener('scroll',reposition,true);root.remove();};
  const finish=async(d=false)=>{cleanup();await save(d);};
  const waitForTarget=async selector=>{if(!selector)return null;for(let n=0;n<40&&!closed;n++){const node=document.querySelector(selector);if(node&&node.getClientRects().length)return node;await new Promise(r=>setTimeout(r,50));}return null;};
- let currentTarget=null;
+ let currentTarget=null,preferredSide=null;
  const setBox=(node)=>{
    const vw=window.innerWidth,vh=window.innerHeight,pad=8;
    if(!node){ring.style.display='none';allDims.forEach(d=>{d.style.cssText='position:fixed;inset:0;display:block'});return null;}
@@ -2886,23 +2895,19 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
    return {left:l,top:t,right:r,bottom:b,width:w,height:h};
  };
  const placeCard=(box)=>{
-   const vw=window.innerWidth,vh=window.innerHeight,margin=16,gap=18,cw=Math.min(420,vw-margin*2),ch=Math.min(card.offsetHeight||300,vh-margin*2);
-   let left=Math.max(margin,(vw-cw)/2),top=Math.max(margin,(vh-ch)/2);
-   if(box){const spaces={right:vw-box.right,left:box.left,bottom:vh-box.bottom,top:box.top};const best=Object.entries(spaces).sort((a,b)=>b[1]-a[1])[0][0];
-     if(best==='right'&&spaces.right>=cw+gap){left=box.right+gap;top=Math.min(Math.max(margin,box.top),vh-ch-margin)}
-     else if(best==='left'&&spaces.left>=cw+gap){left=box.left-cw-gap;top=Math.min(Math.max(margin,box.top),vh-ch-margin)}
-     else if(best==='bottom'&&spaces.bottom>=ch+gap){top=box.bottom+gap;left=Math.min(Math.max(margin,box.left),vw-cw-margin)}
-     else if(spaces.top>=ch+gap){top=box.top-ch-gap;left=Math.min(Math.max(margin,box.left),vw-cw-margin)}
-   }
-   card.style.left=`${Math.round(left)}px`;card.style.top=`${Math.round(top)}px`;card.style.width=`${Math.round(cw)}px`;
+   let layout=tutorialDockLayout(window.innerWidth,window.innerHeight,0,box,preferredSide);
+   card.style.width=`${layout.width}px`;card.style.setProperty('max-height',`${layout.maxHeight}px`,'important');
+   layout=tutorialDockLayout(window.innerWidth,window.innerHeight,card.offsetHeight,box,preferredSide);
+   card.dataset.dock=layout.side;const toggle=card.querySelector('.tutorial-dock-toggle');if(toggle)toggle.textContent=layout.side==='left'?'Move right':'Move left';card.style.left=`${layout.left}px`;card.style.top=`${layout.top}px`;
  };
+
  function reposition(){if(closed)return;placeCard(setBox(currentTarget));}
  window.addEventListener('resize',reposition);window.addEventListener('scroll',reposition,true);
  const focus=async step=>{
    currentTarget=null;setBox(null);
    if(state.view!==step.view){go(step.view);await new Promise(r=>setTimeout(r,80));}
    const target=await waitForTarget(step.selector);
-   if(target){target.scrollIntoView({behavior:'auto',block:'center',inline:'nearest'});await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));currentTarget=target;}
+   if(target){target.scrollIntoView({behavior:'auto',block:window.innerWidth<900?'start':'center',inline:'nearest'});if(window.innerWidth<900)window.scrollBy(0,-88);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));currentTarget=target;}
    reposition();
  };
  const move=delta=>{const next=Math.max(0,Math.min(steps.length-1,i+delta));if(next===i&&delta>0)return finish();i=next;draw();};
@@ -2910,6 +2915,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
    if(closed)return; const step=steps[i]; card.innerHTML='';
    const tutorialMascot=createBetterMascotRig({variant:'tutorial',hidden:true});
    card.appendChild(el('div',{class:'guide-tutor-head'},[el('div',{class:'guide-mascot-stage is-tutorial','aria-hidden':'true'},tutorialMascot),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':'I’ll show you around')])]));
+   card.appendChild(el('button',{type:'button',class:'tutorial-dock-toggle',onclick:()=>{preferredSide=card.dataset.dock==='left'?'right':'left';reposition();card.querySelector('.tutorial-dock-toggle').textContent=preferredSide==='left'?'Move right':'Move left';}},preferredSide==='left'?'Move right':'Move left'));
    card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));
    card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
    if(i===0&&!onlyNew&&!releaseOnly)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{cleanup();state.guideCourseModule=state.user?.settings?.guideCourseLastModule||'foundations';go('learn');}},'I’m new to wholesaling — start the free course'));
@@ -4663,8 +4669,26 @@ async function renderAffiliateTools(d){
  const active=d.application?.status==='approved'&&d.application.termsAcceptedAt&&d.application.termsVersion===d.terms.version&&Number(d.application.rateBps)===Number(d.terms.rateBps);
  const link=active?d.link:null;
  const copyButton=(label,text)=>el('button',{class:'btn-ghost',onclick:async e=>{try{await withButtonBusy(e.currentTarget,()=>navigator.clipboard.writeText(text));toast('Copied','ok');}catch{prompt('Copy this text',text);}}},label);
- const script='Hi, this is [your name]. I’m reaching out about Better Real Estate, a free-to-join network for off-market properties. Are you currently buying, selling or wholesaling? If it fits what you do, I can send you a link to create an account and post your first property or connect with people in your market. I’m an affiliate and may earn a commission if you later purchase an eligible membership.';
- const message=`If you work off market, take a look at Better Real Estate. It’s free to join: post a property, connect with buyers and keep deal conversations together. ${link||'Ask me for my approved affiliate link.'} Disclosure: I’m an affiliate and may earn a commission on your first eligible paid membership.`;
+ const script='Hi, this is [your name], a Better Real Estate affiliate. Are you currently buying, selling or wholesaling off-market properties? What is harder right now: finding opportunities, connecting with buyers, or keeping deal follow-ups organized? Better is free to join and brings property posts, real estate connections and deal conversations into one workspace. If that fits your business, can I send you a link to try it?';
+ const message=`If you work off market, take a look at Better Real Estate. It’s free to join: post a property, connect with buyers and keep deal conversations together. ${link||'Ask me for my approved affiliate link.'}`;
+ const training=el('article',{class:'affiliate-tool-card affiliate-product-guide'},[
+  el('div',{class:'eyebrow'},'KNOW WHAT YOU ARE INTRODUCING'),el('h4',{},'Sell the value of a real estate workspace'),
+  el('p',{},'Better Real Estate is a free-to-join social marketplace for off-market real estate. Help a wholesaler, investor, buyer, seller or funder see how it fits their work before discussing a paid membership.'),
+  el('div',{class:'affiliate-value-grid'},[
+   el('div',{},[el('b',{},'Wholesalers and sellers'),el('p',{},'Post a property with photos, price and deal details. Give interested buyers one place to review the opportunity and start a conversation instead of repeating the same details across scattered posts.')]),
+   el('div',{},[el('b',{},'Investors and buyers'),el('p',{},'Browse property posts, define buying criteria and connect with people in their market. Deal Intelligence helps research available property facts and sold comps; evidence can be limited and every deal still needs due diligence.')]),
+   el('div',{},[el('b',{},'A business that needs organization'),el('p',{},'Keep conversations, buyer relationships, follow-ups and deal stages organized. Paid plans add access and allowances for advanced tools; Team adds a shared company workspace with separate member logins.')])
+  ]),
+  el('h4',{},'A useful first conversation'),
+  el('ol',{class:'affiliate-conversation-steps'},[
+   el('li',{},'Ask: “Are you mostly finding deals, looking for buyers, or buying properties?” Then ask what slows that process down.'),
+   el('li',{},'Connect one relevant tool to that problem. For a wholesaler, start with a complete property post; for a buyer, start with their market and buying criteria.'),
+   el('li',{},'Invite them to create a free account and try that first action. They do not need to purchase a membership to join.'),
+   el('li',{},'Discuss paid access only when a specific tool or allowance fits their workflow. Check the current Plans page for pricing and included access; do not promise buyers, closings, profits or guaranteed valuations.')
+  ]),
+  el('p',{class:'hint'},'Your commission is 30% one time on an eligible attributed first paid membership. Free signups and renewals do not earn that commission.'),
+  el('button',{class:'btn-ghost',onclick:()=>go('upgrade')},'Review current plans')
+ ]);wrap.appendChild(training);
  const scripts=el('div',{class:'affiliate-tool-grid'});
  for(const [title,text]of [['Call opener',script],['Message to share',message]])scripts.appendChild(el('article',{class:'affiliate-tool-card'},[el('h4',{},title),el('p',{},text),copyButton('Copy '+(title==='Call opener'?'script':'message'),text)]));
  wrap.append(scripts,el('p',{class:'hint'},'Start with contacts and guidance provided by Better. Ask permission before sending a link, respect requests to stop, and disclose your affiliate relationship. These tools do not place calls or send messages for you.'));
