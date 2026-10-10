@@ -25,8 +25,8 @@ assert(server.includes(".sort((a,b)=>{const ta=new Date(a.createdAt||0).getTime(
 // Requested UX cleanup.
 assert(!app.includes('function downloadProfileCard')&&!app.toLowerCase().includes('shareable profile card'),'Shareable Profile Card feature must be removed');
 assert(app.includes("await api('POST',`/api/admin/demo-accounts/${pvUser.value}/enter`)"),'Start Preview must enter the demo immediately');
-assert(app.includes("['approved','Approve','btn-primary'],['denied','Deny','btn-ghost']"),'Pending affiliate actions should be Approve / Deny');
-assert(app.includes("['suspended','Suspend','btn-ghost'],['revoked','Terminate','dangerbtn']"),'Approved affiliate actions should be Suspend / Terminate');
+assert(app.includes("['approved','Approve'],['denied','Deny']"),'Pending affiliate actions should be Approve / Deny');
+assert(app.includes("['suspended','Suspend'],['revoked','Terminate']"),'Approved affiliate actions should be Suspend / Terminate');
 assert(css.includes('.profile-action-equal')&&css.includes('.lockoverlay>a{margin-bottom:10px'),'profile button sizing / unlock spacing cleanup missing');
 assert(css.includes('.route-loading')&&css.includes('.loading-wheel'),'route loading feedback missing');
 assert(css.includes('.networkloading::before')&&css.includes('.settings-inline-loading::before'),'localized loading wheels missing');

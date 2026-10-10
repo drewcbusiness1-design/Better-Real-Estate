@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('assert');
+const {growth}=require('../activityGrowth');
+const content=require('../affiliateContent');
+const day=86400000,t=Date.UTC(2026,9,1),iso=n=>new Date(n).toISOString();
+const db={users:[{id:'a',createdAt:iso(t)},{id:'b',createdAt:iso(t+day)},{id:'demo',demo:true,createdAt:iso(t)},{id:'bad',createdAt:'invalid'}],activityEvents:[{userId:'a',at:iso(t+1000)},{userId:'a',at:iso(t+2000)},{userId:'b',at:iso(t+day+1000)},{userId:'demo',at:iso(t)},{userId:'deleted',at:iso(t)},{userId:'bad',at:'invalid'}]};
+const g=growth(db,t,t+2*day,u=>u.demo,t+2*day);
+assert.deepEqual(g.buckets.map(b=>b.signups),[1,1,0]);assert.deepEqual(g.buckets.map(b=>b.active),[1,1,0]);assert.deepEqual(g.buckets.map(b=>b.cumulative),[1,2,2]);assert(g.buckets.at(-1).partial);assert.equal(g.coverageStart,iso(t+1000));
+const later=growth(db,t+day,t+2*day,u=>u.demo);assert.equal(later.buckets[0].cumulative,2);
+const all=growth(db,0,t+day,u=>u.demo);assert.equal(all.buckets.length,2);assert.throws(()=>growth(db,t+day,t,u=>u.demo));
+assert.equal(growth(db,t,t+200*day,u=>u.demo).intervalDays,7);
+const fakeLast={users:[{id:'only',createdAt:iso(t),lastActiveAt:iso(t)}],activityEvents:[]};assert.equal(growth(fakeLast,t,t+day,()=>false).buckets[0].active,0,'lastActiveAt must not manufacture historical active users');
+assert.throws(()=>content.validate({...content.DEFAULTS,title:''}));assert.throws(()=>content.validate({...content.DEFAULTS,sourcing:'x'.repeat(6001)}));assert.equal(content.validate({...content.DEFAULTS,guidance:'<script>alert(1)</script>'}).guidance,'<script>alert(1)</script>','stored text must not be interpreted as HTML');
+(async()=>{let saved={affiliateContent:[]};const writer=content.writer({FILE_MODE:true,loadDB:async()=>structuredClone(saved),saveDB:async db=>{saved=structuredClone(db);}});const first={...content.DEFAULTS,revision:0,title:'Shared workbench'};const results=await Promise.all([writer(first,'admin'),writer({...first,title:'Other edit'},'admin2')]);assert.equal(results.filter(Boolean).length,1);assert.equal(content.read(saved).revision,1);assert.equal(content.read(saved).title,'Shared workbench');assert.equal(await writer(first,'admin'),null);const updated=await writer({...content.read(saved),callScript:'New opener'},'admin');assert.equal(updated.revision,2);assert.equal(content.read(saved).callScript,'New opener');console.log('v29.48 recorded growth, demo/date/dedup/partial-period truth and shared content validation/concurrent edits: PASS');})().catch(e=>{console.error(e);process.exitCode=1;});

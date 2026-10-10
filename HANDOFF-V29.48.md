@@ -1,0 +1,1 @@
+Read Better-Real-Estate-v29.48-MASTER-SEAMLESS-HANDOFF.md in full before doing or answering anything. Current version 2.9.48; tutorial 69. Release commands in RELEASE-v29.48.md. All five saved affiliate/Admin/growth items are completed; LLC follow-up remains deferred. No production deployment performed.
