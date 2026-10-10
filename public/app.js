@@ -212,6 +212,7 @@ function routeUrl(view = state.view) {
   return location.pathname + (q ? '?' + q : '');
 }
 function writeRoute(mode = 'push') {
+  window.BetterPixel?.pause();
   const url = routeUrl();
   const current = location.pathname + location.search;
   if (mode === 'replace') history.replaceState({ bre: true }, '', url);
@@ -545,6 +546,7 @@ function renderTabs() {
 
 async function renderApp() {
   const app = document.getElementById('app');
+  if(state.user||!['home','about','faq','upgrade','affiliate'].includes(state.view))window.BetterPixel?.pause();
   app.innerHTML = '';
   const views = {
     home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
@@ -568,6 +570,7 @@ async function renderApp() {
     if (state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId) || (requestedView==='compose'&&(state.composeEditId||null)!==requestedComposeEditId)) return;
     const preserveDetailScroll = requestedView === 'detail' ? window.scrollY : null;
     app.replaceChildren(rendered);
+    window.BetterPixel?.update({view:requestedView,signedIn:!!state.user,adMeasurement:state.user?.settings?.adMeasurement});
     if (requestedView === 'detail') {
       state.detailPreview = null;
       if (preserveDetailScroll !== null && preserveDetailScroll > 0) requestAnimationFrame(() => window.scrollTo({ top: preserveDetailScroll, behavior: 'auto' }));
@@ -2778,7 +2781,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 69;
+const TUTORIAL_VERSION = 70;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2788,6 +2791,7 @@ const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:1,admin:4};
 function tutorialStepsFor(tier=tutorialTier()){
  const rank=TUTORIAL_RANK[tier]??0;
  return [
+ {view:'settings',selector:'#app .page',min:0,release:70,title:'Advertising measurement preferences',copy:'Optional Meta Pixel measures public marketing page visits. You can turn advertising measurement off in Settings. Private pages and browser privacy signals are respected; email and phone preferences are separate.'},
  {view:'admin',selector:'.growth-toggle',min:4,release:69,title:'Explore real growth',copy:'Open growth charts for the selected date range. UTC signup and active-user trends use recorded history, exclude demos and label partial periods.'},
  {view:'affiliate',selector:'.affiliate-admin',min:4,release:69,title:'Manage the affiliate program',copy:'Review applications, performance, commissions and bonus payout states. Admin controls are separate from an affiliate’s personal participation.'},
  {view:'affiliate',selector:'.affiliate-content-editor',min:4,release:69,title:'Edit shared training',copy:'Update guidance, prospect sourcing and call/share scripts. Save publishes the plain text to the affiliate workbench; Cancel preserves the current copy.'},
@@ -4034,6 +4038,9 @@ function renderSettings() {
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Appearance & alerts'));
   const s = state.user.settings || {};
   const sbox = el('div', { class: 'card' });
+  const adRow=toggleRow('Advertising measurement', 'Meta Pixel measures public marketing page visits. Turn this off to opt out on your account and this browser. Browser privacy signals take priority; private pages are excluded.', s.adMeasurement!==false&&!window.BetterPixel?.disabled(),()=>{});
+  const adSwitch=adRow.querySelector('.switch');adSwitch.setAttribute('role','switch');adSwitch.setAttribute('aria-label','Advertising measurement');adSwitch.setAttribute('aria-checked',String(adSwitch.classList.contains('on')));
+  adSwitch.onclick=()=>withButtonBusy(adSwitch,async()=>{const on=!adSwitch.classList.contains('on');try{const {settings}=await api('PATCH','/api/me/settings',{adMeasurement:on});state.user.settings=settings;if(on)window.BetterPixel?.enable();else window.BetterPixel?.disable();const active=on&&!window.BetterPixel?.disabled();adSwitch.classList.toggle('on',active);adSwitch.setAttribute('aria-checked',String(active));toast(active?'Advertising measurement enabled':'Advertising measurement disabled','ok');}catch(e){toast(e.message,'err');}});sbox.appendChild(adRow);
   sbox.appendChild(toggleRow('Dark mode', 'Saved to your account.', s.theme === 'dark', async on => {
     applyTheme(on ? 'dark' : 'light'); localStorage.setItem('bre_theme', on ? 'dark' : 'light');
     const { settings } = await api('PATCH', '/api/me/settings', { theme: on ? 'dark' : 'light' });
@@ -5096,6 +5103,7 @@ function pageFaq() {
 
 function pageTerms() {
   return staticPage('Terms of Service', 'Last updated October 9, 2026. Plain-English summary, not a substitute for legal review.', [
+    ['Advertising measurement', 'We use Meta Pixel for limited PageView measurement on public marketing pages. Meta may receive page URLs, browser/device information, IP addresses and cookie identifiers for advertising measurement. See Privacy for details and the Settings opt-out. This does not enroll you in texts or change your email settings.'],
     [null, 'By creating an account you agree to these terms. If you do not agree, do not use the site.'],
     ['1. What this service is', 'Better Real Estate is an online platform where users post property listings and items for sale, and communicate with each other. We are not a real estate brokerage, agent, escrow holder, lender, or party to any transaction between users. We do not verify property ownership, condition, title, valuation, or any statement a user makes.'],
     ['2. Your account', 'You must be 18 or older and provide accurate information. You are responsible for everything that happens under your account and for keeping your password secure. One account per person. Usernames may be changed subject to reasonable anti-abuse limits. You may permanently delete your account from Settings, subject to retention of records we reasonably need for completed transactions, accounting, fraud prevention or legal obligations.'],
@@ -5125,7 +5133,7 @@ function pageTerms() {
 }
 
 function pagePrivacy() {
-  return staticPage('Privacy Policy', 'Last updated September 18, 2026.', [
+  return staticPage('Privacy Policy', 'Last updated October 10, 2026.', [
     [null, 'This policy explains what Better Real Estate collects, why we use it, which service providers may receive it, and the choices available to you.'],
     ['What we collect', 'Account information you give us, including your name, username, email address, phone number if you add one, profile photo, bio and optional market/location. If you use a Wholesale Teams workspace, we also collect company profile details, team membership, role, invitations and shared acquisition criteria. Content you post, including property listings, addresses, photos, notes, deal-import text and marketplace items. If you join a wholesaler or company buyer list, we collect the contact information and acquisition criteria you choose to submit and share those details with the specific wholesaler/company whose buyer-list page you used. Activity such as what you view, like/save, watch, unlock, offer on, buy or sell, people you follow, friend requests and friendships, messages you send through the site, selected investment markets, saved-search criteria, deal-pipeline activity, deal-room messages and documents you choose to upload, deal-calendar reminders and recent account activity used to show the site owner aggregate usage analytics and current active-user status. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
     ['Address autofill and autocomplete', el('span', {}, [
@@ -5147,13 +5155,14 @@ function pagePrivacy() {
     ])],
     ['Why we collect it', 'To run your account, rank your For You feed against your selected markets and buy boxes, power saved-search/deal alerts, liked-property change notifications, Buyers Looking and deal matching, operate buyer-list capture pages, generate Better Dispo distribution tools, power member search, friend connections and direct messaging, operate company workspaces and team permissions, connect buyers and sellers, quote shipping, fulfil marketplace orders, process payments and payouts, prevent fraud and abuse, provide support, send transactional messages such as confirmations, shipping notices, password resets and enabled unread-message reminders, provide AI-assisted listing/deal-import tools when you invoke them, and send product and activity emails enabled when you create an account, which you can disable in Settings or unsubscribe from at any time.'],
     ['What other users can see', 'Your name, username, role, bio, optional market/location, profile photo, listing count, follower count, friend count, points, verification status, company affiliation and reviews may be public and may appear in member search. Authorized members of the same Wholesale Teams workspace may see company listings, team analytics, shared acquisition criteria and messages tied to company property listings. Personal direct messages not tied to company listings are not included in the company inbox. Your email address and phone number are shown to another user only where the product requires it, such as after they unlock one of your property listings. Direct messaging does not by itself reveal your email address or phone number. Exact property addresses are hidden from users who have not unlocked that property listing. Shipping addresses entered for marketplace checkout are not displayed publicly.'],
-    ['Who we share it with', "We share information only as needed to operate the service: the specific wholesaler/company when you intentionally submit that business's buyer-list form; Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; OpenAI for eligible AI-assisted listing or deal-import generation when you invoke those features; email providers for service emails and enabled marketing messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money or provide it to third parties for their own unrelated advertising."],
-    ['Cookies and similar technology', 'We use a session cookie to keep you signed in. Payment providers such as Stripe may use cookies, browser/device information and similar signals for payment security and fraud prevention. We do not operate third-party advertising trackers on the site.'],
+    ['Who we share it with', "We share information only as needed to operate the service: the specific wholesaler/company when you intentionally submit that business's buyer-list form; Stripe and financial-service providers for payments, fraud prevention and payouts; Google Maps Platform for optional address suggestions; shipping, supplier and fulfilment providers for delivering marketplace orders; OpenAI for eligible AI-assisted listing or deal-import generation when you invoke those features; email providers for service emails and enabled marketing messages; hosting, database and storage providers that run the site; and authorities when disclosure is legally required. We do not sell your personal information for money. For advertising measurement, Meta receives the limited information described below to measure and support advertising. Depending on where you live, this may be treated as sharing for advertising; turn advertising measurement off in Settings."],
+    ['Cookies and similar technology', 'We use a session cookie to keep you signed in. Payment providers such as Stripe may use cookies, browser/device information and similar signals for payment security and fraud prevention. Meta Pixel measures PageView events on selected public marketing pages for Facebook and Instagram advertising. Meta may receive the page URL, IP address, browser/device information and cookie identifiers. Advertising measurement is optional, disabled on signed-in/private pages, and can be disabled through Settings. We do not enable automatic form-data collection or advanced matching. Browser Global Privacy Control and Do Not Track keep this measurement disabled.'],
     ['Your choices', 'You can edit your profile, username and password, manage your marketplace listings, and permanently delete your account from Settings. Browser address autofill can be controlled in your browser settings, and you can always type your shipping address manually instead of selecting an autocomplete suggestion. Marketing email can be turned on or off in Settings or through the unsubscribe link in any marketing message. Unread-message email reminders can be turned off or delayed in Settings. AI writing features are optional and only send content when you choose to use them. To request a copy of your data or correction that is not available in the product, email partners@betterrealestate.org. Additional legal rights may apply depending on where you live.'],
     ['Retention and security', 'We keep account, order, payment and transaction records for as long as reasonably needed to provide the service, resolve disputes, prevent fraud, and meet tax, accounting or other legal obligations. When you delete an account, public profile content and ordinary social data are removed; transaction records we must retain are de-identified where practical. Shipping information may remain with the related order record only where reasonably needed for those purposes. Passwords are stored as bcrypt hashes and never in readable form. No system is perfectly secure, so avoid posting sensitive information that is not necessary for a transaction.'],
     ['Children', 'This service is not for anyone under 18 and we do not knowingly collect personal information from children.'],
     ['Contact', 'partners@betterrealestate.org']
   ]);
+
 }
 
 function pageContact() {

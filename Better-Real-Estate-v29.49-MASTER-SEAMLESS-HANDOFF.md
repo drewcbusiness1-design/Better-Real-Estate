@@ -1,3 +1,26 @@
+# Current release v29.49 — Meta Pixel and Settings opt-out
+
+Read this FULL master before every action/reply. User explicitly authorized Meta Pixel ID 1783797429493375 on October 10, 2026, then directed no signup checkbox, signup steps or popup: disclosure in Terms/Privacy, opt-out in Settings. Candidate Better-Real-Estate-v29.49-Meta-Pixel; package 2.9.49; tutorial / What's New 70. No production push/deployment or live Meta Events Manager verification performed.
+
+## Delivered behavior
+- Meta base bootstrap loads asynchronously from connect.facebook.net for selected public marketing pages: home, about, FAQ, plans and unsigned Affiliate Center. PageView uses trackSingle with the supplied ID; duplicate renders of the same URL do not add a view. No signup, purchase or other conversion events are added.
+- Automatic event/form collection is disabled through autoConfig=false; no advanced matching/contact payload is initialized. Signed-in pages, auth/signup, messages, payments/wallet, deal tools and token/unknown-query URLs are excluded. Only marketing view and valid fbclid query values are allowed. Browser Global Privacy Control and Do Not Track disable loading/tracking. SPA navigation revokes SDK consent before changing the route; eligible marketing pages grant it again. The global SDK may remain present after leaving a marketing route, but our code revokes tracking and sends no private-route events.
+- Settings > Appearance & alerts > Advertising measurement is an accessible switch with busy/error feedback. Saves boolean adMeasurement to the authenticated account and browser opt-out key bre-ad-measurement-v1. Account off copies to the current browser; browser off survives logout. Turning on does not override browser privacy signals. No signup field or popup added.
+- Terms and Privacy disclose actual Pixel metadata (page URLs, IP/device/browser and cookie identifiers) and Settings opt-out. Prior claims of no advertising trackers/unrelated-ad sharing revised. Policy date October 10, 2026. Do not describe a Terms disclosure as universally satisfying all jurisdiction-specific consent requirements; no legal-compliance certification was performed.
+- No ungated noscript tracking image, since that would bypass JavaScript route/account/privacy controls. Thus JavaScript-disabled visitors are not measured. Ad blockers/privacy controls and excluded routes can reduce Meta traffic counts.
+- No runtime npm dependency, new database collection, AI call, recurring job or server-side conversion integration. Existing server settings setter accepts only boolean adMeasurement. Full v29.48 features retained; phone-number and LLC changes below remain deferred.
+
+## Three rule reviews and validation
+Pre-build: full current master and user-authorized Pixel reviewed; silent Terms/Privacy disclosure plus Settings control supersedes the initial consent-banner proposal.
+Integration: supplied ID, public/private route boundaries, browser/account settings, current privacy wording, automatic-data exclusion, no signup changes, cost and tutorial rules reviewed.
+Pre-package: full npm regression suite through v29.49 passed; meaningful Pixel queue/ID/duplicate/private/token/opt-out/account/GPC/DNT fixtures passed. Syntax server/app/store/Pixel passed; whitespace and protected byte comparisons checked. Actual running Express + Chromium verified public SDK load with QA network stub (no real Meta event sent), auth/token exclusion, no popup, Settings save/browser persistence/reload/logout, plus v29.48 program/editor/calculator/Guide/chart flows. Desktop 1280 and mobile390/320, light/dark screenshots and overflow/page-error checks passed. No actual Meta ad spend, email, transfer or production action. ZIP integrity/version and seed/dependency exclusions checked.
+
+## Deployment and live verification
+RELEASE-v29.49.md contains Mac copy/test/status and conditional commit/push. Extract under ~/Downloads/Better Real Estate/Better-Real-Estate-v29.49-Meta-Pixel/; livegit ~/Downloads/Better-Real-Estate. Commit v29.49 Meta Pixel and Settings opt-out. After Netlify succeeds, open Meta Events Manager > the supplied Pixel > Test events. In a signed-out browser without opt-out/GPC/DNT or ad blockers, visit the public home page and confirm PageView. Then turn measurement off in Settings, sign out and confirm no subsequent PageView. Do not claim Meta receiving events until observed. Public PageView alone is not signup/payment conversion measurement.
+
+This current section supersedes prior version/status claims. Exact branding, financial/ARV/migration/reminder/mascot/photo behavior remain protected. Deferred phone and LLC notes are retained below.
+
+---
 # Saved future update — Optional phone numbers; required for verification (October 10, 2026)
 
 User requests this later, not a build now:

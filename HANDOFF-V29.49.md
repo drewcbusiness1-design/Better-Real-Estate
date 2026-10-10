@@ -1,0 +1,1 @@
+Read Better-Real-Estate-v29.49-MASTER-SEAMLESS-HANDOFF.md in FULL before every action/reply. Current package2.9.49/tutorial70. Pixel1783797429493375; no signup checkbox/popup, disclosure Terms/Privacy, opt-out Settings. Phone/LLC future notes retained. No production or live Meta verification. Commands in RELEASE-v29.49.md.

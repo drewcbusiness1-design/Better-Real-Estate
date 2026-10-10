@@ -1,6 +1,6 @@
 const fs=require('fs'),assert=require('assert');
 const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ds=fs.readFileSync('dealSources.js','utf8'),pkg=require('../package.json');
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.49'].includes(pkg.version));
 assert(server.includes("/api/deal-builder/research/start"),'research must start independently of final synthesis');
 assert(app.includes("/api/deal-builder/research/start"),'client must start research separately');
 assert(app.includes('Researching property · ${job.progress||0}%')&&app.includes('Research complete · assembling the cross-source investor analysis'),'client must show real background progress');

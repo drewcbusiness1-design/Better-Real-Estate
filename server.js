@@ -913,6 +913,7 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (typeof body.showActivityStatus === 'boolean') next.showActivityStatus = body.showActivityStatus;
   if (typeof body.firstLookCompleted === 'boolean') next.firstLookCompleted = body.firstLookCompleted;
   if (typeof body.guideContextTips === 'boolean') next.guideContextTips = body.guideContextTips;
+  if (typeof body.adMeasurement === 'boolean') next.adMeasurement = body.adMeasurement;
   if (typeof body.guideAnimations === 'boolean') next.guideAnimations = body.guideAnimations;
   if (Array.isArray(body.guideCourseCompleted)) next.guideCourseCompleted = [...new Set(body.guideCourseCompleted.map(x => safeText(x,40)).filter(Boolean))].slice(0,24);
   if (Array.isArray(body.guideCourseQuizPassed)) next.guideCourseQuizPassed = [...new Set(body.guideCourseQuizPassed.map(x => safeText(x,40)).filter(Boolean))].slice(0,24);
