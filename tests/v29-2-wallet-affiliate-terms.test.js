@@ -8,12 +8,12 @@ assert(server.includes('const AFFILIATE_HOLD_DAYS = 3;'),'affiliate hold must be
 assert(require('../affiliateLeaderboard').TERMS.version==='2026-10-10-v4','new bonus terms must require versioned acceptance');
 assert(fs.readFileSync(path.join(root,'affiliateLeaderboard.js'),'utf8').includes("kind:'membership_acquisition'"),'commissions must be typed as membership acquisition');
 assert(fs.readFileSync(path.join(root,'affiliateLeaderboard.js'),'utf8').includes("c.customerUserId===user?.id&&c.kind==='membership_acquisition'"),'must block repeat commission by referred customer, not invoice id');
-assert(app.includes('30% one-time cash commission'),'affiliate UI must clearly say one-time');
+assert(app.includes('one-time commission') && app.includes('first eligible paid membership'),'affiliate UI must clearly say one-time');
 assert(app.includes('Self-referrals, duplicate or fake accounts') && app.includes('Future material commission changes require affirmative in-platform acceptance'),'affiliate acceptance must show material terms clearly');
 assert(app.includes('renewals do not earn another commission'),'affiliate acceptance UI must disclose no renewal commission');
 assert(app.includes('BETTER CREDITS') && app.includes('never cash-withdrawable'),'wallet must clearly distinguish Better Credits');
 assert(app.includes('SELLER PROCEEDS EARNED') && app.includes('Real cash from your marketplace sales'),'seller proceeds must be clearly cash');
 assert(css.includes('.wallet-balance-grid'),'cash/credit wallet presentation must be styled');
-assert(app.includes('const TUTORIAL_VERSION = 71;')||app.includes('const TUTORIAL_VERSION = 71;') && app.includes("release:35,title:'Affiliate Wallet'") && app.includes("release:35,title:'Cash and credits'"),'tutorial v35 must teach changed cash/credit behavior');
+assert(app.includes('const TUTORIAL_VERSION = 73;')||app.includes('const TUTORIAL_VERSION = 73;') && app.includes("release:35,title:'Affiliate Wallet'") && app.includes("release:35,title:'Cash and credits'"),'tutorial v35 must teach changed cash/credit behavior');
 assert(!server.includes('const AFFILIATE_HOLD_DAYS = 14;'),'old hold must not survive');
 console.log('v29.2 affiliate/seller wallet acceptance passed');

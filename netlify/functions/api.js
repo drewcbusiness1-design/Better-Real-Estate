@@ -16,6 +16,7 @@ function normalise(p) {
   if (!p) return '/api';
   let out = p;
   if (out.startsWith(FN_PREFIX)) out = out.slice(FN_PREFIX.length);   // strip function prefix
+  if (out.startsWith('/s/')) return out; // public share routes keep their namespace
   if (out.startsWith('/api/api/')) out = out.slice(4);                 // collapse an accidental double
   if (!out.startsWith('/api')) out = '/api' + (out.startsWith('/') ? '' : '/') + out;
   if (out === '/api/') out = '/api';

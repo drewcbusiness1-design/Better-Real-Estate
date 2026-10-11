@@ -1,3 +1,20 @@
+# Permanent approved branding — October 10, 2026
+
+User reaffirmed the attached BRE- Logo(4).png as the official logo. Do not ask for repeat approval or propose a replacement. This reference supersedes any conflicting logo interpretation.
+
+- Exact approved uploaded asset: BRE- Logo(4).png.
+- Persistent Library reference: libfile_fe3cdf1280d88191bcee77f80f043b57.
+- SHA-256: b5bcb06562541a21bde475d120831d7144f3a95f40e125e4b35bfb1b9921739b.
+- Preserve the supplied B/house mark, BetterRealEstate wordmark, Make better your standard. tagline, colors and proportions. Never redraw, retype, recolor, stretch, approximate or AI-generate it.
+- Carry the exact original logo file and these rules into every future handoff/release. Retrieve the saved asset when local bytes are missing; request reattachment only if the approved asset truly cannot be retrieved, not for repeated design approval.
+- Advertising must visibly connect to Better: exact logo and BetterRealEstate.org. Headlines and other writing use charcoal/black, amber/gold and off-white. Current approved ad typography is bold distressed block lettering, rather than unrelated elegant serif styling.
+- Mascot remains the golden retriever with black sunglasses. User wants surprising, out-of-the-box narrative scenes, not familiar sales metaphors or generic Your deal isn't... headlines. Approved concepts: giant dog peeling up a neighborhood; ominous fictional neighborhood takeover. Never imply invented actual platform adoption, buyers or results.
+- Generated scenes must leave space for deterministic compositing of the exact logo afterward. Do not ask an image model to recreate it.
+
+This is a rules/handoff update only; no application release, deployment or ZIP change.
+
+---
+
 # Current release v29.51 — Meta Pixel loader in head
 
 Read this full master before every turn/action/reply. User explicitly requested fixing head placement October 10, 2026. Candidate Better-Real-Estate-v29.51-Meta-Pixel-Head; package 2.9.51. Assistant has not pushed or deployed it.

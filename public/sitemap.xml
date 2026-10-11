@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://betterrealestate.org/</loc>
-  </url>
+<url><loc>https://betterrealestate.org/</loc></url>
+<url><loc>https://betterrealestate.org/guides/</loc></url>
+<url><loc>https://betterrealestate.org/guides/post-wholesale-properties/</loc></url>
+<url><loc>https://betterrealestate.org/guides/find-cash-buyers/</loc></url>
+<url><loc>https://betterrealestate.org/guides/analyze-off-market-properties/</loc></url>
 </urlset>

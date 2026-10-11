@@ -1,0 +1,20 @@
+'use strict';
+const assert=require('assert'),{normalizePhone}=require('../accountPhone'),lb=require('../affiliateLeaderboard');
+assert.equal(normalizePhone(''), '');assert.equal(normalizePhone('(609) 555-1234'),'+16095551234');assert.equal(normalizePhone('+44 20 7946 0958'),'+442079460958');
+for(const n of ['abc','123','0000000000','+0123456789',{},123,'+1 609 555 1234 ext 2'])assert.throws(()=>normalizePhone(n));assert.throws(()=>normalizePhone('',true));
+(async()=>{
+ let saved={users:[{id:'aff',role:'affiliate',email:'a@example.invalid'},{id:'b1',role:'buyer',affiliateReferrerId:'aff'},{id:'b2',role:'buyer',affiliateReferrerId:'aff'},{id:'b3',role:'buyer',affiliateReferrerId:'aff'}],affiliateApplications:[{id:'app',userId:'aff',status:'approved',rateBps:3000,termsAcceptedAt:'now',termsVersion:lb.TERMS_VERSION}],affiliateCommissions:[],affiliateLeaderboardState:[]};
+ const r=lb.createRecorder({FILE_MODE:true,loadDB:async()=>structuredClone(saved),saveDB:async d=>{saved=structuredClone(d);}});
+ const change={id:'app',actorId:'admin',revision:0,ratePct:50,reason:'Creator partnership'};
+ await r.changeRate(change);assert.equal(saved.affiliateApplications[0].customRateBps,undefined);
+ const sale=id=>r.recordMembership({userId:id,billingReason:'subscription_create',sourceId:id,amountCents:10001});
+ assert.equal((await sale('b1')).row.rateBps,3100,'unaccepted proposal cannot change payments');
+ await assert.rejects(r.changeRate({...change,ratePct:101,revision:1}));await assert.rejects(r.changeRate({...change,revision:0}));
+ const results=await Promise.allSettled([r.changeRate({userId:'aff',actorId:'aff',revision:1,accept:true}),r.changeRate({userId:'aff',actorId:'aff',revision:1,accept:true})]);assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
+ const old=JSON.stringify(saved.affiliateCommissions);const custom=await sale('b2');assert.equal(custom.row.rateBps,5000);assert.equal(custom.row.amountCents,5000);assert.equal(custom.row.rateSource,'admin_custom');assert.equal(lb.snapshot(saved,custom.state,'aff').own.currentRatePct,50);assert.equal(JSON.stringify(saved.affiliateCommissions.slice(0,1)),old);
+ assert.equal((await sale('b2')).row,null);await r.changeRate({...change,revision:2,ratePct:null,reason:'Return to standard'});assert.equal(saved.affiliateApplications[0].customRateBps,5000);await r.changeRate({userId:'aff',actorId:'aff',revision:3,accept:true});assert.equal(saved.affiliateApplications[0].customRateBps,null);assert.equal((await sale('b3')).row.rateBps,3300);assert.equal(saved.affiliateApplications[0].commissionHistory.length,4);
+ const fractional=structuredClone(saved);fractional.users.push({id:'fraction',role:'buyer',affiliateReferrerId:'aff'});fractional.affiliateApplications[0].customRateBps=5025;let calculated=lb.plan(fractional,{userId:'fraction',billingReason:'subscription_create',sourceId:'fraction',amountCents:10001});assert.equal(calculated.row.rateBps,5025);assert.equal(calculated.row.amountCents,5025);fractional.affiliateApplications[0].customRateBps=0;calculated=lb.plan(fractional,{userId:'fraction',billingReason:'subscription_create',sourceId:'zero',amountCents:10001});assert.equal(calculated.row.rateBps,0);assert.equal(calculated.row.amountCents,0);assert.equal(lb.snapshot(fractional,calculated.state,'aff').own.currentRatePct,0);
+ // Production writer must patch commission fields only and detect stale updates.
+ let sqlCalls=[];const sqlRecorder=lb.createRecorder({FILE_MODE:false,loadDB:async()=>structuredClone(saved),sql:async(q,args)=>{sqlCalls.push({q,args});return [{data:{...saved.affiliateApplications[0],commissionRevision:5}}];}});await sqlRecorder.changeRate({...change,revision:4});assert(sqlCalls[0].q.includes('data=data||$2::jsonb'));assert(sqlCalls[0].q.includes('commissionRevision'));assert(lb.COMMIT_SQL.includes('FOR UPDATE'));assert(lb.COMMIT_SQL.includes('customRateBps'));assert(lb.COMMIT_SQL.includes('rateRevision'));
+ console.log('v29.53 phone normalization; custom commission proposal/acceptance, concurrency, exact future earnings, history, reset and duplicate protection: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1;});

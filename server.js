@@ -560,10 +560,13 @@ async function sendNewSignupAlerts(db, newUser) {
 }
 
 
+const { normalizePhone } = require('./accountPhone');
+
 /* ============================ AUTH ============================ */
 app.post('/api/signup', async (req, res) => {
   const { name, email, password, role, roles, referralCode, marketingOptIn } = req.body || {};
   if (!name || !email || !password) return res.status(400).json({ error: 'All fields are required.' });
+  let signupPhone; try { signupPhone=normalizePhone(req.body?.phone); } catch(e) { return res.status(400).json({error:e.message}); }
   const selectedRoles = policy.normalizeSignupRoles(Array.isArray(roles) ? roles : [role]);
   if (!selectedRoles.length) return res.status(400).json({ error: 'Choose at least one role.' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
@@ -579,7 +582,7 @@ app.post('/api/signup', async (req, res) => {
     passwordHash: bcrypt.hashSync(password, 10),
     role: policy.resolveRole(cleanEmail, selectedRoles[0]),
     roles: selectedRoles,
-    bio: '', phone: '', location: '', investmentMarkets: [], avatarUrl: null, points: 0,
+    bio: '', phone: signupPhone, location: '', investmentMarkets: [], avatarUrl: null, points: 0,
     buyBoxes: [defaultBuyBox()], settings: defaultSettings(),
     plan: 'free', planUntil: null, trialUntil,
     unlockCredits: PRICING.freeUnlocks,
@@ -759,6 +762,7 @@ app.get('/api/site/status', async (req, res) => res.json({ mailConfigured: maile
 /* ============================ PROFILE ============================ */
 app.patch('/api/me', requireAuth, async (req, res) => {
   const { name, username, bio, phone, location, avatarData, roles } = req.body || {};
+  let cleanPhone; if(phone!==undefined){try{cleanPhone=normalizePhone(phone,!!req.user.verificationPending);}catch(e){return res.status(400).json({error:e.message});}}
   if (name !== undefined) req.user.name = String(name).trim() || req.user.name;
   if (username !== undefined) {
     const clean = normalizeUsername(username);
@@ -776,7 +780,7 @@ app.patch('/api/me', requireAuth, async (req, res) => {
     }
   }
   if (bio !== undefined) req.user.bio = String(bio).slice(0, 400);
-  if (phone !== undefined) req.user.phone = String(phone).slice(0, 40);
+  if (phone !== undefined) req.user.phone = cleanPhone;
   if (location !== undefined) req.user.location = String(location).trim().slice(0, 80);
   if (roles !== undefined && !isAdminUser(req.user)) {
     const selectedRoles = policy.normalizeSignupRoles(roles);
@@ -1908,12 +1912,12 @@ function absoluteShareAsset(value) {
 function sanitizedReferral(value) {
   return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
 }
-function shareLandingHtml({ title, description, image, destination, autoRedirect = false }) {
+function shareLandingHtml({ title, description, image, destination, autoRedirect = false, canonicalPath }) {
   const safeTitle = shareHtmlEscape(title || 'Better Real Estate');
   const safeDescription = shareHtmlEscape(description || 'Real estate deals, buyers and investor connections in one place.');
   const safeImage = shareHtmlEscape(absoluteShareAsset(image));
   const safeDestination = shareHtmlEscape(destination || appBaseUrl());
-  const canonical = shareHtmlEscape(appBaseUrl() + destination);
+  const canonical = shareHtmlEscape(appBaseUrl() + (canonicalPath || destination));
   const redirectMeta = autoRedirect ? `<meta http-equiv="refresh" content="0;url=${safeDestination}">` : '';
   const redirectScript = autoRedirect ? `<script>location.replace(${JSON.stringify(destination || '/')});</script>` : '';
   return `<!doctype html>
@@ -1938,7 +1942,7 @@ function shareLandingHtml({ title, description, image, destination, autoRedirect
   *{box-sizing:border-box}body{font-family:Inter,system-ui,-apple-system,sans-serif;background:#0b0b0a;color:#f7f6f1;min-height:100vh;margin:0;display:grid;place-items:center;padding:24px}.card{width:min(560px,100%);background:#161614;border:1px solid #34342f;border-radius:20px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.4)}.image{width:100%;height:300px;object-fit:cover;background:#222}.body{padding:26px}.brand{font-size:12px;font-weight:800;letter-spacing:.1em;color:#ff7a29}.body h1{font-size:28px;line-height:1.1;margin:10px 0 10px}.body p{color:#cfcdc4;line-height:1.55;margin:0 0 22px}.cta{display:inline-block;background:#fff;color:#0b0b0a;text-decoration:none;font-weight:750;padding:12px 18px;border-radius:10px}.foot{font-size:12px;color:#8f8d85;margin-top:18px}
 </style>
 </head>
-<body><main class="card"><img class="image" src="${safeImage}" alt=""><div class="body"><div class="brand">BETTER REAL ESTATE</div><h1>${safeTitle}</h1><p>${safeDescription}</p><a class="cta" href="${safeDestination}">View on Better Real Estate</a><div class="foot">Make better your standard.</div></div></main>${redirectScript}</body></html>`;
+<body><main class="card"><img class="image" src="${safeImage}" alt=""><div class="body"><div class="brand"><img src="/brand-logo-header.png" alt="Better Real Estate" style="width:220px;max-width:100%;background:#f7f6f1;border-radius:8px;padding:8px"></div><h1>${safeTitle}</h1><p>${safeDescription}</p><a class="cta" href="${safeDestination}">View on Better Real Estate</a><div class="foot">Make better your standard.</div></div></main>${redirectScript}</body></html>`;
 }
 
 function destinationWithRef(pathname, referral) {
@@ -1975,18 +1979,19 @@ app.get('/s/join', async (req, res) => {
 app.get('/s/property/:id', async (req, res) => {
   const db = await loadDB();
   const listing = db.listings.find(l => l.id === req.params.id);
-  if (!listing) return res.status(404).type('html').send('Property not found.');
+  if (!listing || listingFreshness(listing).availabilityStatus === 'archived') return res.status(404).type('html').send('Property not found.');
   const referral = sanitizedReferral(req.query.ref);
   const city = listing.city || 'Investment property';
   const facts = [
-    `Asking $${Number(listing.asking || 0).toLocaleString()}`,
+    Number(listing.asking)>0 ? `Asking $${Number(listing.asking).toLocaleString()}` : 'Asking price not provided',
     listing.arv ? `ARV estimate $${Number(listing.arv).toLocaleString()}` : null,
     listing.propertyType || null
   ].filter(Boolean).join(' · ');
   const destination = destinationWithRef(`/?view=detail&id=${encodeURIComponent(listing.id)}`, referral);
   res.type('html').send(shareLandingHtml({
-    title: `${city} deal | Better Real Estate`,
-    description: `${facts}. View photos and deal details on Better Real Estate.`,
+    canonicalPath: `/s/property/${encodeURIComponent(listing.id)}`,
+    title: `${city} property | Better Real Estate`,
+    description: `${facts}. Review the posted photos and details, then connect on Better Real Estate. Verify property information independently.`,
     image: listing.photos?.[0] || '/brand-logo.png',
     destination
   }));
@@ -2469,7 +2474,7 @@ app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
   if(start>end)return res.status(400).json({error:'Start must be before end.'});
   res.json({growth:req.query.charts==='1'?activityGrowth(req.db,start,end,isDemoUser,now):undefined,preset,historyNote:preset==='all'?'All available recorded activity. Older event detail may have been pruned; users with recorded activity remain included through their last activity.':null,start:new Date(start).toISOString(),end:new Date(end).toISOString(),activeNow,activeUsers,metrics:{activeNow:activeNow.length,uniqueActive:activeUsers.length,returning:activeUsers.filter(u=>new Date(u.createdAt||0).getTime()<start).length,signups:signups.length,profilesCompleted:req.db.users.filter(u=>!isDemoUser(u)&&(u.bio||u.avatarUrl||(u.investmentMarkets||[]).length)).length,engaged:req.db.users.filter(u=>!isDemoUser(u)&&(req.db.listings.some(l=>l.ownerId===u.id)||req.db.messages.some(m=>m.fromUserId===u.id)||req.db.saves.some(x=>x.userId===u.id))).length,paid:req.db.users.filter(u=>!isDemoUser(u)&&(isPro(u)||isPlatinum(u)||isWholesale(u))).length,listings:listings.length,messages:messages.length,dealBuilderRuns:analyses.length},plans:req.db.users.filter(u=>!isDemoUser(u)).reduce((o,u)=>{const p=actualPlanLabel(u);o[p]=(o[p]||0)+1;return o;},{}),markets:Object.entries(marketCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([state,count])=>({state,count}))});
 });
-app.get('/api/admin/user-inspector', requireAuth, requireAdmin, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(); const awards=req.db.founderAwards||[]; const users=req.db.users.filter(u=>!q||[u.name,u.email,u.username].some(v=>String(v||'').toLowerCase().includes(q))).slice().sort((a,b)=>{const ta=new Date(a.createdAt||0).getTime(),tb=new Date(b.createdAt||0).getTime();return tb-ta||String(b.id).localeCompare(String(a.id));}).slice(0,40).map(u=>{ const award=awards.find(a=>a.userId===u.id&&!a.voidedAt&&!a.limitExcludedAt)||null; return {...safeActivityUser(u),listings:req.db.listings.filter(l=>l.ownerId===u.id).length,saves:req.db.saves.filter(s=>s.userId===u.id).length,messages:req.db.messages.filter(m=>m.fromUserId===u.id||m.toUserId===u.id).length,paidPlan:u.plan||'free',paidPlanUntil:u.planUntil||null,grant:membershipGrantSummary(u),access:accessFor(u),founderAward:award}; }); res.json({users}); });
+app.get('/api/admin/user-inspector', requireAuth, requireAdmin, async (req,res)=>{ const q=String(req.query.q||'').trim().toLowerCase(); const awards=req.db.founderAwards||[]; const users=req.db.users.filter(u=>!q||[u.name,u.email,u.username].some(v=>String(v||'').toLowerCase().includes(q))).slice().sort((a,b)=>{const ta=new Date(a.createdAt||0).getTime(),tb=new Date(b.createdAt||0).getTime();return tb-ta||String(b.id).localeCompare(String(a.id));}).slice(0,40).map(u=>{ const award=awards.find(a=>a.userId===u.id&&!a.voidedAt&&!a.limitExcludedAt)||null; return {...safeActivityUser(u),phone:u.phone||'',listings:req.db.listings.filter(l=>l.ownerId===u.id).length,saves:req.db.saves.filter(s=>s.userId===u.id).length,messages:req.db.messages.filter(m=>m.fromUserId===u.id||m.toUserId===u.id).length,paidPlan:u.plan||'free',paidPlanUntil:u.planUntil||null,grant:membershipGrantSummary(u),access:accessFor(u),founderAward:award}; }); res.json({users}); });
 app.patch('/api/me/markets', requireAuth, async (req,res)=>{ req.user.investmentMarkets=cleanStates(req.body?.states); await saveDB(req.db); res.json({states:req.user.investmentMarkets}); });
 app.post('/api/feed/feedback', requireAuth, async (req,res)=>{ const listingId=String(req.body?.listingId||''),kind=['hide','less'].includes(req.body?.kind)?req.body.kind:null; if(!listingId||!kind)return res.status(400).json({error:'Choose valid feedback.'}); req.db.feedFeedback=req.db.feedFeedback||[]; req.db.feedFeedback=req.db.feedFeedback.filter(f=>!(f.userId===req.user.id&&f.listingId===listingId)); req.db.feedFeedback.push({id:crypto.randomUUID(),userId:req.user.id,listingId,kind,at:new Date().toISOString()}); await saveDB(req.db); res.json({ok:true}); });
 app.patch('/api/saves/:listingId/notifications', requireAuth, async (req,res)=>{ const row=req.db.saves.find(s=>s.userId===req.user.id&&s.listingId===req.params.listingId); if(!row)return res.status(404).json({error:'Save the property first.'}); row.notifyChanges=req.body?.enabled!==false; await saveDB(req.db); res.json({enabled:row.notifyChanges}); });
@@ -2530,7 +2535,7 @@ app.post('/api/deals/:listingId/outcome', requireAuth, async(req,res)=>{if(!canA
 
 app.get('/api/deals/:listingId/comp-board', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});const board=(req.db.compBoards||[]).find(x=>x.listingId===req.params.listingId)||{listingId:req.params.listingId,comps:[],notes:''};res.json({board});});
 app.post('/api/deals/:listingId/comp-board', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});req.db.compBoards=req.db.compBoards||[];let board=req.db.compBoards.find(x=>x.listingId===req.params.listingId);if(!board){board={id:crypto.randomUUID(),listingId:req.params.listingId,comps:[],notes:'',createdAt:new Date().toISOString()};req.db.compBoards.push(board);}if(Array.isArray(req.body?.comps))board.comps=req.body.comps.slice(0,30).map(c=>({address:safeText(c.address,180),salePrice:Number(c.salePrice)||0,distance:safeText(c.distance,40),notes:safeText(c.notes,300),included:c.included!==false}));if('notes'in(req.body||{}))board.notes=safeText(req.body.notes,2000);board.updatedAt=new Date().toISOString();logDealActivity(req.db,req.params.listingId,req.user,'comps','Collaborative comp board updated');await saveDB(req.db);res.json({board});});
-app.get('/api/service-providers', requireAuth, async(req,res)=>{const q=safeText(req.query.q,80).toLowerCase(),market=safeText(req.query.market,40).toUpperCase();const rows=req.db.users.filter(u=>!isAffiliateOnlyUser(u)&&u.id!==req.user.id&&u.settings?.serviceProvider===true).filter(u=>!q||[u.name,u.bio,...(u.settings?.serviceTypes||[])].join(' ').toLowerCase().includes(q)).filter(u=>!market||(u.investmentMarkets||[]).includes(market)).slice(0,100).map(publicUser);res.json({providers:rows});});
+app.get('/api/service-providers', requireAuth, async(req,res)=>{const q=safeText(req.query.q,80).toLowerCase(),market=safeText(req.query.market,40).toUpperCase();const rows=req.db.users.filter(u=>!isAffiliateOnlyUser(u)&&u.id!==req.user.id&&u.settings?.serviceProvider===true).filter(u=>!q||[u.name,u.bio,...(u.settings?.serviceTypes||[])].join(' ').toLowerCase().includes(q)).filter(u=>!market||(u.investmentMarkets||[]).includes(market)).slice(0,100).map(u=>({...publicProfileUser(u),serviceTypes:Array.isArray(u.settings?.serviceTypes)?u.settings.serviceTypes:[]}));res.json({providers:rows});});
 
 app.get('/api/offers/compare/:listingId', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the seller/team can compare offers.'});res.json({listing:{id:l.id,address:l.address},offers:req.db.offers.filter(o=>o.listingId===l.id).sort((a,b)=>Number(b.amount)-Number(a.amount))});});
 app.get('/api/buyer-matches/:listingId', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the listing owner/team can view buyer matches.'});const rows=buyerMatchesForListing(req.db,l).map(x=>{const u=req.db.users.find(u=>u.id===(x.userId||x.id));const reasons=[];if(u?.investmentMarkets?.some(m=>String(l.city||'').includes(m)))reasons.push('Works in this market');if(getBuyBoxes(u||{}).some(bb=>(bb.cities||[]).some(c=>String(l.city||'').toLowerCase().includes(String(c).toLowerCase()))))reasons.push('Buy box location match');if((req.db.saves||[]).some(s=>s.userId===u?.id))reasons.push('Active property saver');return {...x,reasons:reasons.length?reasons:['Matches stated buying criteria']};});res.json({matches:rows});});
@@ -2557,7 +2562,10 @@ app.get('/api/affiliate/me', requireAuth, async(req,res)=>{
 });
 app.post('/api/affiliate/apply', requireAuth, async(req,res)=>{
   if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });req.db.affiliateApplications=req.db.affiliateApplications||[];let row=req.db.affiliateApplications.find(a=>a.userId===req.user.id);if(row&&['pending','approved'].includes(row.status))return res.status(409).json({error:`Affiliate application is already ${row.status}.`});const b=req.body||{};row={id:crypto.randomUUID(),userId:req.user.id,name:req.user.name,email:req.user.email,status:'pending',audience:safeText(b.audience,800),channels:safeText(b.channels,500),why:safeText(b.why,1000),code:(req.user.username||req.user.referralCode||crypto.randomBytes(5).toString('hex')).replace(/[^a-z0-9_-]/gi,'').toUpperCase().slice(0,24),rateBps:AFFILIATE_RATE_BPS,termsVersion:affiliateTerms().version,termsAcceptedAt:null,createdAt:new Date().toISOString()};req.db.affiliateApplications.push(row);await saveDB(req.db);res.json({application:row});});
-app.post('/api/affiliate/accept-terms', requireAuth, async(req,res)=>{const a=(req.db.affiliateApplications||[]).find(a=>a.userId===req.user.id&&a.status==='approved');if(!a)return res.status(403).json({error:'Approved affiliate access required.'});const t=affiliateTerms();if(req.body?.version!==t.version)return res.status(409).json({error:'Affiliate terms changed. Review the latest terms.'});a.termsVersion=t.version;a.rateBps=t.rateBps;a.termsAcceptedAt=new Date().toISOString();req.db.affiliateTerms=req.db.affiliateTerms||[];req.db.affiliateTerms.push({id:crypto.randomUUID(),userId:req.user.id,version:t.version,rateBps:t.rateBps,acceptedAt:a.termsAcceptedAt});await saveDB(req.db);res.json({ok:true,application:a});});
+app.post('/api/affiliate/accept-terms',requireAuth,async(req,res)=>{
+ try{const application=await affiliateRecorder.changeApplication({action:'terms',userId:req.user.id,version:req.body?.version});res.json({ok:true,application});}
+ catch(e){res.status(e.status||400).json({error:e.message});}
+});
 app.post('/api/affiliate/payout-onboarding', requireAuth, async(req,res)=>{
   if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot connect real payment or payout methods. Convert the account to a real account first.' });const a=affiliateForUser(req.db,req.user.id);if(!a||!a.termsAcceptedAt)return res.status(403).json({error:'Approve and accept affiliate terms first.'});const out=await payments.createConnectAccount(req.user,appBaseUrl());await saveDB(req.db);res.json(out);});
 app.post('/api/affiliate/withdraw', requireAuth, async(req,res)=>{
@@ -2573,8 +2581,18 @@ app.patch('/api/admin/affiliate-content',requireAuth,requireAdmin,async(req,res)
  let row;try{row=await saveAffiliateContent(req.body,req.user.id);}catch(e){return res.status(400).json({error:e.message});}
  if(!row)return res.status(409).json({error:'Training was edited elsewhere. Reload before saving again.'});res.json({content:row});
 });
-app.post('/api/admin/affiliates/:id/status', requireAuth, requireAdmin, async(req,res)=>{const a=(req.db.affiliateApplications||[]).find(a=>a.id===req.params.id);if(!a)return res.status(404).json({error:'Application not found.'});const status=req.body?.status;if(!['approved','denied','suspended','revoked'].includes(status))return res.status(400).json({error:'Invalid status.'});a.status=status;a.reviewedAt=new Date().toISOString();a.reviewedBy=req.user.id;if(status==='approved'){a.rateBps=AFFILIATE_RATE_BPS;a.termsVersion=affiliateTerms().version;a.termsAcceptedAt=null;}await saveDB(req.db);await affiliateRecorder.reconcile(null,a.userId);res.json({application:a});});
-
+app.patch('/api/admin/affiliates/:id/commission',requireAuth,requireAdmin,async(req,res)=>{
+ try{const application=await affiliateRecorder.changeRate({id:req.params.id,actorId:req.user.id,revision:req.body?.revision,ratePct:req.body?.ratePct,reason:req.body?.reason});res.json({application});}
+ catch(e){res.status(e.status||400).json({error:e.message});}
+});
+app.post('/api/affiliate/accept-commission',requireAuth,async(req,res)=>{
+ try{const application=await affiliateRecorder.changeRate({userId:req.user.id,actorId:req.user.id,revision:req.body?.revision,accept:true});res.json({application});}
+ catch(e){res.status(e.status||400).json({error:e.message});}
+});
+app.post('/api/admin/affiliates/:id/status',requireAuth,requireAdmin,async(req,res)=>{
+ try{const application=await affiliateRecorder.changeApplication({action:'status',id:req.params.id,status:req.body?.status,actorId:req.user.id});await affiliateRecorder.reconcile(null,application.userId);res.json({application});}
+ catch(e){res.status(e.status||400).json({error:e.message});}
+});
 
 app.get('/api/listings/:id/network-intelligence', requireAuth, async(req,res)=>{
   const l=req.db.listings.find(x=>x.id===req.params.id); if(!l)return res.status(404).json({error:'Listing not found.'});
@@ -2664,6 +2682,8 @@ app.post('/api/reviews', requireAuth, async (req, res) => {
 /* ============================ VERIFICATION ============================ */
 app.post('/api/verify/request', requireAuth, async (req, res) => {
   if (req.user.verified) return res.status(409).json({ error: 'Already verified.' });
+  if(req.user.verificationPending)return res.status(409).json({error:'Your verification request is already pending review.'});
+  try { normalizePhone(req.user.phone,true); } catch(e) { return res.status(400).json({error:e.message}); }
   if (isPlatinum(req.user)) {
     // Included free with Platinum — still goes through the same admin
     // review before the badge is actually granted, just no charge.
@@ -2685,11 +2705,13 @@ app.get('/api/admin/verifications', requireAuth, requireAdmin, async (req, res) 
 app.post('/api/admin/verify-user', requireAuth, requireAdmin, async (req, res) => {
   const u = req.db.users.find(x => x.id === req.body?.userId);
   if (!u) return res.status(404).json({ error: 'Not found.' });
+  if(!u.verified){try{normalizePhone(u.phone,true);}catch(e){return res.status(400).json({error:e.message});}}
   u.verified = true; u.verificationPending = false; await saveDB(req.db); res.json({ ok: true });
 });
 app.post('/api/admin/set-user-verification', requireAuth, requireAdmin, async (req, res) => {
   const u = req.db.users.find(x => x.id === req.body?.userId && x.role !== 'admin');
   if (!u) return res.status(404).json({ error: 'User not found.' });
+  if(req.body?.verified===true&&!u.verified){try{normalizePhone(u.phone,true);}catch(e){return res.status(400).json({error:e.message});}}
   u.verified = req.body?.verified === true;
   u.verificationPending = false;
   u.verifiedAt = u.verified ? new Date().toISOString() : null;
@@ -3548,6 +3570,7 @@ app.get('/api/admin/memberships', requireAuth, requireAdmin, async (req, res) =>
       id: u.id,
       name: u.name,
       email: u.email,
+      phone: u.phone || '',
       username: u.username || null,
       role: u.role,
       location: u.location || '',
@@ -3846,6 +3869,8 @@ app.post('/api/payments/intent', requireAuth, async (req, res) => {
     if (!listing || listing.ownerId !== req.user.id) return res.status(403).json({ error: 'Not your listing.' });
     amount = tier.price; meta = { listingId, tierId };
   } else if (purpose === 'verification') {
+    if(req.user.verified||req.user.verificationPending)return res.status(409).json({error:'Already verified or pending review.'});
+    try{normalizePhone(req.user.phone,true);}catch(e){return res.status(400).json({error:e.message});}
     amount = PRICING.verificationFee;
   } else if (purpose === 'listing_unlock') {
     const listing = req.db.listings.find(l => l.id === listingId);

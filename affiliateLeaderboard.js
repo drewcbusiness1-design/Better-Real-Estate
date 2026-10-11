@@ -62,11 +62,12 @@ function invalidBonusIds(db){
  }
  return ids;
 }
+function customRate(a){return Number.isInteger(a?.customRateBps)&&a.customRateBps>=0&&a.customRateBps<=10000?a.customRateBps:null;}
 function snapshot(db,state,userId){
  const rows=ranks(db),own=rows.find(x=>x.userId===userId),topFive=!!own?.topFive;
- const points=topFive?bonusPoints(db,state,userId):0;
+ const points=topFive?bonusPoints(db,state,userId):0,app=(db.affiliateApplications||[]).find(a=>a.userId===userId),custom=customRate(app);
  return {period:'all',baseRatePct:30,maxRatePct:40,topCount:TOP_COUNT,rows:rows.slice(0,50).map(r=>({...r,isYou:r.userId===userId})),totalAffiliates:rows.length,
-  milestones:milestoneSummary(db,userId),own:{rank:own?.rank||null,sales:own?.sales||0,topFive,bonusPoints:points,currentRatePct:30+points,rateBps:BASE_BPS+points*STEP_BPS,nextTopFiveRatePct:Math.min(40,31+points)}};
+  milestones:milestoneSummary(db,userId),own:{rank:own?.rank||null,sales:own?.sales||0,topFive,bonusPoints:points,customRatePct:custom===null?null:custom/100,currentRatePct:custom===null?30+points:custom/100,rateBps:custom===null?BASE_BPS+points*STEP_BPS:custom,nextTopFiveRatePct:custom===null?Math.min(40,31+points):custom/100}};
 }
 function plan(db,event,resetId){
  const before=(db.affiliateLeaderboardState||[]).find(x=>x.id==='current');
@@ -87,7 +88,7 @@ function plan(db,event,resetId){
    row.leaderboardRank=rank?.rank||null;row.topFiveAtPurchase=!!rank?.topFive;
    row.bonusCycleId=row.topFiveAtPurchase?state.cycles[app.userId]:null;
    row.bonusPoints=row.topFiveAtPurchase?Math.min(10,bonusPoints(db,state,app.userId)+1):0;
-   row.rateBps=BASE_BPS+row.bonusPoints*STEP_BPS;row.amountCents=Math.floor(event.amountCents*row.rateBps/10000);
+   row.customRateBps=customRate(app);row.rateSource=row.customRateBps===null?'leaderboard':'admin_custom';row.rateRevision=Number(app.commissionRevision||0);row.rateBps=row.customRateBps===null?BASE_BPS+row.bonusPoints*STEP_BPS:row.customRateBps;row.amountCents=Math.floor(event.amountCents*row.rateBps/10000);
    const summary=milestoneSummary({...effectiveDB,affiliateCommissions:[...effectiveDB.affiliateCommissions,row]},app.userId);
    let remaining=summary.remainingBudgetCents;
    for(const milestone of summary.milestones){
@@ -105,11 +106,13 @@ function plan(db,event,resetId){
 }
 // A revision claim and the acquisition row commit in one PostgreSQL statement.
 // Competing webhooks retry with a fresh snapshot; rates cannot share a stale rank.
-const COMMIT_SQL=`WITH claim AS (
+const COMMIT_SQL=`WITH rate_guard AS (
+ SELECT data FROM kv_affiliateapplications WHERE data->>'userId'=$3::jsonb->>'affiliateUserId' FOR UPDATE
+), claim AS (
  INSERT INTO kv_affiliateleaderboardstate (id,data,updated_at)
  SELECT 'current',$1::jsonb,now() WHERE $3::jsonb IS NULL OR (
   NOT EXISTS (SELECT 1 FROM kv_affiliatecommissions c WHERE c.data->>'sourceId'=$3::jsonb->>'sourceId' OR (c.data->>'customerUserId'=$3::jsonb->>'customerUserId' AND c.data->>'kind'='membership_acquisition'))
-  AND EXISTS (SELECT 1 FROM kv_affiliateapplications a WHERE a.data->>'userId'=$3::jsonb->>'affiliateUserId' AND a.data->>'status'='approved' AND a.data->>'termsVersion'=$3::jsonb->>'termsVersion' AND a.data->>'termsAcceptedAt' IS NOT NULL AND a.data->>'rateBps'='3000')
+  AND EXISTS (SELECT 1 FROM rate_guard a WHERE a.data->>'userId'=$3::jsonb->>'affiliateUserId' AND a.data->>'status'='approved' AND a.data->>'termsVersion'=$3::jsonb->>'termsVersion' AND a.data->>'termsAcceptedAt' IS NOT NULL AND a.data->>'rateBps'='3000' AND (a.data->>'customRateBps') IS NOT DISTINCT FROM ($3::jsonb->>'customRateBps') AND COALESCE(a.data->>'commissionRevision','0')=$3::jsonb->>'rateRevision')
   AND EXISTS (SELECT 1 FROM kv_users u WHERE u.id=$3::jsonb->>'customerUserId' AND COALESCE(u.data->>'demo','false')!='true' AND COALESCE(u.data->>'role','')!='admin' AND lower(COALESCE(u.data->>'email',''))!=ALL($4::text[]) AND u.data->>'affiliateReferrerId'=$3::jsonb->>'affiliateUserId')
   AND EXISTS (SELECT 1 FROM kv_users u WHERE u.id=$3::jsonb->>'affiliateUserId' AND COALESCE(u.data->>'demo','false')!='true' AND COALESCE(u.data->>'role','')!='admin' AND lower(COALESCE(u.data->>'email',''))!=ALL($4::text[]))
  )
@@ -141,6 +144,50 @@ function createRecorder(store){
   throw new Error('Affiliate purchase is being processed. Retry the payment event.');
  };
  const serial=(...args)=>{if(!store.FILE_MODE)return run(...args);const task=tail.then(()=>run(...args));tail=task.catch(()=>{});return task;};
- return {recordMembership:(event)=>serial(event),reconcile:(db,resetId)=>serial(null,resetId,db)};
+ const rateRun=async input=>{
+  const db=await store.loadDB(),a=(db.affiliateApplications||[]).find(a=>input.accept?a.userId===input.userId:a.id===input.id);
+  const fail=(message,status=400)=>{const e=new Error(message);e.status=status;throw e;};
+  if(!a)fail('Affiliate application not found.',404);
+  if(a.status!=='approved')fail('Commission changes require an approved affiliate.',403);
+  if(!Number.isInteger(input.revision)||input.revision!==Number(a.commissionRevision||0))fail('Commission terms changed. Reload before trying again.',409);
+  const now=new Date().toISOString(),patch={commissionRevision:input.revision+1};
+  let entry;
+  if(input.accept){
+   if(!a.commissionProposal||!a.termsAcceptedAt||a.termsVersion!==TERMS_VERSION)fail('Accept current affiliate terms before accepting a rate.',409);
+   patch.customRateBps=a.commissionProposal.rateBps;patch.commissionProposal=null;
+   entry={id:crypto.randomUUID(),action:'accepted',actorId:input.actorId,at:now,fromRateBps:customRate(a),toRateBps:patch.customRateBps,revision:patch.commissionRevision};
+  }else{
+   const pct=input.ratePct;
+   if(pct!==null&&(typeof pct!=='number'||!Number.isFinite(pct)||pct<0||pct>100||Math.abs(pct*100-Math.round(pct*100))>0.000001))fail('Choose a percentage from 0 to 100, with at most two decimal places, or automatic.');
+   if(typeof input.reason!=='string'||!input.reason.trim()||input.reason.length>500)fail('Add a reason of 1–500 characters.');
+   patch.commissionProposal={rateBps:pct===null?null:Math.round(pct*100),reason:input.reason.trim(),by:input.actorId,at:now};
+   entry={id:crypto.randomUUID(),action:'proposed',actorId:input.actorId,at:now,fromRateBps:customRate(a),toRateBps:patch.commissionProposal.rateBps,reason:patch.commissionProposal.reason,revision:patch.commissionRevision};
+  }
+  patch.commissionHistory=[...(a.commissionHistory||[]),entry];
+  if(store.FILE_MODE){Object.assign(a,patch);await store.saveDB(db);return a;}
+  const rows=await store.sql(`UPDATE kv_affiliateapplications SET data=data||$2::jsonb,updated_at=now() WHERE id=$1 AND data->>'status'='approved' AND COALESCE((data->>'commissionRevision')::bigint,0)=$3 RETURNING data`,[a.__id||a.id,JSON.stringify(patch),input.revision]);
+  if(!rows.length)fail('Commission terms changed. Reload before trying again.',409);return rows[0].data;
+ };
+ const applicationRun=async input=>{
+  const db=await store.loadDB(),a=(db.affiliateApplications||[]).find(a=>input.action==='terms'?a.userId===input.userId:a.id===input.id);
+  if(!a){const e=new Error('Application not found.');e.status=404;throw e;}
+  const now=new Date().toISOString(),revision=Number(a.commissionRevision||0),patch={commissionRevision:revision+1};
+  if(input.action==='terms'){
+   if(a.status!=='approved'||input.version!==TERMS_VERSION){const e=new Error('Review the current approved affiliate terms.');e.status=409;throw e;}
+   Object.assign(patch,{termsVersion:TERMS_VERSION,rateBps:BASE_BPS,termsAcceptedAt:now});
+   patch.termsAcceptanceHistory=[...(a.termsAcceptanceHistory||[]),{version:TERMS_VERSION,rateBps:BASE_BPS,at:now}];
+  }else{
+   if(!['approved','denied','suspended','revoked'].includes(input.status))throw new Error('Invalid status.');
+   Object.assign(patch,{status:input.status,reviewedAt:now,reviewedBy:input.actorId});
+   if(input.status==='approved')Object.assign(patch,{rateBps:BASE_BPS,termsVersion:TERMS_VERSION,termsAcceptedAt:null});
+  }
+  const termsRow=input.action==='terms'?{id:crypto.randomUUID(),userId:a.userId,version:TERMS_VERSION,rateBps:BASE_BPS,acceptedAt:now}:null;
+  if(store.FILE_MODE){Object.assign(a,patch);if(termsRow){db.affiliateTerms=db.affiliateTerms||[];db.affiliateTerms.push(termsRow);}await store.saveDB(db);return a;}
+  const rows=await store.sql(`WITH changed AS (UPDATE kv_affiliateapplications SET data=data||$2::jsonb,updated_at=now() WHERE id=$1 AND COALESCE((data->>'commissionRevision')::bigint,0)=$3 RETURNING data), terms_audit AS (INSERT INTO kv_affiliateterms (id,data,updated_at) SELECT $4::jsonb->>'id',$4::jsonb,now() FROM changed WHERE $4::jsonb IS NOT NULL RETURNING id) SELECT data FROM changed`,[a.__id||a.id,JSON.stringify(patch),revision,termsRow?JSON.stringify(termsRow):null]);
+  if(!rows.length){const e=new Error('Application changed. Reload before trying again.');e.status=409;throw e;}return rows[0].data;
+ };
+ const changeApplication=input=>{if(!store.FILE_MODE)return applicationRun(input);const task=tail.then(()=>applicationRun(input));tail=task.catch(()=>{});return task;};
+ const changeRate=input=>{if(!store.FILE_MODE)return rateRun(input);const task=tail.then(()=>rateRun(input));tail=task.catch(()=>{});return task;};
+ return {changeApplication,changeRate,recordMembership:(event)=>serial(event),reconcile:(db,resetId)=>serial(null,resetId,db)};
 }
-module.exports={MILESTONES,BONUS_BUDGET_BPS,milestoneSummary,invalidBonusIds,BASE_BPS,MAX_BPS,STEP_BPS,TOP_COUNT,TERMS,TERMS_VERSION,acquisitions,ranks,bonusPoints,snapshot,plan,COMMIT_SQL,createRecorder};
+module.exports={customRate,MILESTONES,BONUS_BUDGET_BPS,milestoneSummary,invalidBonusIds,BASE_BPS,MAX_BPS,STEP_BPS,TOP_COUNT,TERMS,TERMS_VERSION,acquisitions,ranks,bonusPoints,snapshot,plan,COMMIT_SQL,createRecorder};

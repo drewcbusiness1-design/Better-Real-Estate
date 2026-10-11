@@ -7,10 +7,10 @@ assert(server.includes('const AFFILIATE_HOLD_DAYS = 3;'),'affiliate hold must be
 assert(require('../affiliateLeaderboard').TERMS.version==='2026-10-10-v4','bonus terms must be v4');
 assert(require('../affiliateLeaderboard').TERMS.summary.includes('Earnings are held for 3 days'),'affiliate terms summary must say 3 days');
 assert(!app.includes("'30% once'"),'stacked 30% once badge copy must not return');
-assert(app.includes("d.leaderboard?.own?.currentRatePct||30")&&app.includes("el('span',{},'one-time commission')"),'affiliate rate must be a clean horizontal treatment');
+assert(app.includes("d.leaderboard?.own?.currentRatePct??30")&&app.includes("el('span',{},'one-time commission')"),'affiliate rate must be a clean horizontal treatment');
 assert(css.includes('.affiliate-rate{display:inline-flex')&&css.includes('border-radius:999px')&&css.includes('white-space:nowrap'),'affiliate rate must use compact horizontal pill styling');
 assert(app.includes('Commissions remain pending for 3 days before becoming available.'),'terms list must state 3-day hold');
 assert(app.includes('withdrawn after the 3-day hold.'),'wallet copy must state 3-day hold');
-assert(app.includes('const TUTORIAL_VERSION = 71;')||app.includes('const TUTORIAL_VERSION = 71;')&&app.includes("release:35,title:'Affiliate Wallet'"),'tutorial must be updated with the change');
+assert(app.includes('const TUTORIAL_VERSION = 73;')||app.includes('const TUTORIAL_VERSION = 73;')&&app.includes("release:35,title:'Affiliate Wallet'"),'tutorial must be updated with the change');
 assert(handoff.includes('3-day hold'),'handoff must preserve the current hold');
 console.log('v29.3 affiliate hold + presentation regression: PASS');

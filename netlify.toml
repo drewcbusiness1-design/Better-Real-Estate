@@ -27,6 +27,13 @@
   status = 200
   force = true
 
+# Public branded share previews must reach their existing Express routes.
+[[redirects]]
+  from = "/s/*"
+  to = "/.netlify/functions/api/s/:splat"
+  status = 200
+  force = true
+
 # SPA fallback — everything else serves the app shell
 [[redirects]]
   from = "/*"
