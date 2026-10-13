@@ -28,7 +28,7 @@ try { ({ Pool } = require('pg')); } catch {}
 const affiliateAccounts = require('./affiliateAccounts');
 const policy = require('./policy');
 const COLLECTIONS = [
-  'affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
+  'supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
   'users','companies','companyInvites','listings','saves','follows','friendRequests','friendships','messages','ledger','unlocks',
   'shopItems','orders','offers','reviews','views','promotions','payouts',
   'alerts','tokens','suppliers','supplierOrders','reports','dealNotes','buyerLeads','emailBroadcasts','membershipGrants','shareEvents','buyerCrm','dealAnalyses',
@@ -163,7 +163,7 @@ async function loadDB() {
   const db = {}; COLLECTIONS.forEach(c => { db[c] = []; });
   // One database round trip instead of one SELECT per collection. This is the
   // hot-path fix for intermittent multi-second page loads on serverless cold starts.
-  const union = COLLECTIONS.map(c => `SELECT '${c}' AS collection, id, data FROM ${tableFor(c)}`).join(' UNION ALL ');
+  const union = COLLECTIONS.filter(c => c !== 'supportThreads').map(c => `SELECT '${c}' AS collection, id, data FROM ${tableFor(c)}`).join(' UNION ALL ');
   const rows = await sql(union);
   for (const r of (rows || [])) {
     const o = r.data;
@@ -187,6 +187,8 @@ async function saveDB(db) {
   if (FILE_MODE) {
     const out = {};
     COLLECTIONS.forEach(c => out[c] = db[c] || []);
+    // Support mutations opt in; unrelated stale file snapshots cannot erase chats.
+    if (!db.__writeSupportThreads && fsMod.existsSync(FILE_PATH)) out.supportThreads = JSON.parse(fsMod.readFileSync(FILE_PATH, 'utf8')).supportThreads || [];
     fsMod.writeFileSync(FILE_PATH, JSON.stringify(out, null, 2));
     return;
   }

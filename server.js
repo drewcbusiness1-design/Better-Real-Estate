@@ -901,8 +901,11 @@ app.delete('/api/me', requireAuth, async (req, res) => {
     if (r.sellerId === userId) { r.sellerId = deletedId; r.sellerName = 'Deleted account'; }
   }
 
+  req.db.supportThreads = (req.db.supportThreads || []).filter(t => t.userId !== userId);
+  req.db.__writeSupportThreads = true;
   req.db.users = req.db.users.filter(u => u.id !== userId);
   await saveDB(req.db);
+  if (!require('./store').FILE_MODE) await require('./store').sql('DELETE FROM kv_supportthreads WHERE id=$1', ['support-'+userId]);
   req.session = null;
   res.json({ ok: true });
 });
@@ -2501,6 +2504,8 @@ function dashboardSummary(db,user){
   for(const v of db.views.filter(v=>v.userId===user.id).sort((a,b)=>new Date(b.at)-new Date(a.at))){if(seen.has(v.listingId))continue;const l=db.listings.find(x=>x.id===v.listingId);if(l){seen.add(v.listingId);recentViewed.push({id:l.id,address:l.address,city:l.city,asking:l.asking,photo:l.photos?.[0]||null});if(recentViewed.length>=5)break;}}
   return {matched,buyerMatches,pendingOffers,upcoming,recentViewed};
 }
+require('./supportChat').install(app,{store:require('./store'),requireAuth,requireAdmin,isAdminUser,mailer});
+
 app.get('/api/dashboard', requireAuth, async (req,res)=>res.json(dashboardSummary(req.db,req.user)));
 app.get('/api/team-operations', requireAuth, async (req,res)=>{ if(!req.user.companyId)return res.status(403).json({error:'Join a Team workspace to use shared operations.'}); const members=req.db.users.filter(u=>u.companyId===req.user.companyId).map(u=>({id:u.id,name:u.name,username:u.username})); const deals=(req.db.pipelineDeals||[]).filter(x=>x.companyId===req.user.companyId); const crm=(req.db.buyerCrm||[]).filter(x=>x.companyId===req.user.companyId); const listings=req.db.listings.filter(l=>l.companyId===req.user.companyId); const activity=[...deals.map(d=>({at:d.updatedAt||d.createdAt,text:`Pipeline · ${d.title} · ${d.stage}`})),...crm.map(c=>({at:c.updatedAt||c.createdAt,text:`Buyer CRM · ${c.name} · ${c.status}`})),...listings.map(l=>({at:l.createdAt,text:`Listing posted · ${l.address}`}))].filter(x=>x.at).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,30); res.json({members,deals,activity,analytics:{pipeline:deals.length,buyers:crm.length,listings:listings.length}}); });
 

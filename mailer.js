@@ -85,6 +85,7 @@ async function send(to, subject, html, text, extra = {}) {
   }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
+    ...(extra.signal ? { signal: extra.signal } : {}),
     headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: senderAddress(extra.sender), to: [to], subject, html, text, reply_to: extra.replyTo || REPLY_TO, ...(extra.headers ? { headers: extra.headers } : {}) })
   });
@@ -248,3 +249,8 @@ exports.health = () => ({
   appUrl: APP_URL,
   usingSandboxSender: /@resend\.dev[>\s]*$/i.test(NOTIFICATIONS_FROM)
 });
+
+exports.sendSupportRequest = (to, name, threadId) => {
+ const url = APP_URL.replace(/\/$/, '') + '/?view=support&thread=' + encodeURIComponent(threadId);
+ return send(to, 'Human support requested on Better Real Estate', shell('A member requested your help', '<p>'+esc(name || 'A member')+' requested human support. Sign in with your admin account to join the private conversation.</p>'+button(url, 'Open support conversation')), 'A member requested human support. Admin sign-in required: '+url, { signal: AbortSignal.timeout(8000) });
+};

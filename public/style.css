@@ -1456,3 +1456,24 @@ html.better-guide-open,body.better-guide-open{overflow:hidden}
 .affiliate-commission-editor input,.affiliate-commission-editor select,.affiliate-commission-editor textarea{width:100%;min-width:0;box-sizing:border-box;}
 .affiliate-rate-history{border-top:1px solid var(--line);margin-top:16px;padding-top:12px;overflow-wrap:anywhere;}
 .affiliate-custom-agreement{overflow-wrap:anywhere;}
+/* v29.54: operating surfaces share the live design tokens in both themes. */
+.markethubspage,.commandcenter,.support-page{color:var(--ink)}
+.markethubspage .market-card,.markethubspage .mini-metric{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.markethubspage .mini-metric span{color:var(--ink-soft);font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.market-explore{width:100%;min-height:44px}.market-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.market-stats .mini-metric{min-width:0}
+button.homecap-row{width:100%;font:inherit;text-align:left;color:var(--ink);background:transparent;border-left:0;border-right:0;border-top:0;cursor:pointer}
+button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.workspace-dialog-shade{z-index:2000;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;padding-bottom:max(20px,env(safe-area-inset-bottom))}
+.workspace-dialog{max-height:calc(100dvh - 110px);overflow:auto;overscroll-behavior:contain;background:var(--surface);color:var(--ink);border:1px solid var(--line);width:min(560px,100%)}
+.workspace-create-list{display:grid;gap:10px}.workspace-create-list button{display:flex;align-items:flex-start;flex-direction:column;gap:5px;white-space:normal;text-align:left;min-height:48px}.workspace-create-list span{color:var(--ink-soft);font-weight:400}
+.feature-steps{padding-left:24px;line-height:1.6}.feature-steps li{margin-bottom:12px}.workspace-dialog>.btn-primary{margin-top:18px;width:100%}
+.support-page{max-width:880px;margin:auto}.support-guide-head{display:flex;align-items:center;gap:16px}.support-dog{width:110px;height:125px;flex:0 0 110px;overflow:hidden}.support-status{padding:12px 16px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;margin:14px 0}
+.support-stream{height:380px;max-height:48dvh;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);display:flex;flex-direction:column;gap:12px}
+.support-message{max-width:90%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);flex-shrink:0;overflow-wrap:anywhere}.support-message.user{align-self:flex-end;background:var(--accent-soft)}.support-message.admin{border-color:var(--accent)}.support-message.system{font-size:12px;align-self:center}.support-message>div{white-space:pre-wrap;line-height:1.55}.support-message b{display:block;margin-bottom:5px;font-size:12px}.support-message small{display:block;margin-top:7px;color:var(--ink-soft);font-size:10px}.support-page>textarea{margin-top:12px;min-height:80px;width:100%}.support-actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.support-actions button{min-height:44px}.support-admin-inbox{margin:24px 0;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+@media(max-width:620px){.support-guide-head{gap:8px}.support-dog{width:84px;flex-basis:84px;height:100px}.support-actions button{flex:1}.support-message{max-width:100%}.workspace-dialog-shade{padding-top:30px}.workspace-dialog{max-height:calc(100dvh - 70px)}}
+
+.workspace-dialog .quick-head{gap:14px;align-items:flex-start}.workspace-dialog .quick-head h3{flex:1;min-width:0;margin:0}.workspace-dialog .quick-head>.iconbtn{flex-shrink:0}
+.workspace-dialog .btn-primary{background:var(--ink);color:var(--surface);border-color:var(--ink)}.workspace-dialog .btn-primary:hover{background:var(--ink-2);color:var(--surface)}
+.support-guide-head .support-dog{position:relative;min-height:125px}.support-guide-head .support-dog .better-mascot-rig{position:relative}
+.quick-card.workspace-dialog{overflow:auto!important;max-height:calc(100dvh - 70px)!important}.workspace-dialog .btn-primary{background:var(--navy-deep)!important;color:var(--onaccent)!important}:root[data-theme="dark"] .workspace-dialog .btn-primary{background:#f7f6f1!important;color:#0b0b0a!important}
+.markethubspage .market-stats .mini-metric span{font-size:10px;white-space:nowrap;word-break:normal;overflow-wrap:normal}.markethubspage .pageheadrow>.btn-ghost{white-space:nowrap;padding-inline:18px}
