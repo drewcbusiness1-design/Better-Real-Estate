@@ -365,7 +365,7 @@ const BETTER_MASCOT_DEFAULTS={
   headX:0,headY:0,headR:0,headSX:1,headSY:1,
   muzzleX:0,muzzleY:0,muzzleR:0,muzzleS:1,
   earL:0,earR:0,
-  armLX:0,armLY:0,armLR:0,armRX:0,armRY:0,armRR:0,
+  armLX:0,armLY:0,armLR:0,armRX:0,armRY:0,armRR:0,elbowLR:0,elbowRR:0,
   pawLX:0,pawLY:0,pawLR:0,pawRX:0,pawRY:0,pawRR:0,
   tailR:0,tailS:1
 };
@@ -388,8 +388,8 @@ function createBetterMascotRig({variant='header',label='Better mascot',hidden=fa
       <path d="M48 76 Q52 84 56 77 Q60 86 64 77 Q68 84 72 76" fill="#f3bd69" opacity=".9"/>
       <ellipse cx="42" cy="141" rx="15" ry="6" fill="#bd6b24"/><ellipse cx="78" cy="141" rx="15" ry="6" fill="#bd6b24"/>
     </g>
-    <g class="mascot-arm-left"><path d="M38 83 C32 94 30 108 34 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-left"><path class="mascot-thumb" d="M27 122 L25 112 Q25 105 29 107 L33 117 L39 117 Q43 118 42 123 L40 128 L30 128 Z" fill="url(#breFurLight)" stroke="#bd863b" stroke-width="1.5"/><ellipse cx="34" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M28 121 Q34 117 40 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="30" cy="124" r="1.4" fill="#5d3824"/><circle cx="34" cy="126" r="1.5" fill="#5d3824"/><circle cx="38" cy="124" r="1.4" fill="#5d3824"/></g></g>
-    <g class="mascot-arm-right"><path d="M82 83 C88 94 90 108 86 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-right"><ellipse cx="86" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M80 121 Q86 117 92 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="82" cy="124" r="1.4" fill="#5d3824"/><circle cx="86" cy="126" r="1.5" fill="#5d3824"/><circle cx="90" cy="124" r="1.4" fill="#5d3824"/></g></g>
+    <g class="mascot-arm-left"><path d="M38 83 C34 90 32 98 32 103" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-forearm-left"><path d="M32 103 C31 109 32 115 34 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-left"><path class="mascot-thumb" d="M27 122 L25 112 Q25 105 29 107 L33 117 L39 117 Q43 118 42 123 L40 128 L30 128 Z" fill="url(#breFurLight)" stroke="#bd863b" stroke-width="1.5"/><ellipse cx="34" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M28 121 Q34 117 40 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="30" cy="124" r="1.4" fill="#5d3824"/><circle cx="34" cy="126" r="1.5" fill="#5d3824"/><circle cx="38" cy="124" r="1.4" fill="#5d3824"/></g></g></g>
+    <g class="mascot-arm-right"><path d="M82 83 C86 90 88 98 88 103" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-forearm-right"><path d="M88 103 C89 109 88 115 86 120" fill="none" stroke="url(#breFur)" stroke-width="15" stroke-linecap="round"/><g class="mascot-paw-right"><ellipse cx="86" cy="122" rx="10.5" ry="8.5" fill="url(#breFurLight)"/><path d="M80 121 Q86 117 92 121" fill="none" stroke="#c8792b" stroke-width="1" opacity=".55"/><circle cx="82" cy="124" r="1.4" fill="#5d3824"/><circle cx="86" cy="126" r="1.5" fill="#5d3824"/><circle cx="90" cy="124" r="1.4" fill="#5d3824"/></g></g></g>
     <g class="mascot-head">
       <g class="mascot-ear-left"><path d="M34 34 C20 29 14 41 17 56 C19 69 25 78 32 76 C39 73 40 61 38 48 Z" fill="#b96622"/><path d="M30 39 C23 41 22 55 28 67" fill="none" stroke="#d98531" stroke-width="3" stroke-linecap="round"/></g>
       <g class="mascot-ear-right"><path d="M86 34 C100 29 106 41 103 56 C101 69 95 78 88 76 C81 73 80 61 82 48 Z" fill="#b96622"/><path d="M90 39 C97 41 98 55 92 67" fill="none" stroke="#d98531" stroke-width="3" stroke-linecap="round"/></g>
@@ -401,6 +401,8 @@ function createBetterMascotRig({variant='header',label='Better mascot',hidden=fa
       <g class="mascot-glasses"><path d="M31 42 Q43 37 55 41 L53 54 Q42 58 35 52 Z" fill="url(#breLens)" stroke="#d8a13a" stroke-width="1.5"/><path d="M65 41 Q77 37 89 42 L85 52 Q78 58 67 54 Z" fill="url(#breLens)" stroke="#d8a13a" stroke-width="1.5"/><path d="M54 44 Q60 41 66 44" fill="none" stroke="#d8a13a" stroke-width="2"/><path d="M35 44 L29 42 M85 44 L91 42" stroke="#d8a13a" stroke-width="1.5"/></g>
     </g>
   </svg>`;
+  // Arms remain one connected chain; raised paws stay in front of the face.
+  const svg=rig.querySelector('.mascot-svg');svg.append(rig.querySelector('.mascot-arm-left'),rig.querySelector('.mascot-arm-right'));
   const now=performance.now();
   rig._mascot={current:mascotNeutral(),target:mascotNeutral(),velocity:{},mood:'idle',pointer:{x:0,y:0,last:0},gaze:{x:0,y:0},lastTs:0,born:now,nextIdle:now+7000+Math.random()*4500,sequenceUntil:0,actionToken:0,breathPhase:Math.random()*Math.PI*2};
   rig.dataset.expression='content';wireBetterMascotRig(rig);return rig;
@@ -415,11 +417,17 @@ function mascotApply(rig){
   set('--muzzle-x',c.muzzleX,'px');set('--muzzle-y',c.muzzleY,'px');set('--muzzle-r',c.muzzleR,'deg');set('--muzzle-s',c.muzzleS,'scale');
   set('--ear-l',c.earL,'deg');set('--ear-r',c.earR,'deg');
   set('--arm-lx',c.armLX,'px');set('--arm-ly',c.armLY,'px');set('--arm-lr',c.armLR,'deg');set('--arm-rx',c.armRX,'px');set('--arm-ry',c.armRY,'px');set('--arm-rr',c.armRR,'deg');
+  set('--elbow-lr',c.elbowLR,'deg');set('--elbow-rr',c.elbowRR,'deg');
   set('--paw-lx',c.pawLX,'px');set('--paw-ly',c.pawLY,'px');set('--paw-lr',c.pawLR,'deg');set('--paw-rx',c.pawRX,'px');set('--paw-ry',c.pawRY,'px');set('--paw-rr',c.pawRR,'deg');set('--tail-r',c.tailR,'deg');set('--tail-s',c.tailS,'scale');
 }
 function mascotSpringStep(rig,dt){
-  const m=rig._mascot;if(!m)return;const stiffness=m.mood==='celebrate'?8.2:m.mood==='guide'?6.8:m.mood==='react'?6.2:4.4,damping=.86;
-  for(const key of Object.keys(BETTER_MASCOT_DEFAULTS)){let v=m.velocity[key]||0,cur=m.current[key],target=m.target[key];v+=(target-cur)*stiffness*dt;v*=Math.pow(damping,dt*60);m.current[key]=cur+v*dt*60;m.velocity[key]=v;}
+  const m=rig._mascot;if(!m)return;
+  // Analytic critically damped spring: no frame-rate-dependent recoil at a joint.
+  const omega=m.mood==='celebrate'?12:m.mood==='guide'?10:m.mood==='react'?11:8,decay=Math.exp(-omega*dt);
+  for(const key of Object.keys(BETTER_MASCOT_DEFAULTS)){
+    const delta=m.current[key]-m.target[key],v=m.velocity[key]||0,term=(v+omega*delta)*dt;
+    m.current[key]=m.target[key]+(delta+term)*decay;m.velocity[key]=(v-omega*term)*decay;
+  }
   mascotApply(rig);
 }
 function mascotReturnHome(rig,delay=0){
@@ -456,12 +464,53 @@ function mascotLifeFrame(rig,ts){
 function mascotPerform(rig,name='ack',duration=1250,side=0){
   if(!rig||rig.classList.contains('motion-off')||!rig._mascot)return;const m=rig._mascot,token=++m.actionToken;m.sequenceUntil=performance.now()+duration+250;
   rig.dataset.gesture=name;
-  if(['wave','thumbsup','celebrate'].includes(name)){
-    duration=name==='celebrate'?2400:name==='wave'?2100:1900;m.sequenceUntil=performance.now()+duration+250;
-    const base=name==='celebrate'?{armLR:78,armRR:-78,headY:-2,tailR:10}:{armLR:82,pawLR:-70,headR:-3,tailR:8};
-    const steps=name==='wave'?[{t:0,p:base},{t:650,p:{...base,armLR:104,pawLR:-88}},{t:1100,p:base},{t:1550,p:{...base,armLR:104,pawLR:-88}}]:name==='celebrate'?[{t:0,p:base},{t:600,p:{...base,rootY:-3,armLR:98,armRR:-98,tailR:-10}},{t:1200,p:base},{t:1800,p:{...base,rootY:-3,armLR:98,armRR:-98,tailR:-10}}]:[{t:0,p:base},{t:850,p:{...base,headY:-2,torsoY:-1}}];
-    mascotExpression(rig,name==='celebrate'?'joy':'happy',duration+250);
-    steps.forEach(step=>setTimeout(()=>{if(rig.isConnected&&m.actionToken===token)mascotSetTarget(rig,{...mascotNeutral(),...step.p},name==='celebrate'?'celebrate':'react');},step.t));
+  const sequences={
+    // Notice, lift from the shoulder, wave at the elbow, lower, then settle.
+    wave:{duration:3000,expression:'happy',steps:[
+      {t:0,p:{headR:-3,earL:-3,tailR:4}},
+      {t:240,p:{armLR:118,elbowLR:12,pawLR:5,headR:-3,tailR:6}},
+      {t:850,p:{armLR:122,elbowLR:28,pawLR:9,headR:-2,tailR:-5}},
+      {t:1250,p:{armLR:118,elbowLR:8,pawLR:-4,headR:-3,tailR:6}},
+      {t:1650,p:{armLR:122,elbowLR:28,pawLR:9,headR:-2,tailR:-5}},
+      {t:2100,p:{armLR:112,elbowLR:12,pawLR:3,headR:-1,tailR:4}},
+      {t:2500,p:{armLR:35,elbowLR:5,headY:.4,tailR:2}}]},
+    thumbsup:{duration:2300,expression:'happy',steps:[
+      {t:0,p:{headY:-.5,headR:-2,tailR:3}},
+      {t:250,p:{armLR:92,elbowLR:-12,pawLR:-80,headR:-2,tailR:6}},
+      {t:850,p:{armLR:92,elbowLR:-12,pawLR:-80,headY:1,headR:-1,tailR:3}},
+      {t:1250,p:{armLR:92,elbowLR:-12,pawLR:-80,headY:-.5,tailR:5}},
+      {t:1850,p:{armLR:30,elbowLR:-4,headY:0,tailR:2}}]},
+    bookmark:{duration:2600,expression:'happy',steps:[
+      {t:0,p:{headY:.8,headR:-3,earL:-2}},
+      {t:280,p:{armLR:-20,elbowLR:-48,pawLR:-5,armRR:20,elbowRR:48,pawRR:5,headY:.6}},
+      {t:900,p:{armLR:-20,elbowLR:-48,pawLR:-5,armRR:20,elbowRR:48,pawRR:5,headY:1.8,tailR:5}},
+      {t:1320,p:{armLR:-20,elbowLR:-48,pawLR:-5,armRR:20,elbowRR:48,pawRR:5,headY:-.5,tailR:2}},
+      {t:2050,p:{armLR:-6,elbowLR:-12,armRR:6,elbowRR:12,headY:0,tailR:2}}]},
+    sendoff:{duration:2550,expression:'happy',steps:[
+      {t:0,p:{headR:-4,headX:-1,earL:-3}},
+      {t:300,p:{armLR:-12,elbowLR:-56,pawLR:-4,headR:-3}},
+      {t:900,p:{armLR:65,elbowLR:12,pawLR:6,headX:-1.4,headR:-5,tailR:6}},
+      {t:1450,p:{armLR:65,elbowLR:5,pawLR:0,headY:.8,headR:-3,tailR:3}},
+      {t:2000,p:{armLR:24,elbowLR:3,headY:0,headR:-1,tailR:2}}]},
+    confirm:{duration:2300,expression:'focused',steps:[
+      {t:0,p:{headY:-1,headR:0,earL:-3,earR:-3}},
+      {t:280,p:{armRR:14,elbowRR:52,pawRR:4,headY:.2}},
+      {t:780,p:{armRR:14,elbowRR:52,pawRR:4,headY:3.2,headR:3,tailR:4}},
+      {t:1180,p:{armRR:14,elbowRR:52,pawRR:4,headY:-.8,headR:0,tailR:2}},
+      {t:1800,p:{armRR:4,elbowRR:14,headY:0,tailR:2}}]},
+    celebrate:{duration:3000,expression:'joy',steps:[
+      {t:0,p:{headY:-1,earL:-4,earR:-4,tailR:4}},
+      {t:300,p:{armLR:96,armRR:-96,elbowLR:12,elbowRR:-12,headY:-2,tailR:8}},
+      {t:900,p:{rootY:-3,armLR:112,armRR:-112,elbowLR:20,elbowRR:-20,headY:-2.5,tailR:-8}},
+      {t:1450,p:{rootY:-1,armLR:104,armRR:-104,elbowLR:12,elbowRR:-12,headY:-1,tailR:8}},
+      {t:2050,p:{armLR:90,armRR:-90,elbowLR:6,elbowRR:-6,headY:.5,tailR:3}},
+      {t:2500,p:{armLR:25,armRR:-25,headY:0,tailR:2}}]}
+  };
+  const sequence=sequences[name];
+  if(sequence){
+    duration=sequence.duration;m.sequenceUntil=performance.now()+duration+700;
+    mascotExpression(rig,sequence.expression,duration+500);
+    sequence.steps.forEach(step=>setTimeout(()=>{if(rig.isConnected&&m.actionToken===token)mascotSetTarget(rig,{...mascotNeutral(),...step.p},name==='celebrate'?'celebrate':'react');},step.t));
     clearTimeout(m._behaviorTimer);m._behaviorTimer=setTimeout(()=>{if(rig.isConnected&&m.actionToken===token)mascotReturnHome(rig);},duration);return;
   }
   const plans={
@@ -478,13 +527,13 @@ function mascotPerform(rig,name='ack',duration=1250,side=0){
   rig.dataset.posture=name==='stand'?'stand':name==='settle'?'settle':'sit';mascotSetTarget(rig,{...mascotNeutral(),...(plans[name]||plans.ack)},name==='celebrate'?'celebrate':'react');
   clearTimeout(m._behaviorTimer);m._behaviorTimer=setTimeout(()=>{if(rig.isConnected&&rig._mascot?.actionToken===token)mascotReturnHome(rig);},duration);
 }
-function playBetterMascotBehavior(rig,kind='ack',duration=1000){if(performance.now()<Number(rig?._mascot?.eventUntil||0)&&kind!=='celebrate')return;const map={wave:'wave',thumbsup:'thumbsup',celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);}
+function playBetterMascotBehavior(rig,kind='ack',duration=1000){if(performance.now()<Number(rig?._mascot?.eventUntil||0)&&kind!=='celebrate')return;const map={bookmark:'bookmark',sendoff:'sendoff',confirm:'confirm',wave:'wave',thumbsup:'thumbsup',celebrate:'celebrate',curious:'curious',paw:'paw',tail:'perk',ear:'curious',ack:'ack',stand:'stand',lean:'lean',settle:'settle'};mascotPerform(rig,map[kind]||'ack',duration);}
 function wireBetterMascotRig(rig){
   const motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;mascotSetTarget(rig,mascotNeutral(),'idle');
   if(motionOff){rig.classList.add('motion-off');Object.assign(rig._mascot.current,mascotNeutral());mascotApply(rig);return rig;}
   let lastPointerSample=0;
   const onPointer=e=>{const now=performance.now();if(now-lastPointerSample<45||!rig.isConnected||!rig._mascot)return;lastPointerSample=now;rig._mascot.pointer.x=e.clientX;rig._mascot.pointer.y=e.clientY;rig._mascot.pointer.last=now;};
-  const onAction=e=>{if(!rig.isConnected||!rig._mascot||performance.now()<Number(rig._mascot.eventUntil||0)||rig._mascot.mood==='guide'||e.target?.closest?.('.better-guide-trigger'))return;const target=e.target?.closest?.('button,a,[role="button"],input,select,textarea');if(!target)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),side=Math.sign((tr.left+tr.width/2)-(rr.left+rr.width/2));mascotPerform(rig,'lean',850,side||1);};
+  const onAction=e=>{if(!rig.isConnected||!rig._mascot||performance.now()<Number(rig._mascot.eventUntil||0)||rig._mascot.mood==='guide'||(rig.dataset.gesture&&performance.now()<rig._mascot.sequenceUntil)||e.target?.closest?.('.better-guide-trigger'))return;const target=e.target?.closest?.('button,a,[role="button"],input,select,textarea');if(!target)return;const rr=rig.getBoundingClientRect(),tr=target.getBoundingClientRect(),side=Math.sign((tr.left+tr.width/2)-(rr.left+rr.width/2));mascotPerform(rig,'lean',850,side||1);};
   document.addEventListener('pointermove',onPointer,{passive:true});document.addEventListener('pointerdown',onAction,{passive:true});
   rig._cleanupMascot=()=>{document.removeEventListener('pointermove',onPointer);document.removeEventListener('pointerdown',onAction);cancelAnimationFrame(rig._lifeRaf);};rig._lifeRaf=requestAnimationFrame(t=>mascotLifeFrame(rig,t));return rig;
 }
@@ -503,6 +552,8 @@ function renderTop() {
     brandEl.onclick = () => go(state.user ? (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed') : 'home');
   }
   const nav = document.getElementById('navlinks');
+  const previousGuide=nav.querySelector('.better-guide-trigger'),motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const reuseGuide=previousGuide?._betterUserId===state.user?.id&&previousGuide?.querySelector('.better-mascot-rig')?.classList.contains('motion-off')===!!motionOff;
   nav.innerHTML = '';
   nav.appendChild(el('button', {
     class: 'iconbtn', title: 'Toggle dark mode',
@@ -525,12 +576,13 @@ function renderTop() {
   nav.appendChild(el('button', { class: 'iconbtn topquick', title: 'Quick options', 'aria-label':'Quick options', onclick: () => openQuickOptions() }, iconSvg('grid',19)));
   nav.appendChild(el('button', { class: 'iconbtn', title: 'Search', 'aria-label':'Search', onclick: () => go('search') }, iconSvg('search',19)));
   nav.appendChild(el('button', { onclick: () => go('settings'), class: 'top-settings-btn '+(state.view === 'settings' ? 'active' : ''), title:'Settings' }, [iconSvg('settings',18),el('span',{class:'top-settings-label'},'Settings')]));
-  nav.appendChild(el('button', {
+  nav.appendChild(reuseGuide?previousGuide:el('button', {
     class:'better-guide-trigger',
     title:'Open Better Guide', 'aria-label':'Open Better Guide',
     onpointerenter:e=>{const rig=e.currentTarget.querySelector('.better-mascot-rig'),now=performance.now();if(now-Number(rig._mascot.lastGreeting||-10000)>7000){rig._mascot.lastGreeting=now;playBetterMascotBehavior(rig,'wave',2100);}},
     onclick:e=>{const rig=e.currentTarget.querySelector('.better-mascot-rig');playBetterMascotBehavior(rig,'wave',2100);setTimeout(()=>openBetterGuide(),95);}
   }, el('span',{class:'better-mascot-stage','aria-hidden':'true'},createBetterMascotRig({variant:'header',hidden:true,label:'Better mascot'}))));
+  nav.querySelector('.better-guide-trigger')._betterUserId=state.user.id;
 }
 
 function renderTabs() {
@@ -2702,7 +2754,8 @@ function betterGuideNextStep(){
 }
 function closeBetterGuide(){document.querySelector('.better-guide-shade')?.remove();document.documentElement.classList.remove('better-guide-open');document.body.classList.remove('better-guide-open');const trigger=document.querySelector('.better-guide-trigger');trigger?.classList.remove('is-open');trigger?.focus?.({preventScroll:true});}
 function reactBetterMascot(kind='ack',expression=null){
-  document.querySelectorAll('.better-mascot-rig').forEach(rig=>{const now=performance.now();if(now<Number(rig._mascot?.eventUntil||0)&&kind!=='celebrate')return;playBetterMascotBehavior(rig,kind,kind==='celebrate'?2400:kind==='wave'?2100:kind==='thumbsup'?1900:760);if(rig._mascot)rig._mascot.eventUntil=now+(kind==='celebrate'?2650:kind==='wave'?2350:kind==='thumbsup'?2150:1000);if(expression)mascotExpression(rig,expression,kind==='celebrate'?1600:1050);});
+  const duration={wave:3000,thumbsup:2300,bookmark:2600,sendoff:2550,confirm:2300,celebrate:3000}[kind]||760;
+  document.querySelectorAll('.better-mascot-rig').forEach(rig=>{const now=performance.now();if(now<Number(rig._mascot?.eventUntil||0)&&kind!=='celebrate')return;playBetterMascotBehavior(rig,kind,duration);if(rig._mascot)rig._mascot.eventUntil=now+duration+700;if(expression)mascotExpression(rig,expression,duration+500);});
 }
 // Confirmed page actions only; no extra requests or polling.
 function mascotActionCompleted(method,path,data,target){
@@ -2710,7 +2763,7 @@ function mascotActionCompleted(method,path,data,target){
   let type=null;
   if(path==='/api/follow'&&data.following)type='follow';
   else if(path==='/api/saves/toggle'&&data.saved)type='saved';
-  else if(path==='/api/messages'&&method==='POST')type='sent';
+  else if((path==='/api/messages'||path==='/api/support/message')&&method==='POST')type='sent';
   else if(path==='/api/friends/request'&&method==='POST')type='friend';
   else if(/^\/api\/friends\/requests\/[^/]+\/respond$/.test(path)&&data.status==='friends')type='friend';
   if(!type)return;
@@ -2722,7 +2775,7 @@ function mascotActionCompleted(method,path,data,target){
     mascotSetTarget(rig,{headX:Math.max(-1.6,Math.min(1.6,dx/300)),headY:Math.max(-.8,Math.min(.8,dy/340)),headR:Math.max(-3.8,Math.min(3.8,dx/110))});
   });
 }
-function mascotSiteEvent(type){const map={message:['tail','alert'],sent:['thumbsup','happy'],friend:['wave','happy'],learning:['celebrate','joy'],follow:['thumbsup','happy'],listing:['celebrate','joy'],saved:['thumbsup','happy'],error:['curious','concerned'],success:['thumbsup','happy'],tutorial:['curious','focused'],dealprogress:['perk','focused'],undercontract:['stand','joy'],closed:['celebrate','joy'],wake:['curious','alert']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
+function mascotSiteEvent(type){const map={message:['tail','alert'],sent:['sendoff','happy'],friend:['wave','happy'],learning:['celebrate','joy'],follow:['thumbsup','happy'],listing:['celebrate','joy'],saved:['bookmark','happy'],error:['curious','concerned'],success:['thumbsup','happy'],tutorial:['curious','focused'],dealprogress:['confirm','focused'],undercontract:['stand','joy'],closed:['celebrate','joy'],wake:['curious','alert']};const x=map[type];if(x)reactBetterMascot(x[0],x[1]);}
 function mascotMarkHumanActivity(){
   const a=state.mascotAwareness||(state.mascotAwareness={lastHumanActivity:Date.now(),lastPersistentCue:0,activeField:null}),wasIdle=Date.now()-Number(a.lastHumanActivity||0)>75000;
   a.lastHumanActivity=Date.now();if(wasIdle&&state.user)setTimeout(()=>mascotSiteEvent('wake'),40);
@@ -2736,6 +2789,8 @@ function mascotPersistentAwareness(rig,now){
 }
 function wireMascotSituationalAwareness(){
   if(window.__betterMascotAwarenessWired)return;window.__betterMascotAwarenessWired=true;
+  const motionPreference=window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  motionPreference?.addEventListener?.('change',()=>{if(state.user)renderTop();});
   ['pointerdown','keydown','touchstart','wheel'].forEach(type=>document.addEventListener(type,mascotMarkHumanActivity,{passive:true}));
   document.addEventListener('focusin',e=>{const t=e.target;if(!t?.matches?.('input,textarea,select,[contenteditable="true"]'))return;mascotMarkHumanActivity();state.mascotAwareness.activeField=t;document.querySelectorAll('.better-mascot-rig').forEach(r=>{if(performance.now()<Number(r._mascot?.eventUntil||0))return;mascotExpression(r,'focused',1200);aimBetterMascotAt(r,t,false);});});
   document.addEventListener('focusout',e=>{if(state.mascotAwareness?.activeField===e.target)state.mascotAwareness.activeField=null;});
@@ -2807,7 +2862,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 75;
+const TUTORIAL_VERSION = 76;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2817,6 +2872,8 @@ const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:1,admin:4};
 function tutorialStepsFor(tier=tutorialTier()){
  const rank=TUTORIAL_RANK[tier]??0;
  return [
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:76,title:'Gestures with a purpose',copy:'Better Guide uses a connected wave to greet you, a careful two-paw acknowledgement for a saved property, an outward gesture after sending a message and a deliberate nod when a deal advances. Celebrations remain for real milestones. Motion can be disabled in Settings and respects reduced-motion preferences.'},
+ {view:'settings',selector:'#app .page',min:0,release:76,title:'Tutorial controls that fit',copy:'Desktop walkthroughs keep Move left and Move right controls in Better’s button style. On mobile the tutorial stays at the bottom with touch scrolling. Restart the 10-step introduction or open the full walkthrough from Settings or the dog menu.'},
  {view:'upgrade',selector:'.tiergrid4',min:0,release:75,title:'Choose your Better Credits',copy:'Select a plan to review checkout. Credits are optional: choose an amount up to your available balance and the first payment, then review the remaining amount due. Unused credits stay in your wallet; renewals are unchanged.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:75,title:'A shorter introduction',copy:'The main tutorial now takes 10 steps. Open Full platform walkthrough in the dog menu or Settings for all existing feature guidance. Both tutorials can be skipped.'},
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
@@ -3001,7 +3058,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false,inDepth
    if(closed)return; const step=steps[i]; card.innerHTML='';
    const tutorialMascot=createBetterMascotRig({variant:'tutorial',hidden:true});
    card.appendChild(el('div',{class:'guide-tutor-head'},[el('div',{class:'guide-mascot-stage is-tutorial','aria-hidden':'true'},tutorialMascot),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':inDepth?'The full walkthrough':'Your 10-step introduction')])]));
-   card.appendChild(el('button',{type:'button',class:'tutorial-dock-toggle',onclick:()=>{preferredSide=card.dataset.dock==='left'?'right':'left';reposition();card.querySelector('.tutorial-dock-toggle').textContent=preferredSide==='left'?'Move right':'Move left';}},preferredSide==='left'?'Move right':'Move left'));
+   card.appendChild(el('button',{type:'button',class:'btn-ghost tutorial-dock-toggle',onclick:()=>{preferredSide=card.dataset.dock==='left'?'right':'left';reposition();card.querySelector('.tutorial-dock-toggle').textContent=preferredSide==='left'?'Move right':'Move left';}},preferredSide==='left'?'Move right':'Move left'));
    card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':inDepth?'FULL WALKTHROUGH':'QUICK START'} · ${i+1} OF ${steps.length}`));
    card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
    if(i===0&&!onlyNew&&!releaseOnly)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{cleanup();state.guideCourseModule=state.user?.settings?.guideCourseLastModule||'foundations';go('learn');}},'I’m new to wholesaling — start the free course'));

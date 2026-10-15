@@ -18,3 +18,25 @@ Integration: selected amount/first-payment semantics, authoritative server valid
 Pre-package: full npm regression suite and all changed JavaScript syntax checks passed. Actual PostgreSQL engine tested reservation contention, atomic debit/receipt, duplicate settlement and stale generic saves with concurrent referral deltas. Real Express/Chromium tested opt-in/default/amount/summary, invalid values, cancel/resume, partial and full no-cash credit settlement, uncertain response recovery, duplicate webhooks and stale file snapshots. AI stub tested failed first answer, one-time disclosure, later answers and reopen. Member/Admin/affiliate quick tours each completed all 10 steps; preserved full walkthrough opened from dog and Settings. Changed layouts checked at 1280/390/320 light/dark with screenshots inspected and no page errors/overflow. Existing support/Admin takeover, Command Center/Quick Create, markets, homepage dialogs regressions passed. Protected provider/affiliate/research/mascot/logo files and runtime dependencies verified unchanged. ZIP integrity and excluded local data/dependencies checked; see RELEASE-v29.55.md for deployment gate. Local QA uses provider stubs; production payment, AI/email delivery and hosting remain unverified.
 
 ---
+
+
+## Pending next update — tutorial positioning button styling (October 15, 2026)
+
+User reported after local v29.55 checks passed: tutorial Move left / Move right buttons do not match the rest of the UI. Queue this fix for the next requested update; do not release a standalone patch now.
+- Apply the existing design-system button styles to .tutorial-dock-toggle: typography, padding, dimensions, border, radius, surface, text contrast and hover/focus/pressed/disabled states.
+- Verify both positioning labels and left/right behavior on desktop, light/dark themes, and responsive/mobile visibility and touch scrolling. Preserve edge docking and the 10-step/full walkthrough options.
+- Reaffirm permanent acceptance rule: ALL new or changed UI must match the approved site design system. This applies to every control, not only main buttons. Visually inspect changed controls before packaging; native browser-looking buttons are not acceptable.
+- Include tutorial consideration/What's New and mandatory regression/visual checks in that release.
+- Carry this pending request into subsequent handoffs until implemented and verified.
+
+Release status: user reported v29.55 local checks passed and received normal commit/push instructions. No production deployment or live verification has been confirmed.
+
+
+## Pending next update — Better Guide waving paw (October 15, 2026)
+
+User reports the waving paw looks funny, almost dangling. Queue alongside tutorial Move left / Move right styling; do not build a standalone patch. Attachment IMG_3050 2.jpg did not load in this session; do not claim visual diagnosis from it.
+- Inspect the existing approved articulated SVG mascot wave: arm/paw connection, pivot/transform origin, joint alignment and motion timing. Establish the actual cause before changing it.
+- Keep the paw visibly attached throughout the wave; produce a natural controlled wave and smooth return to rest, without a dangling/disconnected appearance.
+- Preserve the approved sunglasses golden retriever, single coherent rig, header containment, existing gestures/context behavior and reduced-motion preferences. No replacement mascot or generated logo.
+- Verify the complete animation cycle, including transitions into/out of wave, desktop/mobile and light/dark. Retain local animation with no new AI calls, providers, dependencies or polling.
+- Carry this pending request into future handoffs until implemented and visually verified.
