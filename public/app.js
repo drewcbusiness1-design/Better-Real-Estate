@@ -1557,11 +1557,28 @@ function renderUpgrade() {
 }
 
 async function subscribeTo(tier, period, st) {
-  try {
-    const r = await api('POST', '/api/billing/subscribe', { period, tier });
-    if (r.checkoutUrl) { window.location.href = r.checkoutUrl; return; }
-    await handlePurchaseResponse(r, `${tier === 'wholesale' ? 'Wholesale Teams' : tier === 'platinum' ? 'Platinum' : 'Plus'} active — billed ${period}.`, async () => { await refreshMe(); render(); });
-  } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
+ if(document.querySelector('.membership-checkout'))return;
+ const shade=el('div',{class:'quick-shade membership-checkout'}),card=el('div',{class:'quick-card form-modal',role:'dialog','aria-modal':'true','aria-label':'Review membership checkout',tabindex:'-1'});
+ const prior=document.activeElement;let busy=false;
+ const close=()=>{if(busy)return;shade.remove();document.removeEventListener('keydown',keys);prior?.focus();};
+ const keys=e=>{if(e.key==='Escape')close();if(e.key==='Tab'){const nodes=[...card.querySelectorAll('button,input')].filter(n=>!n.disabled);const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}};
+ document.addEventListener('keydown',keys);shade.onclick=e=>{if(e.target===shade)close();};
+ card.append(el('h3',{},'Review membership'),el('p',{class:'sub'},'Loading your available Better Credits…'));shade.append(card);document.body.append(shade);card.focus();
+ try {
+ const w=await api('GET','/api/billing/credits');if(!shade.isConnected)return;
+ if(w.pending){card.innerHTML='';const error=el('div',{class:'errmsg',role:'alert'});card.append(el('h3',{},'A credit checkout is open'),el('p',{},'Your selected credits are reserved for that checkout. Resume it or cancel it before choosing another amount.'),error,el('div',{class:'form-modal-actions'},[el('button',{class:'btn-ghost',onclick:close},'Close'),el('button',{class:'btn-ghost',onclick:async e=>{try{await withButtonBusy(e.currentTarget,async()=>{await api('POST','/api/billing/credits/cancel',{});close();subscribeTo(tier,period,st);});}catch(e){error.textContent=e.message;}}},'Cancel open checkout'),el('button',{class:'btn-primary',onclick:async e=>{try{await withButtonBusy(e.currentTarget,async()=>{const r=w.pending.url?{checkoutUrl:w.pending.url}:await api('POST','/api/billing/subscribe',{tier:w.pending.tier,period:w.pending.period,betterCreditCents:w.pending.amount});window.location.href=r.checkoutUrl;});}catch(e){error.textContent=e.message;}}},'Resume checkout')]));return;}
+ const price=state.pricing[tier][period],balance=w.availableCents,max=Math.min(price,balance),name=state.pricing[tier].label;
+ card.innerHTML='';card.append(el('div',{class:'quick-head'},[el('h3',{},'Review membership'),el('button',{class:'iconbtn','aria-label':'Close checkout review',onclick:close},'×')]),el('p',{},`${name} · ${period==='annual'?'Annual':'Monthly'} · ${cents(price)}`),el('p',{class:'sub'},`Available Better Credits: ${cents(balance)}`));
+ const toggle=el('input',{type:'checkbox',id:'membership-use-credits',disabled:max<=0?'disabled':null}),amount=el('input',{type:'number',id:'membership-credit-amount',min:'0',max:(max/100).toFixed(2),step:'0.01',value:'0.00',disabled:true,inputmode:'decimal'});
+ const amountLabel=el('label',{for:'membership-credit-amount'},'Credit amount ($)'),summary=el('div',{class:'membership-credit-summary'}),error=el('div',{class:'errmsg',role:'alert'});
+ card.append(el('label',{class:'membership-credit-toggle',for:'membership-use-credits'},[toggle,el('span',{},'Apply Better Credits')]),amountLabel,amount,summary,el('p',{class:'hint'},'Credits apply to this first payment only. Future renewals use the regular plan price. Credits are deducted after successful checkout.'));
+ const selected=()=>toggle.checked?Math.round(Number(amount.value)*100):0;
+ const valid=()=>!toggle.checked||(/^\d+(?:\.\d{1,2})?$/.test(amount.value)&&selected()>=0&&selected()<=max);
+ const next=el('button',{class:'btn-primary',onclick:async()=>{error.textContent='';if(!valid()){error.textContent=`Enter an amount between $0.00 and ${cents(max)}, with up to two decimal places.`;return;}busy=true;next.disabled=true;toggle.disabled=true;amount.disabled=true;next.textContent='Opening secure checkout…';try{const r=await api('POST','/api/billing/subscribe',{period,tier,betterCreditCents:selected()});if(r.checkoutUrl){window.location.href=r.checkoutUrl;return;}busy=false;close();await handlePurchaseResponse(r,`${name} active — billed ${period}.`,async()=>{await refreshMe();render();});}catch(e){error.textContent=e.message;busy=false;next.disabled=false;toggle.disabled=max<=0;amount.disabled=!toggle.checked;next.textContent='Continue to checkout';}}},'Continue to checkout');
+ const update=()=>{const use=valid()?selected():0;summary.replaceChildren(el('div',{},`Credits applied: ${cents(use)}`),el('b',{},`Due at checkout: ${cents(price-use)}`),el('div',{class:'hint'},`Credits left after purchase: ${cents(balance-use)}`));};
+ toggle.onchange=()=>{amount.disabled=!toggle.checked;if(toggle.checked&&Number(amount.value)===0)amount.value=(max/100).toFixed(2);update();};amount.oninput=update;update();
+ card.append(error,el('div',{class:'form-modal-actions'},[el('button',{class:'btn-ghost',onclick:close},'Cancel'),next]));next.focus();
+ }catch(e){busy=false;card.replaceChildren(el('h3',{},'Checkout unavailable'),el('p',{class:'errmsg'},e.message),el('button',{class:'btn-ghost',onclick:close},'Close'));}
 }
 
 function tierCard({ key, name, tagline, priceLine, perks, current, featured, onMonthly, onAnnual }) {
@@ -2740,7 +2757,8 @@ function openBetterGuide(){
   panel.appendChild(el('div',{class:'guide-progress-center'},[el('div',{},[el('span',{},'Platform tour'),el('b',{},tourDone?'Complete':'Available')]),el('div',{},[el('span',{},affiliateGuideOnly()?'Affiliate workbench':'Wholesaling course'),el('b',{},affiliateGuideOnly()?'Ready':`${progress.done}/${progress.total}`)])]));
   const quick=el('div',{class:'guide-quick-grid'});
   quick.append(
-    el('button',{onclick:()=>{closeBetterGuide();startTutorial(true);}},[el('b',{},'Guide me through Better'),el('span',{},'Replay the platform tutorial')]),
+    el('button',{onclick:()=>{closeBetterGuide();startTutorial(true);}},[el('b',{},'Guide me through Better'),el('span',{},'A focused 10-step introduction')]),
+    el('button',{onclick:()=>{closeBetterGuide();startTutorial(true,false,false,true);}},[el('b',{},'Full platform walkthrough'),el('span',{},'Explore every feature available to your account')]),
     el('button',{onclick:()=>affiliateGuideOnly()?navigateFromGuide('affiliate'):navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||next.module||'foundations')},[el('b',{},affiliateGuideOnly()?'Affiliate training & tools':'Learn Wholesaling — Free'),el('span',{},affiliateGuideOnly()?'Scripts, plans and follow-ups':`${progress.done}/${progress.total} modules complete`)]),
     el('button',{onclick:()=>navigateFromGuide('faq')},[el('b',{},'Help center'),el('span',{},'Browse common questions')]),
     el('button',{onclick:()=>navigateFromGuide('support')},[el('b',{},'Chat with Better'),el('span',{},'AI help or request a person')])
@@ -2789,7 +2807,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 74;
+const TUTORIAL_VERSION = 75;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2799,6 +2817,9 @@ const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:1,admin:4};
 function tutorialStepsFor(tier=tutorialTier()){
  const rank=TUTORIAL_RANK[tier]??0;
  return [
+ {view:'upgrade',selector:'.tiergrid4',min:0,release:75,title:'Choose your Better Credits',copy:'Select a plan to review checkout. Credits are optional: choose an amount up to your available balance and the first payment, then review the remaining amount due. Unused credits stay in your wallet; renewals are unchanged.'},
+ {view:'feed',selector:'.better-guide-trigger',min:0,release:75,title:'A shorter introduction',copy:'The main tutorial now takes 10 steps. Open Full platform walkthrough in the dog menu or Settings for all existing feature guidance. Both tutorials can be skipped.'},
+ {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
  {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
  {view:'affiliate',selector:'.affiliate-center',min:0,release:73,title:'Individual commission agreements',copy:'Admin can propose a personal commission rate. Review and accept it in Affiliate Center to activate it for future eligible first paid memberships. A custom rate replaces automatic leaderboard increases until you accept a return to automatic rates. Past earnings keep their original rate.'},
  {view:'home',selector:'#sitefooter',min:0,release:73,title:'Public real estate guides',copy:'Open Real estate guides in the footer for free guides to posting wholesale properties, finding buyers and reviewing deal evidence. Property Share links provide a branded preview; share only information you are authorized to publish.'},
@@ -2892,6 +2913,32 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
  ].filter(x=>rank>=x.min&&(!state.access?.adminUnlimited||!['.affiliate-leaderboard','.affiliate-milestones','.affiliate-status','.affiliate-link-card','.payout-card','.affiliate-hero'].includes(x.selector))&&(!x.when||x.when())&&(!hasRole(state.user,'affiliate')||['affiliate','settings','wallet','support'].includes(x.view)));
 }
+function tutorialQuickSteps(){
+ const affiliate=hasRole(state.user,'affiliate');
+ const step=(view,title,copy,selector='#app .page')=>({view,title,copy,selector,min:0});
+ if(affiliate)return [
+ step('affiliate','Welcome to Better','This 10-step introduction covers your affiliate workspace. You can skip anytime or explore the full walkthrough.'),
+ step('affiliate','Understand the platform','Better helps real estate professionals post properties, connect with buyers and organize deal workflows. Start with the product guide.'),
+ step('affiliate','Apply and accept terms','Affiliate participation requires approval and acceptance of the current terms before sharing your tracked link.'),
+ step('affiliate','Use your tracked link','Once approved, use the personal link or QR code shown in Affiliate Center so eligible purchases can be attributed.'),
+ step('affiliate','Find the right audience','Focus on people who could use Better in their real estate work. Review the sourcing and conversation guidance.'),
+ step('affiliate','Organize prospects','Keep private notes, stages and follow-up dates in your prospect tracker. These stages do not count as actual sales.'),
+ step('affiliate','Understand commissions','Commissions apply once to the first eligible paid membership. Check your accepted rate, leaderboard and conditional bonus rules.'),
+ step('affiliate','Review earnings and payouts','Eligible earnings have a three-day hold. Withdraw available cash through verified Stripe Connect; Better Credits remain separate.'),
+ step('settings','Control your account','Update your account details, appearance and email preferences. Better Guide offers support and the full tutorial.'),
+ step('affiliate','Choose your first step','Read the product guide, then prepare your application or share your approved tracked link. Use Full platform walkthrough whenever you want more detail.')];
+ return [
+ step('feed','Welcome to Better','Get comfortable in 10 steps. Start with your market, post a property or find relevant people, then build from there. Skip anytime.'),
+ step('settings','Set your markets','Choose the states you work in and update your profile roles. These preferences help Better surface relevant opportunities.','.market-settings'),
+ step('feed','Find relevant properties','Use For You for relevant deals and Following for people you follow. Search and Market Hubs help you explore further.'),
+ step('compose','Post your first property','Add accurate property details, price and photos. Post opens a fresh form; edit an existing property from its detail page.'),
+ step('network','Find your people','Explore professionals and public buying criteria. Follow relevant people and build your buyer network.'),
+ step('messages','Start a conversation','Talk directly about a property, ask questions and agree on the next step. Posting alone does not guarantee buyer interest.'),
+ step('commandcenter','Keep the deal moving','Use Command Center and Quick create for the next action. Pipeline, buyer CRM and calendar help organize follow-ups.'),
+ step('upgrade','Choose tools when you need them','Review Plus, Platinum and Wholesale Teams. Paid tools follow your membership access. At checkout, optionally choose how many Better Credits to apply.'),
+ step('support','Get help from Better Guide','Open the dog beside Settings for help, the free wholesaling course and private support. Better Guide identifies itself as AI once per conversation.'),
+ step('feed','Make your first connection','Post a property or find someone in your market. For every available tool and detailed instructions, open Full platform walkthrough here, in the dog menu or Settings.')];
+}
 function tutorialKey(tier=tutorialTier()){return `v${TUTORIAL_VERSION}:${tier}`;}
 function tutorialDockLayout(vw,vh,height,box,preferredSide){
  const mobile=vw<900,margin=mobile?12:16;
@@ -2903,12 +2950,12 @@ function tutorialDockLayout(vw,vh,height,box,preferredSide){
  return {side,width,maxHeight,left:side==='left'?margin:vw-width-margin,
   top:mobile?vh-actualHeight-margin:Math.min(96,Math.max(margin,vh-actualHeight-margin))};
 }
-async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
+async function startTutorial(force=false,onlyNew=false,releaseOnly=false,inDepth=false){
  if(!state.user)return;
  const tier=tutorialTier(),key=tutorialKey(tier);
  const seen=Array.isArray(state.user.settings?.tutorialCompletedKeys)?state.user.settings.tutorialCompletedKeys:[];
  if(!force&&seen.includes(key))return;
- let steps=tutorialStepsFor(tier);
+ let steps=(!onlyNew&&!releaseOnly&&!inDepth)?tutorialQuickSteps():tutorialStepsFor(tier);
  if(onlyNew){const prev=Number(state.user.settings?.tutorialHighestRank??-1),now=TUTORIAL_RANK[tier]??0;steps=steps.filter(x=>x.min>prev&&x.min<=now);if(!steps.length)return;} if(releaseOnly){steps=steps.filter(x=>x.release===TUTORIAL_VERSION);if(!steps.length)return;}
  let i=0,closed=false;
  const root=el('div',{class:'guided-tour-root','aria-live':'polite'});
@@ -2953,16 +3000,16 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false){
  const draw=async()=>{
    if(closed)return; const step=steps[i]; card.innerHTML='';
    const tutorialMascot=createBetterMascotRig({variant:'tutorial',hidden:true});
-   card.appendChild(el('div',{class:'guide-tutor-head'},[el('div',{class:'guide-mascot-stage is-tutorial','aria-hidden':'true'},tutorialMascot),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':'I’ll show you around')])]));
+   card.appendChild(el('div',{class:'guide-tutor-head'},[el('div',{class:'guide-mascot-stage is-tutorial','aria-hidden':'true'},tutorialMascot),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':inDepth?'The full walkthrough':'Your 10-step introduction')])]));
    card.appendChild(el('button',{type:'button',class:'tutorial-dock-toggle',onclick:()=>{preferredSide=card.dataset.dock==='left'?'right':'left';reposition();card.querySelector('.tutorial-dock-toggle').textContent=preferredSide==='left'?'Move right':'Move left';}},preferredSide==='left'?'Move right':'Move left'));
-   card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':'GUIDED TOUR'} · ${i+1} OF ${steps.length}`));
+   card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':inDepth?'FULL WALKTHROUGH':'QUICK START'} · ${i+1} OF ${steps.length}`));
    card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
    if(i===0&&!onlyNew&&!releaseOnly)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{cleanup();state.guideCourseModule=state.user?.settings?.guideCourseLastModule||'foundations';go('learn');}},'I’m new to wholesaling — start the free course'));
    card.appendChild(el('div',{class:'tutorialmembership'},`Showing ${tier==='wholesale'?'Team':tier[0].toUpperCase()+tier.slice(1)} access`));
    const actions=el('div',{class:'tutorialactions'});
    actions.appendChild(el('button',{type:'button',class:'btn-ghost',disabled:i===0?'disabled':null,onclick:()=>move(-1)},'Back'));
    actions.appendChild(el('button',{type:'button',class:'btn-primary',onclick:()=>i===steps.length-1?finish():move(1)},i===steps.length-1?'Finish':'Next'));
-   card.appendChild(actions);card.appendChild(el('button',{type:'button',class:'tutorialskip',onclick:()=>finish(true)},'Skip entire tour'));
+   card.appendChild(actions);if(!onlyNew&&!releaseOnly&&!inDepth)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{await finish();startTutorial(true,false,false,true);}},'Explore the full walkthrough'));card.appendChild(el('button',{type:'button',class:'tutorialskip',onclick:()=>finish(true)},'Skip entire tour'));
    await focus(step);
    if(currentTarget)aimBetterMascotAt(tutorialMascot,currentTarget);
  };
@@ -4087,7 +4134,7 @@ function renderSettings() {
   sbox.appendChild(toggleRow('Show activity status', 'Shows Active now or Active recently on your public profile without exposing an exact timestamp.', s.showActivityStatus !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{showActivityStatus:on}); state.user.settings=settings; }));
   sbox.appendChild(toggleRow('Better Guide contextual tips', 'Lets the mascot tailor help to the Better page you are currently using. No fake activity or invented deal facts.', s.guideContextTips !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{guideContextTips:on}); state.user.settings=settings; }));
   sbox.appendChild(toggleRow('Better Guide animations', 'Keeps mascot movement subtle. Reduced-motion system settings are always respected.', s.guideAnimations !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{guideAnimations:on}); state.user.settings=settings; }));
-  const guideActions=el('div',{class:'guide-settings-actions'},[el('button',{class:'btn-ghost',onclick:()=>startTutorial(true)},'Restart platform tutorial'),el('button',{class:'btn-ghost',onclick:()=>go('learn')},'Open free wholesaling course')]);
+  const guideActions=el('div',{class:'guide-settings-actions'},[el('button',{class:'btn-ghost',onclick:()=>startTutorial(true)},'Restart platform tutorial'),el('button',{class:'btn-ghost',onclick:()=>startTutorial(true,false,false,true)},'Full platform walkthrough'),el('button',{class:'btn-ghost',onclick:()=>go('learn')},'Open free wholesaling course')]);
   sbox.appendChild(guideActions);
   wrap.appendChild(sbox);
 

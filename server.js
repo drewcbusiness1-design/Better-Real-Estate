@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const mailer = require('./mailer');
 
 const { loadDB, saveDB, appendRecord } = require('./store');
+const membershipCredits = require('./membershipCredits').create(require('./store'));
 const {isAffiliateOnlyUser} = require('./affiliateAccounts');
 const affiliateContent=require('./affiliateContent');
 const saveAffiliateContent=affiliateContent.writer(require('./store'));
@@ -88,7 +89,7 @@ app.use(cookieSession({
   maxAge: 30 * 24 * 60 * 60 * 1000
 }));
 
-const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, plusToolUsage, verificationEmailLastError, ...r } = u; return r; };
+const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, plusToolUsage, verificationEmailLastError, membershipCreditState, ...r } = u; return r; };
 const publicProfileUser = social.publicProfileUser;
 const friendRelationship = social.friendRelationship;
 const socialUserCard = social.socialUserCard;
@@ -1326,6 +1327,26 @@ function maybePayReferral(db, user) {
 }
 
 /* ============================ SUBSCRIPTION & UNLOCKS ============================ */
+// Credits are selected explicitly; reservations are private to the account.
+async function reconcileCreditCheckout(userId){
+ let user=await membershipCredits.read(userId);const active=user?.membershipCreditState?.active;
+ if(active&&!active.sessionId&&payments.enabled()&&user.stripeCustomerId){
+  // Recover an uncertain network result without releasing a potentially completed payment.
+  const sessions=await payments.stripe.checkout.sessions.list({customer:user.stripeCustomerId,limit:100});
+  const found=sessions.data.find(x=>x.metadata?.creditReservationId===active.id);
+  if(found){await membershipCredits.link(userId,active.id,found);active.sessionId=found.id;}
+  else if(!sessions.has_more&&Date.now()-Date.parse(active.createdAt)>3600000){await membershipCredits.release(userId,active.id);return membershipCredits.read(userId);}
+ }
+ if(active?.sessionId&&payments.enabled()){
+  const session=await payments.stripe.checkout.sessions.retrieve(active.sessionId);
+  if(session.status==='expired')await membershipCredits.release(userId,active.id);
+  else if(session.status==='complete'&&['paid','no_payment_required'].includes(session.payment_status))await membershipCredits.complete(userId,session);
+  user=await membershipCredits.read(userId);
+ }
+ return user;
+}
+app.get('/api/billing/credits',requireAuth,async(req,res)=>{try{const user=await reconcileCreditCheckout(req.user.id),active=user?.membershipCreditState?.active;res.set('Cache-Control','no-store').json({availableCents:membershipCredits.available(user),pending:active?{url:active.url||null,amount:active.amount,tier:active.tier,period:active.period}:null});}catch(e){res.status(503).json({error:'Unable to refresh credits. Please try again.'});}});
+app.post('/api/billing/credits/cancel',requireAuth,async(req,res)=>{try{const user=await membershipCredits.read(req.user.id),active=user?.membershipCreditState?.active;if(active){if(!active.sessionId)return res.status(409).json({error:'Checkout is still being prepared. Please retry your original checkout to recover it.'});const session=await payments.stripe.checkout.sessions.retrieve(active.sessionId);if(session.status==='open')await payments.stripe.checkout.sessions.expire(active.sessionId);else if(session.status==='complete')return res.status(409).json({error:'Checkout completed. Refresh your membership status.'});await membershipCredits.release(req.user.id,active.id);}res.json({ok:true});}catch(e){res.status(409).json({error:'Could not cancel that checkout. Refresh and try again.'});}});
 app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
   if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });
   if (isAdminUser(req.user)) return res.json({ user: publicUser(req.user), adminUnlimited: true });
@@ -1333,6 +1354,8 @@ app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
   const tier = ['pro','platinum','wholesale'].includes(req.body?.tier) ? req.body.tier : 'pro';
   const tierConfig = PRICING[tier];
   try {
+    const selectedCredit=require('./membershipCredits').validate(req.body?.betterCreditCents,period==='annual'?tierConfig.annual:tierConfig.monthly);
+    if (!payments.enabled() && selectedCredit) return res.status(503).json({error:'Credit checkout requires configured payments. Your credits have not been used.'});
     if (!payments.enabled()) {
       // Stripe not configured yet — fall back to a one-time simulated
       // grant so the app stays testable. No real recurring charge exists
@@ -1354,11 +1377,21 @@ app.post('/api/billing/subscribe', requireAuth, async (req, res) => {
     // checkout page to collect the card.
     const appUrl = process.env.APP_URL || 'http://localhost:8888';
     const amount = period === 'annual' ? tierConfig.annual : tierConfig.monthly;
+    let reservation=null;
+    const creditUser=await reconcileCreditCheckout(req.user.id),active=creditUser?.membershipCreditState?.active;
+    if(active){
+      if(active.amount!==selectedCredit||active.total!==amount||active.tier!==tier||active.period!==period) return res.status(409).json({error:'Resume or cancel your existing credit checkout before changing the plan or amount.'});
+      if(active.url)return res.json({checkoutUrl:active.url});
+      reservation=active;
+    }else if(selectedCredit){reservation=(await membershipCredits.reserve(req.user.id,selectedCredit,amount,tier,period)).state.active;}
+    // Persist customer identity before the remote checkout; credit state is protected from stale saves.
+    req.user.stripeCustomerId=await payments.ensureCustomer(req.user,reservation?.id);await saveDB(req.db);
     const session = await payments.createSubscriptionCheckout(
       req.user,
-      { amountCents: amount, interval: period === 'annual' ? 'year' : 'month', label: tierConfig.label + ' — ' + (period === 'annual' ? 'Annual' : 'Monthly'), tier, betterCreditCents: Math.min(amount, Number(req.user.betterCreditCents||0)) },
+      { amountCents: amount, interval: period === 'annual' ? 'year' : 'month', label: tierConfig.label + ' — ' + (period === 'annual' ? 'Annual' : 'Monthly'), tier, betterCreditCents:selectedCredit,creditReservationId:reservation?.id,creditExpiresAt:reservation?Math.floor(Date.parse(reservation.createdAt)/1000)+3600:null },
       appUrl
     );
+    if(reservation)await membershipCredits.link(req.user.id,reservation.id,session);
     await saveDB(req.db); // persists stripeCustomerId if it was just created
     res.json({ checkoutUrl: session.url });
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -3919,6 +3952,14 @@ app.post('/api/payments/webhook',
       return res.status(400).send('Invalid signature');
     }
 
+    // Verified session events settle/release selected credits atomically before loading billing state.
+    const creditSession=event.data.object;
+    if(creditSession.metadata?.creditReservationId&&creditSession.metadata?.userId){
+      try{
+        if(['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)&&['paid','no_payment_required'].includes(creditSession.payment_status))await membershipCredits.complete(creditSession.metadata.userId,creditSession);
+        if(['checkout.session.expired','checkout.session.async_payment_failed'].includes(event.type))await membershipCredits.release(creditSession.metadata.userId,creditSession.metadata.creditReservationId);
+      }catch(e){return res.status(500).json({error:'Credit settlement requires retry.'});}
+    }
     const db = await loadDB();
     try {
       if (event.type === 'payment_intent.succeeded') {
@@ -3985,16 +4026,16 @@ app.post('/api/payments/webhook',
         await saveDB(db);
       }
 
-      if (event.type === 'checkout.session.completed') {
+      if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
         const sess = event.data.object;
         const user = db.users.find(u => u.id === sess.metadata?.userId);
-        if (user && sess.mode === 'subscription') {
+        if (user && sess.mode === 'subscription' && (!sess.metadata?.creditReservationId || ['paid','no_payment_required'].includes(sess.payment_status))) {
           const period = sess.metadata?.period === 'annual' ? 'annual' : 'monthly';
           const tier = ['pro','platinum','wholesale'].includes(sess.metadata?.tier) ? sess.metadata.tier : 'pro';
           user.plan = tier;
           user.planPeriod = period;
           user.stripeSubscriptionId = sess.subscription;
-          const creditUsed=Math.max(0,Number(sess.metadata?.betterCreditCents||0)); if(creditUsed && !db.ledger.some(l=>l.meta?.betterCreditSession===sess.id)){ user.betterCreditCents=Math.max(0,Number(user.betterCreditCents||0)-creditUsed); ledgerAdd(db,user.id,'purchase',-creditUsed,'Better Credit applied to membership',{nonWithdrawable:true,betterCreditSession:sess.id}); }
+          const creditUsed=Math.max(0,Number(sess.metadata?.betterCreditCents||0)); if(creditUsed && !sess.metadata?.creditReservationId && !db.ledger.some(l=>l.meta?.betterCreditSession===sess.id)){ user.betterCreditCents=Math.max(0,Number(user.betterCreditCents||0)-creditUsed); ledgerAdd(db,user.id,'purchase',-creditUsed,'Better Credit applied to membership',{nonWithdrawable:true,betterCreditSession:sess.id}); }
           // Approximate for right now — the invoice.payment_succeeded event
           // below fires moments later with Stripe's exact period end and
           // corrects this. Good enough as a starting value in the meantime.

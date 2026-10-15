@@ -1477,3 +1477,11 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .support-guide-head .support-dog{position:relative;min-height:125px}.support-guide-head .support-dog .better-mascot-rig{position:relative}
 .quick-card.workspace-dialog{overflow:auto!important;max-height:calc(100dvh - 70px)!important}.workspace-dialog .btn-primary{background:var(--navy-deep)!important;color:var(--onaccent)!important}:root[data-theme="dark"] .workspace-dialog .btn-primary{background:#f7f6f1!important;color:#0b0b0a!important}
 .markethubspage .market-stats .mini-metric span{font-size:10px;white-space:nowrap;word-break:normal;overflow-wrap:normal}.markethubspage .pageheadrow>.btn-ghost{white-space:nowrap;padding-inline:18px}
+
+/* Membership review uses existing modal and theme tokens. */
+.membership-checkout .quick-card{width:min(480px,calc(100vw - 24px));max-height:calc(100dvh - 32px - env(safe-area-inset-bottom));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:max(22px,env(safe-area-inset-bottom))}
+.membership-credit-toggle{display:flex!important;align-items:center;gap:10px;margin:18px 0!important;cursor:pointer}
+.membership-credit-toggle input{width:18px!important;height:18px;flex:0 0 18px;margin:0;accent-color:var(--accent)}
+.membership-credit-summary{display:grid;gap:8px;margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.membership-checkout .form-modal-actions{flex-wrap:wrap;gap:10px}
+.membership-checkout .form-modal-actions button{white-space:normal}

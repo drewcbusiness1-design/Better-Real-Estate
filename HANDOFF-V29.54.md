@@ -27,3 +27,15 @@ Exact official logo never redrawn/generated. Maintain approved theme/responsive/
 
 ---
 
+
+
+## Pending next update — optional Better Credits at membership checkout (October 15, 2026)
+
+User-approved requirement; queued only, not implemented:
+- Replace automatic maximum-credit application with an explicit opt-in. Default: no credits applied.
+- Let the member choose the amount of Better Credits to apply, capped at available credit balance and membership payment total.
+- Show available balance, chosen credit amount, and remaining amount due before redirecting to Stripe checkout.
+- Preserve unused credits; deduct only the selected amount on successful checkout. Validate amounts on the server and prevent duplicate or concurrent spending.
+- Match existing design, light/dark modes and mobile layouts; update tutorial/onboarding in the same release.
+- Current v29.54 applies available credits automatically to the first membership checkout payment. Existing subscription renewals do not automatically redeem credits; this request does not authorize changing renewal behavior.
+- Carry this requirement into every subsequent handoff until implemented and verified.

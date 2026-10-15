@@ -158,7 +158,7 @@ function fileLoad() {
 }
 
 async function loadDB() {
-  if (FILE_MODE) return fileLoad();
+  if (FILE_MODE) { const db=fileLoad(); db.__creditSnapshot=Object.fromEntries(db.users.map(u=>[u.id,Number(u.betterCreditCents||0)])); return db; }
   await init();
   const db = {}; COLLECTIONS.forEach(c => { db[c] = []; });
   // One database round trip instead of one SELECT per collection. This is the
@@ -189,7 +189,15 @@ async function saveDB(db) {
     COLLECTIONS.forEach(c => out[c] = db[c] || []);
     // Support mutations opt in; unrelated stale file snapshots cannot erase chats.
     if (!db.__writeSupportThreads && fsMod.existsSync(FILE_PATH)) out.supportThreads = JSON.parse(fsMod.readFileSync(FILE_PATH, 'utf8')).supportThreads || [];
+    if(fsMod.existsSync(FILE_PATH)){
+      const latest=JSON.parse(fsMod.readFileSync(FILE_PATH,'utf8'));
+      out.users=out.users.map(row=>{const current=latest.users?.find(u=>u.id===row.id);if(!current)return row;const before=db.__creditSnapshot?.[row.id];const delta=before===undefined?0:Number(row.betterCreditCents||0)-before;const merged={...row,betterCreditCents:Math.max(0,Number(current.betterCreditCents||0)+delta)};if(!db.__writeMembershipCredits)merged.membershipCreditState=current.membershipCreditState;return merged;});
+      // Targeted credit receipts cannot be erased by an unrelated stale snapshot.
+      for(const entry of latest.ledger||[])if(entry.id?.startsWith('membership-credit-')&&!out.ledger.some(l=>l.id===entry.id))out.ledger.push(entry);
+    }
     fsMod.writeFileSync(FILE_PATH, JSON.stringify(out, null, 2));
+    db.__creditSnapshot=Object.fromEntries(out.users.map(u=>[u.id,Number(u.betterCreditCents||0)]));
+    for(const row of db.users){const saved=out.users.find(u=>u.id===row.id);if(saved){row.betterCreditCents=saved.betterCreditCents;row.membershipCreditState=saved.membershipCreditState;}}
     return;
   }
   await init();
@@ -208,11 +216,13 @@ async function saveDB(db) {
       seen.add(id);
       const serialized = JSON.stringify(row);
       if (beforeData.get(id) === serialized) continue;
-      writes.push(sql(
-        `INSERT INTO ${t} (id, data, updated_at) VALUES ($1, $2, now())
-         ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
-        [id, serialized]
-      ));
+      if(c==='users'){
+        const before=beforeData.has(id)?JSON.parse(beforeData.get(id)):row;
+        const delta=Number(row.betterCreditCents||0)-Number(before.betterCreditCents||0);
+        writes.push(sql(`INSERT INTO ${t}(id,data,updated_at) VALUES($1,$2::jsonb,now()) ON CONFLICT(id) DO UPDATE SET data=jsonb_set((EXCLUDED.data-'membershipCreditState') || CASE WHEN ${t}.data ? 'membershipCreditState' THEN jsonb_build_object('membershipCreditState',${t}.data->'membershipCreditState') ELSE '{}'::jsonb END,'{betterCreditCents}',to_jsonb(GREATEST(0,COALESCE((${t}.data->>'betterCreditCents')::bigint,0)+$3::bigint))),updated_at=now()`,[id,serialized,delta]));
+      }else{
+        writes.push(sql(`INSERT INTO ${t} (id,data,updated_at) VALUES ($1,$2,now()) ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data,updated_at=now()`,[id,serialized]));
+      }
     }
     for (const oldId of beforeIds) {
       if (!seen.has(oldId)) writes.push(sql(`DELETE FROM ${t} WHERE id = $1`, [oldId]));

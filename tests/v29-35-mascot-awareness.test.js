@@ -12,6 +12,6 @@ assert(app.includes("undercontract:['stand','joy']"));
 assert(app.includes("closed:['celebrate','joy']"));
 assert(app.includes("stage.value==='closed'"));
 assert(app.includes("['title','closing'].includes(stage.value)"));
-assert(app.includes('const TUTORIAL_VERSION = 74;'));
+assert(app.includes('const TUTORIAL_VERSION = 75;'));
 assert(!app.includes('setInterval(mascotPersistentAwareness'));
 console.log('v29.35 mascot situational-awareness regression checks passed');
