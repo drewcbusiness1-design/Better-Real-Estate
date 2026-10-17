@@ -86,7 +86,7 @@ async function send(to, subject, html, text, extra = {}) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     ...(extra.signal ? { signal: extra.signal } : {}),
-    headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+    headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json', ...(extra.idempotencyKey?{'Idempotency-Key':extra.idempotencyKey}:{}) },
     body: JSON.stringify({ from: senderAddress(extra.sender), to: [to], subject, html, text, reply_to: extra.replyTo || REPLY_TO, ...(extra.headers ? { headers: extra.headers } : {}) })
   });
   if (!res.ok) {
@@ -150,7 +150,7 @@ exports.sendMatchAlert = (to, name, listing) =>
     `New match: ${listing.address}, ${listing.city}, $${listing.asking}. ${APP_URL}`);
 
 
-exports.sendBuyerMatchNotice = (to, name, listing, listingUrl) =>
+exports.sendBuyerMatchNotice = (to, name, listing, listingUrl, idempotencyKey) =>
   send(to, `New deal matching your buy box — ${listing.city}`,
     shell('A deal matches what you buy',
       `<p>Hi ${esc(name || 'there')}, a Better Real Estate seller just shared a property that matches one of your active buy boxes.</p>
@@ -158,7 +158,7 @@ exports.sendBuyerMatchNotice = (to, name, listing, listingUrl) =>
        <p style="font-size:13.5px;color:#40474F;margin:0 0 12px">Asking $${Number(listing.asking || 0).toLocaleString()}${listing.arv ? ' · Seller ARV estimate $' + Number(listing.arv).toLocaleString() : ''}</p>
        ${button(listingUrl || APP_URL, 'View the deal')}
        <p style="font-size:12px;color:#40474F">Property figures are seller-provided. Verify all deal information independently.</p>`),
-    `New Better Real Estate buy-box match in ${listing.city || 'your market'} — asking $${Number(listing.asking || 0).toLocaleString()}. ${listingUrl || APP_URL}`);
+    `New Better Real Estate buy-box match in ${listing.city || 'your market'} — asking $${Number(listing.asking || 0).toLocaleString()}. ${listingUrl || APP_URL}`, {idempotencyKey,signal:AbortSignal.timeout(12000)});
 
 exports.configured = () => !!RESEND_KEY;
 

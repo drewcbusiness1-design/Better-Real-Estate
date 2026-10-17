@@ -25,7 +25,7 @@ db.friendRequests.push({fromUserId:'approved',toUserId:'future',status:'pending'
 assert.equal(notificationContext.notificationSummaryFor(db,db.users.find(u=>u.id==='future')).destinations.network,0);
 db.friendRequests.push({fromUserId:'pending',toUserId:'future',status:'pending'});
 assert.equal(notificationContext.notificationSummaryFor(db,db.users.find(u=>u.id==='future')).destinations.network,1);
-const context={isAffiliateOnlyUser:accounts.isAffiliateOnlyUser,getBuyBoxes:u=>u.boxes||[],buyBoxHasBuyerIntent:()=>true,buyBoxMatchesListing:()=>true,socialUserCard:(db,id,u)=>u};
+const context={connectedDeals:require('../connectedDeals'),isAffiliateOnlyUser:accounts.isAffiliateOnlyUser,getBuyBoxes:u=>u.boxes||[],buyBoxHasBuyerIntent:()=>true,buyBoxMatchesListing:()=>true,socialUserCard:(db,id,u)=>u};
 for(const name of ['buyerMatchesForListing','publicBuyerDemand'])vm.runInNewContext(src.match(new RegExp('function '+name+'\\([^]*?\\n\\}'))[0],context);
 const fixture={users:[{...db.users[0],boxes:[{public:true}]},{...user('buyer'),boxes:[{public:true}]}],companies:[]};
 assert.equal(context.buyerMatchesForListing(fixture,{ownerId:'seller'}).length,1);assert.equal(context.publicBuyerDemand(fixture,'viewer').length,1);

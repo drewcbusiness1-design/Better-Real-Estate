@@ -28,7 +28,7 @@ try { ({ Pool } = require('pg')); } catch {}
 const affiliateAccounts = require('./affiliateAccounts');
 const policy = require('./policy');
 const COLLECTIONS = [
-  'supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
+  'matchDeliveries','titleCompanies','buyerResponses','privateDeals','dealIntroductions','supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
   'users','companies','companyInvites','listings','saves','follows','friendRequests','friendships','messages','ledger','unlocks',
   'shopItems','orders','offers','reviews','views','promotions','payouts',
   'alerts','tokens','suppliers','supplierOrders','reports','dealNotes','buyerLeads','emailBroadcasts','membershipGrants','shareEvents','buyerCrm','dealAnalyses',
@@ -158,7 +158,7 @@ function fileLoad() {
 }
 
 async function loadDB() {
-  if (FILE_MODE) { const db=fileLoad(); db.__creditSnapshot=Object.fromEntries(db.users.map(u=>[u.id,Number(u.betterCreditCents||0)])); return db; }
+  if (FILE_MODE) { const db=fileLoad(); db.__matchDeliveryIds=(db.matchDeliveries||[]).map(x=>x.id); db.__creditSnapshot=Object.fromEntries(db.users.map(u=>[u.id,Number(u.betterCreditCents||0)])); return db; }
   await init();
   const db = {}; COLLECTIONS.forEach(c => { db[c] = []; });
   // One database round trip instead of one SELECT per collection. This is the
@@ -191,6 +191,8 @@ async function saveDB(db) {
     if (!db.__writeSupportThreads && fsMod.existsSync(FILE_PATH)) out.supportThreads = JSON.parse(fsMod.readFileSync(FILE_PATH, 'utf8')).supportThreads || [];
     if(fsMod.existsSync(FILE_PATH)){
       const latest=JSON.parse(fsMod.readFileSync(FILE_PATH,'utf8'));
+      if(!db.__writeMatchDeliveries)out.matchDeliveries=(out.matchDeliveries||[]).map(row=>({...row,...(latest.matchDeliveries||[]).find(x=>x.id===row.id)}));
+      for(const row of latest.matchDeliveries||[])if(!out.matchDeliveries.some(x=>x.id===row.id)&&!(db.__matchDeliveryIds||[]).includes(row.id))out.matchDeliveries.push(row);
       out.users=out.users.map(row=>{const current=latest.users?.find(u=>u.id===row.id);if(!current)return row;const before=db.__creditSnapshot?.[row.id];const delta=before===undefined?0:Number(row.betterCreditCents||0)-before;const merged={...row,betterCreditCents:Math.max(0,Number(current.betterCreditCents||0)+delta)};if(!db.__writeMembershipCredits)merged.membershipCreditState=current.membershipCreditState;return merged;});
       // Targeted credit receipts cannot be erased by an unrelated stale snapshot.
       for(const entry of latest.ledger||[])if(entry.id?.startsWith('membership-credit-')&&!out.ledger.some(l=>l.id===entry.id))out.ledger.push(entry);
@@ -220,6 +222,9 @@ async function saveDB(db) {
         const before=beforeData.has(id)?JSON.parse(beforeData.get(id)):row;
         const delta=Number(row.betterCreditCents||0)-Number(before.betterCreditCents||0);
         writes.push(sql(`INSERT INTO ${t}(id,data,updated_at) VALUES($1,$2::jsonb,now()) ON CONFLICT(id) DO UPDATE SET data=jsonb_set((EXCLUDED.data-'membershipCreditState') || CASE WHEN ${t}.data ? 'membershipCreditState' THEN jsonb_build_object('membershipCreditState',${t}.data->'membershipCreditState') ELSE '{}'::jsonb END,'{betterCreditCents}',to_jsonb(GREATEST(0,COALESCE((${t}.data->>'betterCreditCents')::bigint,0)+$3::bigint))),updated_at=now()`,[id,serialized,delta]));
+      }else if(c==='matchDeliveries'){
+        // Delivery claims are updated only by the worker. A stale request must never reset one.
+        writes.push(sql(`INSERT INTO ${t}(id,data,updated_at) VALUES($1,$2,now()) ON CONFLICT(id) DO NOTHING`,[id,serialized]));
       }else{
         writes.push(sql(`INSERT INTO ${t} (id,data,updated_at) VALUES ($1,$2,now()) ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data,updated_at=now()`,[id,serialized]));
       }
