@@ -1792,6 +1792,7 @@ app.post('/api/buyer-crm', requireAuth, async (req,res)=>{
   let row=b.id&&req.db.buyerCrm.find(x=>x.id===b.id&&(x.ownerId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId)));
   if(b.id&&!row)return res.status(404).json({error:'Buyer not found.'});
   if(!String(b.name!==undefined?b.name:row?.name||'').trim())return res.status(400).json({error:'Buyer name is required.'});
+  if(b.memberId&&req.db.buyerCrm.some(x=>x.id!==row?.id&&x.memberId===b.memberId&&(x.ownerId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId))))return res.status(409).json({error:'This member is already in your CRM.'});
   if(!row){ row={id:crypto.randomUUID(),ownerId:req.user.id,companyId:req.user.companyId||null,createdAt:now}; req.db.buyerCrm.push(row); }
   row.name=String(b.name!==undefined?b.name:(row.name||'')).trim().slice(0,100); row.email=String(b.email!==undefined?b.email:(row.email||'')).trim().slice(0,160); row.phone=String(b.phone!==undefined?b.phone:(row.phone||'')).trim().slice(0,50);
   row.markets=String(b.markets!==undefined?b.markets:(row.markets||'')).trim().slice(0,300); row.buyBox=String(b.buyBox!==undefined?b.buyBox:(row.buyBox||'')).trim().slice(0,600); row.notes=String(b.notes!==undefined?b.notes:(row.notes||'')).trim().slice(0,1200);
@@ -2320,12 +2321,12 @@ function scoreOneBuyBox(bb, listing) {
   if(assessment.status!=='match')return {score:0,reasons:[]};
   if (listing.asking >= bb.minPrice && listing.asking <= bb.maxPrice) { score += 220; reasons.push('In your price range'); }
   else { const d = listing.asking < bb.minPrice ? bb.minPrice - listing.asking : listing.asking - bb.maxPrice; score -= Math.min(200, d / 2000); }
-  if (bb.cities.length) {
+  if (bb.cities?.length) {
     if (bb.cities.some(c => listing.city.toLowerCase().includes(c.toLowerCase()))) { score += 180; reasons.push('In a market you follow'); }
     else score -= 60;
   }
   if (bb.states?.length && bb.states.some(st => listingState(listing)===st)) { score += 170; reasons.push('State match'); }
-  if (bb.propertyTypes.length && bb.propertyTypes.includes(listing.propertyType)) { score += 90; reasons.push('Property type match'); }
+  if (bb.propertyTypes?.length && bb.propertyTypes.includes(listing.propertyType)) { score += 90; reasons.push('Property type match'); }
   if (bb.minBeds && Number(listing.beds||0) >= bb.minBeds) { score += 45; reasons.push('Bed count match'); }
   if (bb.minBaths && Number(listing.baths||0) >= bb.minBaths) score += 30;
   if (listing.arv && (!bb.minArv || listing.arv>=bb.minArv) && (!bb.maxArv || listing.arv<=bb.maxArv)) { score += 75; reasons.push('ARV range match'); }
@@ -2504,6 +2505,7 @@ app.get('/api/notifications', requireAuth, async (req,res)=>{const rows=(req.db.
 app.post('/api/notifications/read', requireAuth, async (req,res)=>{for(const n of (req.db.dealNotifications||[]))if(n.userId===req.user.id)n.read=true;await saveDB(req.db);res.json({ok:true});});
 app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
   const now=Date.now(), preset=String(req.query.preset||'24h'); let start;
+  if(preset==='custom'&&(!Number.isFinite(Date.parse(req.query.start))||!Number.isFinite(Date.parse(req.query.end))||Date.parse(req.query.start)>Date.parse(req.query.end)))return res.status(400).json({error:'Choose a valid start and end, with start before end.'});
   if(preset==='all'){ start=0; } else if(preset==='custom'){ const d=new Date(req.query.start); start=Number.isFinite(d.getTime())?d.getTime():now-86400000; } else start=now-(activityWindowMs[preset]||86400000);
   const endQ=new Date(req.query.end); const end=preset==='custom'&&Number.isFinite(endQ.getTime())?Math.min(now,endQ.getTime()):now;
   const activityInRange=value=>{const t=value?new Date(value).getTime():NaN;return Number.isFinite(t)&&t>=start&&t<=end};
@@ -3808,6 +3810,10 @@ app.post('/api/admin/demo-accounts/:id/convert', requireAuth, requireAdmin, asyn
 });
 
 /* ============================ ADMIN EMAIL CENTER ============================ */
+app.get('/api/admin/email-center/promotions',requireAuth,requireAdmin,(req,res)=>res.json(marketing.status(req.db)));
+app.patch('/api/admin/email-center/promotions',requireAuth,requireAdmin,async(req,res)=>{try{const config=marketing.normalizeSettings(req.body);config.updatedBy=req.user.id;req.db.promoSettings=[config];await saveDB(req.db);res.json(marketing.status(req.db));}catch(e){res.status(400).json({error:e.message});}});
+app.post('/api/admin/email-center/promotions/preview',requireAuth,requireAdmin,(req,res)=>{try{const config=marketing.normalizeSettings(req.body.config);const content=config.templates[req.body.key];if(!content)return res.status(400).json({error:'Choose a template.'});res.json({html:mailer.previewMarketing(req.user.name,content,{unsubscribeUrl:marketing.unsubscribeUrl(req.user),preferencesUrl:(process.env.APP_URL||'')+'/?view=settings',postalAddress:process.env.MARKETING_POSTAL_ADDRESS||'Business mailing address not configured'}),content});}catch(e){res.status(400).json({error:e.message});}});
+
 app.get('/api/admin/email-center', requireAuth, requireAdmin, async (req, res) => {
   const health = mailer.health();
   const counts = {
@@ -3867,7 +3873,7 @@ app.post('/api/admin/email-center/broadcast-test', requireAuth, requireAdmin, as
   try {
     await mailer.sendAdminBroadcast(req.user.email, req.user.name, {
       subject: `[TEST] ${draft.subject}`, headline: draft.headline, body: draft.body, ctaLabel: draft.ctaLabel, ctaUrl: draft.ctaUrl, sender: draft.sender,
-      unsubscribeUrl: `${String(process.env.APP_URL || '').replace(/\/$/, '')}/?view=settings`,
+      unsubscribeUrl: marketing.unsubscribeUrl(req.user),
       preferencesUrl: `${String(process.env.APP_URL || '').replace(/\/$/, '')}/?view=settings`,
       postalAddress: String(process.env.MARKETING_POSTAL_ADDRESS || '').trim()
     });

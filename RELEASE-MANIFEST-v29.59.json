@@ -1,0 +1,34 @@
+{
+  "version": "2.9.59",
+  "baseline": "2.9.58",
+  "deployed": false,
+  "video": {
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080,
+        "avg_frame_rate": "60/1",
+        "nb_read_frames": "1380"
+      },
+      {
+        "codec_name": "aac",
+        "avg_frame_rate": "0/0",
+        "nb_read_frames": "1079"
+      }
+    ],
+    "format": {
+      "duration": "23.000000",
+      "size": "7968757"
+    }
+  },
+  "files": {
+    "public/app.js": "11ddabba293a4b2d52a105e0a3dc93cdf9f6b822152e89d5578b17f1ddc19c59",
+    "public/style.css": "187f592ffe88bbe13cb6e8065cb3d5c7688dcdcd2ea6098963fb8377123570cd",
+    "public/better-preview.mp4": "432cbbd68919168948a0abefdd0baa17c7017a4e2eef4a6b97ff939ab05fb4c6",
+    "public/better-preview-mobile.mp4": "c868d8345781254f68936bf47967e894154189da80dd890e38a95c2dd63edeb7",
+    "public/better-preview.vtt": "320117ba2af253e5440f83ec80c0dc700d51dc8fc8ebce2d64947a4516fc52d4",
+    "public/better-preview.jpg": "910897e04d9187eac85d7f3f5f71defd53abd2dd215bae39ebe5452c9ff63354"
+  }
+}

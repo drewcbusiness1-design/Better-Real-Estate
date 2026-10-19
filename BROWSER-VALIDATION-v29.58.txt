@@ -1,0 +1,51 @@
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+PASS browser promo settings persist; preview and exact logo load
+PASS browser custom chart range preserves local timezone
+PASS desktop/390/320 light and dark; title expansion/filter; no horizontal overflow
+PASS video playback and captions 1280 {
+  width: 1280,
+  height: 800,
+  duration: 31.04,
+  time: 1.205438,
+  error: undefined,
+  tracks: 1,
+  cues: 7,
+  controls: true,
+  preload: 'none',
+  inline: true
+}
+PASS video playback and captions 390 {
+  width: 1280,
+  height: 800,
+  duration: 31.04,
+  time: 1.206458,
+  error: undefined,
+  tracks: 1,
+  cues: 7,
+  controls: true,
+  preload: 'none',
+  inline: true
+}
+PASS video playback and captions 320 {
+  width: 1280,
+  height: 800,
+  duration: 31.04,
+  time: 1.204557,
+  error: undefined,
+  tracks: 1,
+  cues: 7,
+  controls: true,
+  preload: 'none',
+  inline: true
+}
+PASS no uncaught browser errors
+
+Final marketing-header recheck:
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+PASS browser promo settings persist; preview and exact logo load

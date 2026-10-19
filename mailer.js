@@ -30,6 +30,7 @@ const PARTNERS_FROM = process.env.MAIL_PARTNERS_FROM || `${APP_NAME} <partners@b
 const CONTACT_EMAIL = 'partners@betterrealestate.org';
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const REPLY_TO = process.env.MAIL_REPLY_TO || CONTACT_EMAIL;
+const MARKETING_LOGO_URL = `${APP_URL.replace(/\/$/, '')}/brand-logo-header.png`;
 const LOGO_URL = `${APP_URL.replace(/\/$/, '')}/bre-email-logo.png`;
 
 function senderAddress(sender = 'notifications') {
@@ -58,7 +59,7 @@ function esc(v) {
 function marketingShell(title, bodyHtml, { unsubscribeUrl, preferencesUrl, postalAddress }) {
   return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#FAF9F6;padding:32px 16px">
   <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #DBD7CD;border-radius:14px;overflow:hidden">
-    <div style="background:#12222D;padding:18px 24px;text-align:center"><img src="${LOGO_URL}" width="190" alt="Better Real Estate" style="display:block;max-width:190px;height:auto;margin:0 auto"></div>
+    <div style="background:#FAF9F6;padding:18px 24px;text-align:center"><img src="${MARKETING_LOGO_URL}" width="190" alt="Better Real Estate" style="display:block;max-width:190px;height:auto;margin:0 auto"></div>
     <div style="padding:26px 24px;color:#14181C;font-size:15px;line-height:1.6">
       <h2 style="margin:0 0 12px;font-size:20px">${esc(title)}</h2>
       ${bodyHtml}
@@ -254,3 +255,5 @@ exports.sendSupportRequest = (to, name, threadId) => {
  const url = APP_URL.replace(/\/$/, '') + '/?view=support&thread=' + encodeURIComponent(threadId);
  return send(to, 'Human support requested on Better Real Estate', shell('A member requested your help', '<p>'+esc(name || 'A member')+' requested human support. Sign in with your admin account to join the private conversation.</p>'+button(url, 'Open support conversation')), 'A member requested human support. Admin sign-in required: '+url, { signal: AbortSignal.timeout(8000) });
 };
+
+exports.previewMarketing = (name, {headline,body,ctaLabel,ctaUrl}, links) => marketingShell(headline || 'See what is new', `<p>Hi ${esc(name || 'there')},</p><p>${esc(body || '')}</p><p style="margin:22px 0"><a href="${esc(ctaUrl || APP_URL)}" style="background:#12222D;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;display:inline-block;font-weight:600">${esc(ctaLabel || 'Open Better Real Estate')}</a></p>`, links);

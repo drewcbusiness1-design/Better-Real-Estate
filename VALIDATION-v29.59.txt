@@ -1,0 +1,133 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> better-real-estate@2.9.59 test
+> node tests/cj-adapter.test.js && node tests/dropship.test.js && node tests/ai-marketing.test.js && node tests/integration-wiring.test.js && node tests/social-network.test.js && node tests/account-company.test.js && node tests/better-dispo.test.js && node tests/communications.test.js && node tests/growth-rewards.test.js && node tests/professional-ops.test.js && node tests/v26-features.test.js && node tests/v26-2-safe-patch.test.js && node tests/release-qa.test.js && node tests/v26-3-user-directed.test.js && node tests/v26-4-guided-tour-ui.test.js && node tests/v26-5-acceptance.test.js && node tests/v27-operating-network.test.js && node tests/v27-1-presentation.test.js && node tests/v27-2-quick-options.test.js && node tests/v27-3-quick-options-glass.test.js && node tests/v28-growth-referrals-plus.test.js && node tests/v29-transaction-affiliate.test.js && node tests/v29-1-pipeline-affiliate.test.js && node tests/v29-2-wallet-affiliate-terms.test.js && node tests/v29-3-affiliate-hold-presentation.test.js && node tests/v29-4-first100-membership.test.js && node tests/v29-4-behavior.test.js && node tests/v29-5-demo-accounts.test.js && node tests/v29-6-demo-preview.test.js && node tests/v29-7-demo-center-repair.test.js && node tests/v29-8-founder-preview-close.test.js && node tests/v29-9-demo-dark-ai.test.js && node tests/v29-10-mls-intelligence.test.js && node tests/v29-11-regrid-web-intelligence.test.js && node tests/v29-12-timeout-resilience.test.js && node tests/v29-13-property-truth.test.js && node tests/v29-14-property-discovery.test.js && node tests/v29-15-production-deal-intelligence.test.js && node tests/v29-15-background-research.test.js && node tests/v29-15-investor-grade-analysis.test.js && node tests/v29-15-perfect-multisource.test.js && node tests/v29-15-complete-intelligence.test.js && node tests/v29-15-interaction-mobile.test.js && node tests/v29-16-signup-roles.test.js && node tests/v29-17-better-moments.test.js && node tests/v29-18-conversion-consistency.test.js && node tests/v29-19-social-links.test.js && node tests/v29-20-buyer-truth-details.test.js && node tests/v29-21-instant-details.test.js && node tests/v29-22-performance-cost-regression.test.js && node tests/v29-23-detail-network-admin-polish.test.js && node tests/v29-24-site-cleanup.test.js && node tests/v29-25-performance-notifications-stability.test.js && node tests/v29-26-business-email-branding.test.js && node tests/v29-27-better-guide-learning.test.js && node tests/v29-28-interactive-mascot.test.js && node tests/v29-29-living-mascot.test.js && node tests/v29-30-live-character.test.js && node tests/v29-31-true-live-rig.test.js && node tests/v29-32-articulated-header-mascot.test.js && node tests/v29-33-header-character.test.js && node tests/v29-34-mascot-expressions-property-edits.test.js && node tests/v29-35-mascot-awareness.test.js && node tests/v29-36-page-interaction.test.js && node tests/v29-36-photo-order.test.js && node tests/v29-37-gestures.test.js && node tests/v29-37-photo-drag.test.js && node tests/v29-38-workflows.test.js && node tests/v29-39-deal-analysis.test.js && node tests/v29-40-arv-comps.test.js && node tests/v29-41-first50.test.js && node tests/v29-43-all-time-activity.test.js && node tests/v29-44-affiliate-accounts.test.js && node tests/v29-45-affiliate-tools.test.js && node tests/v29-47-affiliate-leaderboard.test.js && node tests/v29-48-admin-growth.test.js && node tests/v29-49-pixel.test.js && node tests/v29-52-discovery.test.js && node tests/v29-53-phone-commission.test.js && node tests/v29-54-support.test.js && node tests/v29-55-credits-onboarding.test.js && node tests/v29-56-purposeful-motion.test.js && node tests/v29-57-connected-deals.test.js && node tests/v29-58-email-center.test.js && node tests/v29-58-promo-delivery.test.js
+
+✓ CJ adapter tests passed
+✓ Dropship routing tests passed
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+✓ AI + marketing helper tests passed
+✓ CJ integration wiring tests passed
+✓ Social network, friends, search & chat tests passed
+✓ Account, route-state & wholesale-team wiring tests passed
+✓ Better Dispo, buyer demand, distribution & freshness tests passed
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+✓ Email verification diagnostics, broadcasts & unread reminders tests passed
+✓ Growth sharing, admin rewards, signup alerts & dark-mode tests passed
+✓ Professional operations & UI wiring tests passed
+v26 feature wiring tests passed
+✓ v26.2 safe patch wiring tests passed
+✓ exhaustive release wiring QA passed
+✓ v26.3 user-directed Deal Builder tests passed
+✓ v26.4 guided tour + presentation QA passed
+✓ v26.5 acceptance regression tests passed
+✓ v27 operating network, tutorial and presentation wiring tests passed
+✓ v27.1 presentation acceptance tests passed
+v27.2 quick options acceptance: PASS
+v27.3 quick options glass acceptance: PASS
+✓ v28 growth/referral/Plus acceptance tests passed
+✓ v29 transaction OS + affiliate acceptance tests passed
+v29.1 pipeline + affiliate deep-link acceptance passed
+v29.2 affiliate/seller wallet acceptance passed
+v29.3 affiliate hold + presentation regression: PASS
+v29.4 First 100 + membership access regression: PASS
+v29.4 Founder allocation + membership behavior: PASS
+v29.5 demo-account acceptance passed
+v29.6 demo preview acceptance passed
+v29.7 demo center repair acceptance passed
+v29.8 founder preview close regression passed
+v29.9 demo/dark/AI intelligence regression passed
+v29.10 authorized MLS intelligence regression passed
+v29.11 Regrid + web intelligence tests passed
+v29.12 timeout/background resilience regression passed
+v29.13 property truth + cost guardrails tests passed
+v29.14 property discovery reliability tests passed
+v29.15 production Deal Intelligence regression passed
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+v29.15 deep background Deal Intelligence regression passed
+v29.15 investor-grade analysis + presentation regression passed
+v29.15 perfect multi-source investor intelligence regression passed
+v29.15 complete Deal Intelligence regression passed
+v29.15 mobile scrolling + responsive action regression passed
+✓ v29.16 multi-role signup, discovery and profile regression passed
+✓ v29.17 Better Moments + acquisition copy regression passed
+v29.18 conversion consistency checks passed
+v29.19 social-links regression: PASS
+v29.20 buyer-match truth + property-details regression: PASS
+v29.21 instant property details regression: PASS
+v29.22 performance + Netlify-cost regression: PASS
+v29.23 detail stability + network + admin deletion regression: PASS
+v29.24 conservative site cleanup + property sharing regression: PASS
+v29.25 performance root-cause + notifications + stability regression: PASS
+v29.26 business email + branding regression: PASS
+v29.27 Better Guide + learning regression: PASS
+v29.28 interactive mascot regression: PASS
+v29.29 living mascot regression: PASS
+v29.30 slideshow-removal regression: PASS
+v29.31 true live rig regression: PASS
+v29.32 articulated mascot compatibility regression: PASS
+v29.33 header-resident living character regression: PASS
+v29.34 mascot expressions + property edits regression: PASS
+v29.35 mascot situational-awareness regression checks passed
+v29.36 confirmed-action routing and event priority: PASS
+v29.36 photo reorder, persisted gallery order, identity and authorization: PASS
+v29.37 multi-step gestures, cancellation and reduced motion: PASS
+v29.37 drag drop commit, Escape, outside drop and pointer cancellation: PASS
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+v29.38 fresh Post, selected-recipient eligibility, sourced facts and partial baths: PASS
+v29.39 bathroom components, bounded complete output, disputed dates and unresolved-address cost guard: PASS
+v29.40 production comp fixture, corroborated working range, shared subject precision and excluded reasons: PASS
+v29.41 first50 migration, idempotence, original dates, paid/manual protection, deletion/refill and copy: PASS
+v29.43 all-time, dated presets, demo exclusion and missing timestamps: PASS
+v29.44 migration once, future approvals, Admin/demo protection, preserved balances, exclusive role, Network/buyers and profile access: PASS
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+v29.45 founder exclusion/refill/original dates/paid grants, private prospect CRUD/auth, verification 48h boundary/dedup/stop/failure cooldown: PASS
+v29.47 affiliate rate increments/cap/reset/re-entry, ties, paid-only ranking, refund/partial payout, current terms, privacy and duplicate events: PASS
+v29.48 recorded growth, demo/date/dedup/partial-period truth and shared content validation/concurrent edits: PASS
+v29.49 Pixel ID, single PageView, auto-data off, private/token exclusion, opt-out/account setting and browser privacy signal checks: PASS
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+[api] request: GET raw path: /.netlify/functions/api/s/property/does-not-exist-qa → normalised: /s/property/does-not-exist-qa
+v29.52 real serverless share dispatch, canonical guide graph, structured data and exact logo: PASS
+v29.53 phone normalization; custom commission proposal/acceptance, concurrency, exact future earnings, history, reset and duplicate protection: PASS
+v29.54 support ownership storage, serialized concurrency, no-op/stale writes, bounded AI and failure privacy, route/Quick Create and tutorial wiring: PASS
+v29.55 selected-credit validation, concurrent reservation, exact-once debit, cancel/balance protection and 10-step role-aware onboarding: PASS
+v29.56 complete action sequences, connected elbow/wrist chain, stable spring across frame rates, themed controls and preserved header rig: PASS
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+PASS: matching, preferences, reverse alerts, deduplication, team CRM, import/export, response privacy, conditions, room handoff, private deals/docs, comparisons, introductions and title administration
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+PASS v29.58 admin controls, persisted templates, safe previews, unsubscribe GET/POST, private CRM member dedup and date validation
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+PASS v29.58 paused scheduler, eligibility, accepted content history and frequency gate; provider fully stubbed
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> better-real-estate@2.9.59 build
+> echo 'no build step — static assets served from public/'
+
+no build step — static assets served from public/

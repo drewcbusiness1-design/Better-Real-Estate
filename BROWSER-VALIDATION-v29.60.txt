@@ -1,0 +1,44 @@
+
+[33m[store] No database configured — using db.local.json for local development.[0m
+[store] This is fine for testing. Before deploying, set DATABASE_URL to a real Postgres connection string.
+
+PASS styled Deal room opens room 1440 light {
+  height: 44,
+  background: 'rgb(10, 10, 10)',
+  font: '600',
+  classes: 'btn-primary pipeline-room-button'
+}
+PASS styled Deal room opens room 1440 dark {
+  height: 44,
+  background: 'rgb(247, 246, 241)',
+  font: '600',
+  classes: 'btn-primary pipeline-room-button'
+}
+PASS restored homepage without video 1440
+PASS styled Deal room opens room 390 light {
+  height: 44,
+  background: 'rgb(10, 10, 10)',
+  font: '600',
+  classes: 'btn-primary pipeline-room-button'
+}
+PASS styled Deal room opens room 390 dark {
+  height: 44,
+  background: 'rgb(247, 246, 241)',
+  font: '600',
+  classes: 'btn-primary pipeline-room-button'
+}
+PASS restored homepage without video 390
+PASS styled Deal room opens room 320 light {
+  height: 44,
+  background: 'rgb(10, 10, 10)',
+  font: '600',
+  classes: 'btn-primary pipeline-room-button'
+}
+PASS styled Deal room opens room 320 dark {
+  height: 44,
+  background: 'rgb(247, 246, 241)',
+  font: '600',
+  classes: 'btn-primary pipeline-room-button'
+}
+PASS restored homepage without video 320
+PASS no uncaught browser errors

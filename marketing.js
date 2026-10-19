@@ -1,6 +1,6 @@
 /* Opt-in marketing email scheduler. Transactional email stays separate. */
 const crypto = require('crypto');
-const { loadDB, saveDB, sql, tableFor, FILE_MODE } = require('./store');
+const { loadDB, saveDB, sql, tableFor, FILE_MODE, appendRecord } = require('./store');
 const mailer = require('./mailer');
 
 const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -34,7 +34,7 @@ function recent(arr, days = 4) {
   return (arr || []).filter(x => new Date(x.createdAt || x.freshAt || x.at || 0).getTime() >= cutoff);
 }
 
-function buildEmail(db, user) {
+function defaultEmail(db, user) {
   const freshListings = recent(db.listings, 4).filter(l => l.ownerId !== user.id).slice(0, 3);
   const freshShop = recent(db.shopItems, 4).filter(i => i.active && Number(i.stock) > 0 && i.sellerId !== user.id).slice(0, 3);
   const profileIncomplete = !user.bio || !user.avatarUrl;
@@ -72,16 +72,38 @@ function buildEmail(db, user) {
   };
 }
 
+const TEMPLATE_KEYS = ['properties','shop','profile','return'];
+const DEFAULTS = {
+ properties:{subject:'Fresh property opportunities on Better Real Estate',headline:'Explore recent property posts',body:'Review recent property posts, compare the available details and connect with the people behind them.',ctaLabel:'Open your feed',ctaUrl:APP_URL},
+ shop:{subject:'Explore the Better marketplace',headline:'Browse marketplace inventory',body:'Explore available marketplace items and contact the seller for details.',ctaLabel:'Browse the Shop',ctaUrl:APP_URL+'/?view=shop'},
+ profile:{subject:'Finish your Better Real Estate profile',headline:'Introduce yourself on Better',body:'Add a photo, a short bio and your current buying criteria so other members can understand your interests.',ctaLabel:'Finish your profile',ctaUrl:APP_URL+'/?view=settings'},
+ return:{subject:'Your Better Real Estate workspace',headline:'Pick up where you left off',body:'Review your saved properties, update your buying criteria and continue your conversations.',ctaLabel:'Open Better Real Estate',ctaUrl:APP_URL}
+};
+function settings(db) {
+ const saved=(db.promoSettings||[]).find(x=>x.id==='automatic-promotions')||{};
+ return {enabled:saved.enabled!==false,intervalHours:Math.max(48,Number(saved.intervalHours)||48),templates:Object.fromEntries(TEMPLATE_KEYS.map(k=>[k,{...DEFAULTS[k],...(saved.templates?.[k]||{}),enabled:saved.templates?.[k]?.enabled!==false}]))};
+}
+function normalizeSettings(input) {
+ if(typeof input.enabled!=='boolean')throw new Error('Choose whether automatic promotions are enabled.');
+ const intervalHours=Number(input.intervalHours);if(!Number.isInteger(intervalHours)||intervalHours<48||intervalHours>720)throw new Error('Choose an interval from 48 to 720 hours.');
+ const templates={};for(const k of TEMPLATE_KEYS){const t=input.templates?.[k];if(!t)throw new Error('Include every template.');templates[k]={enabled:t.enabled!==false};for(const [field,max] of Object.entries({subject:160,headline:160,body:3000,ctaLabel:80,ctaUrl:500})){const value=String(t[field]||'').trim();if(!value||value.length>max)throw new Error('Complete '+k+' '+field+' within '+max+' characters.');templates[k][field]=value;}const url=new URL(templates[k].ctaUrl);if(url.origin!==new URL(APP_URL).origin||!['https:','http:'].includes(url.protocol))throw new Error('Buttons must link to this Better website.');}
+ return {id:'automatic-promotions',enabled:input.enabled,intervalHours,templates,updatedAt:new Date().toISOString()};
+}
+function emailKey(db,user){const rotation=Number(user.marketingSequence||0)%3;if(rotation===0&&recent(db.listings,4).some(l=>l.ownerId!==user.id))return 'properties';if(rotation===1&&recent(db.shopItems,4).some(i=>i.active&&Number(i.stock)>0&&i.sellerId!==user.id))return 'shop';return !user.bio||!user.avatarUrl?'profile':'return';}
+function buildEmail(db,user){const key=emailKey(db,user),config=settings(db);return config.templates[key].enabled?{...config.templates[key],templateKey:key}:null;}
+function eligible(db){return db.users.filter(u=>u.demo!==true&&u.role!=='admin'&&u.emailVerified&&u.marketingOptIn===true&&!u.marketingUnsubscribedAt);}
+function status(db){const config=settings(db);return {config,configured:configured(),environmentEnabled:ENABLED,eligibleCount:eligible(db).length,history:(db.promoDeliveries||[]).slice().sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,100),historyNote:'Content history starts with v29.58. Accepted means the email provider accepted it, not confirmed inbox delivery.'};}
 async function runMarketingCycle({ limit = 60 } = {}) {
   if (!configured()) {
     console.log('[marketing] skipped — set RESEND_API_KEY, MARKETING_EMAILS_ENABLED=true and MARKETING_POSTAL_ADDRESS');
     return { sent: 0, skipped: true };
   }
   const db = await loadDB();
+  const config=settings(db);if(!config.enabled)return {sent:0,skipped:true,reason:'paused-in-email-center'};
   const now = Date.now();
   const due = db.users.filter(u =>
-    u.role !== 'admin' && u.emailVerified && u.marketingOptIn === true && !u.marketingUnsubscribedAt &&
-    (!u.marketingLastSentAt || now - new Date(u.marketingLastSentAt).getTime() >= MIN_GAP_MS)
+    u.demo !== true && u.role !== 'admin' && u.emailVerified && u.marketingOptIn === true && !u.marketingUnsubscribedAt &&
+    (!u.marketingLastSentAt || now - new Date(u.marketingLastSentAt).getTime() >= config.intervalHours * 3600000)
   ).slice(0, Math.max(1, Math.min(100, Number(limit) || 60)));
 
   let sent = 0;
@@ -90,14 +112,19 @@ async function runMarketingCycle({ limit = 60 } = {}) {
   for (let i = 0; i < due.length; i += 4) {
     const batch = due.slice(i, i + 4);
     const results = await Promise.all(batch.map(async user => {
+      let record;
       try {
         const content = buildEmail(db, user);
-        await mailer.sendMarketing(user.email, user.name, {
+        if(!content)return false;
+        record={id:crypto.randomUUID(),userId:user.id,to:user.email,name:user.name||'',at:new Date().toISOString(),content,status:'attempting',html:mailer.previewMarketing(user.name,content,{unsubscribeUrl:unsubscribeUrl(user),preferencesUrl:preferencesUrl(),postalAddress:POSTAL_ADDRESS})};
+        await appendRecord('promoDeliveries',record);
+        const result = await mailer.sendMarketing(user.email, user.name, {
           ...content,
           unsubscribeUrl: unsubscribeUrl(user),
           preferencesUrl: preferencesUrl(),
           postalAddress: POSTAL_ADDRESS
         });
+        await appendRecord('promoDeliveries',{...record,status:result?.simulated?'simulated':'accepted',providerId:result?.id||null});
         user.marketingLastSentAt = new Date().toISOString();
         user.marketingSequence = Number(user.marketingSequence || 0) + 1;
         // In production update only these two JSON fields so a scheduled
@@ -109,6 +136,7 @@ async function runMarketingCycle({ limit = 60 } = {}) {
         }
         return true;
       } catch (e) {
+        await appendRecord('promoDeliveries',{...(record||{id:crypto.randomUUID(),userId:user.id,to:user.email,at:new Date().toISOString(),content:buildEmail(db,user)}),status:'failed',error:String(e.message).slice(0,300)});
         console.error('[marketing]', user.email, e.message);
         return false;
       }
@@ -116,8 +144,8 @@ async function runMarketingCycle({ limit = 60 } = {}) {
     sent += results.filter(Boolean).length;
     if (i + 4 < due.length) await new Promise(resolve => setTimeout(resolve, 1100));
   }
-  if (sent && FILE_MODE) await saveDB(db);
+  if (sent && FILE_MODE) {const fresh=await loadDB();for(const u of db.users){const target=fresh.users.find(x=>x.id===u.id);if(target&&u.marketingLastSentAt){target.marketingLastSentAt=u.marketingLastSentAt;target.marketingSequence=u.marketingSequence;}}await saveDB(fresh);}
   return { sent, due: due.length };
 }
 
-module.exports = { configured, signUser, verifyToken, unsubscribeUrl, runMarketingCycle, _buildEmail: buildEmail };
+module.exports = { configured, signUser, verifyToken, unsubscribeUrl, runMarketingCycle, settings, normalizeSettings, status, eligible, _buildEmail: buildEmail, DEFAULTS };

@@ -31,7 +31,7 @@ const COLLECTIONS = [
   'matchDeliveries','titleCompanies','buyerResponses','privateDeals','dealIntroductions','supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
   'users','companies','companyInvites','listings','saves','follows','friendRequests','friendships','messages','ledger','unlocks',
   'shopItems','orders','offers','reviews','views','promotions','payouts',
-  'alerts','tokens','suppliers','supplierOrders','reports','dealNotes','buyerLeads','emailBroadcasts','membershipGrants','shareEvents','buyerCrm','dealAnalyses',
+  'alerts','tokens','suppliers','supplierOrders','reports','dealNotes','buyerLeads','emailBroadcasts','promoSettings','promoDeliveries','membershipGrants','shareEvents','buyerCrm','dealAnalyses',
   'activityEvents','savedSearches','pipelineDeals','dealDocuments','dealCalendarEvents','dealNotifications','feedFeedback','referralClicks',
   'relationshipContacts','dealTasks','dealActivity','fileRequests','buyerCredentials','compBoards','dealCollaborators','dealOutcomes','intakeSubmissions','affiliateApplications','affiliateClicks','affiliateCommissions','affiliateTerms','founderAwards','dealResearchCache','dealResearchJobs'
 ];
@@ -254,7 +254,8 @@ async function appendRecord(collection, row) {
   if (!COLLECTIONS.includes(collection)) throw new Error('Unknown collection.');
   if (FILE_MODE) {
     const db = await loadDB();
-    db[collection].push(row);
+    const existing=collection==='promoDeliveries'?db[collection].findIndex(x=>x.id===row.id):-1;
+    if(existing>=0)db[collection][existing]=row;else db[collection].push(row);
     await saveDB(db);
     return row;
   }

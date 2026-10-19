@@ -1,0 +1,13 @@
+{
+  "version": "2.9.60",
+  "baseline": "2.9.59",
+  "deployed": false,
+  "videoIncluded": false,
+  "files": {
+    "public/app.js": "b192e842d835b3b5b017b62fa613d25079895d157c7f1bf5d1118a20da7ade6c",
+    "public/style.css": "728808237ccf808239dc7113b29032778be860bcf841d74ed2e85e3b023b91b6",
+    "marketing.js": "b3938131ec80235af82a4ea50b347a7d0f95dd8add1d99118162ded9c8003e23",
+    "server.js": "7bae7cd8ba644d64d967c8ef8a20d4b2ffa48702d5c91ef5e24c53acc27695dd",
+    "store.js": "6052aa0a3c70267c256cca188d8c3bf1a65d89c952ec9233aecb30427240ee06"
+  }
+}
