@@ -1,0 +1,14 @@
+{
+  "version": "2.9.61",
+  "baseline": "2.9.60",
+  "deployed": false,
+  "browserVerified": false,
+  "videoIncluded": false,
+  "files": {
+    "public/app.js": "27c51e9b5c288de56a7af2d003536c2053683c4ee188e72e8b3cc3470721fb4e",
+    "public/style.css": "e64772568c38aab3d0a8e2a369a961aadcd3e1939a5df7d65f836f448c03bce7",
+    "tests/v29-61-public-try.test.js": "d7cd7404b49ab72c388d29832bffa5381c69dbfe7b6b77b491705748f6369e37",
+    "package.json": "f71ad39a21c507186d7141a0b2f0fb8d2cc06609b17e3973352d8ae7feb84eea",
+    "package-lock.json": "8288eced33651f106b112d1058db165570a610e4e2247747193f582c732e0c57"
+  }
+}

@@ -172,7 +172,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['support','home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['try','support','home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -190,6 +190,7 @@ function applyRouteParams(params) {
   if (state.view === 'company') state.companyId = params.get('company') || null;
   if (state.view === 'network') state.networkTab = params.get('tab') || 'discover';
   if (state.view === 'buyerportal') { state.buyerPortalType = params.get('type') || null; state.buyerPortalId = params.get('target') || null; }
+  if (state.view === 'try') state.tryStep = Math.max(0, Math.min(5, Number.parseInt(params.get('step'),10) || 0));
   if (params.get('invite')) state.companyInviteToken = params.get('invite');
   if (state.view === 'support') state.supportThreadId = params.get('thread') || null;
   if (state.view === 'search') { state.searchQ=params.get('q')||''; state.searchMarket=params.get('market')||''; }
@@ -201,6 +202,7 @@ function routeUrl(view = state.view) {
   const p = new URLSearchParams();
   if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
+  if (view === 'try' && state.tryStep) p.set('step', state.tryStep);
   if (view === 'compose' && state.composeEditId) p.set('id', state.composeEditId);
   if (view === 'profile' && state.profileId) p.set('user', state.profileId);
   if(view === 'support' && state.supportThreadId) p.set('thread',state.supportThreadId);
@@ -270,7 +272,7 @@ async function boot() {
   else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed');
   else if (state.companyInviteToken) { state.view = 'auth'; state.authMode = 'signup'; }
   else {
-    const publicWithoutAccount = new Set(['home','auth','about','terms','privacy','contact','faq','forgot','buyerportal','affiliate']);
+    const publicWithoutAccount = new Set(['try','home','auth','about','terms','privacy','contact','faq','forgot','buyerportal','affiliate']);
     if (requestedView && ROUTED_VIEWS.has(requestedView) && !publicWithoutAccount.has(requestedView)) {
       state.postAuthTarget = {
         view: requestedView,
@@ -610,7 +612,7 @@ async function renderApp() {
   if(state.user||!['home','about','faq','upgrade','affiliate'].includes(state.view))window.BetterPixel?.pause();
   app.innerHTML = '';
   const views = {
-    home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
+    try: renderTryItOut, home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
     compose: renderCompose, saved: renderSaved, messages: renderMessages, chat: renderChat, network: renderNetwork,
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
@@ -649,6 +651,79 @@ async function renderApp() {
 }
 
 /* ================= HOME ================= */
+/* Public, browser-only guided workspace. No member or transaction APIs. */
+const TRY_PROPERTIES = Object.freeze([
+  {id:'sample-1',title:'Single-family renovation',market:'Memphis, TN',asking:115000,beds:3,baths:2,sqft:1450,type:'Single family',strategy:'Fix & flip',buyer:'Sample Buyer A'},
+  {id:'sample-2',title:'Rental portfolio starter',market:'Cleveland, OH',asking:98000,beds:3,baths:1,sqft:1280,type:'Single family',strategy:'Buy & hold',buyer:'Sample Buyer B'},
+  {id:'sample-3',title:'Two-unit opportunity',market:'Birmingham, AL',asking:165000,beds:4,baths:2,sqft:2100,type:'Duplex',strategy:'Buy & hold',buyer:'Sample Buyer C'}
+]);
+const TRY_STEPS = ['Browse properties','Review the property','Find a buyer','Start a conversation','Organize the deal','Finish the walkthrough'];
+function tryRead() {
+  let saved={};try{saved=JSON.parse(sessionStorage.getItem('bre-public-try-v1')||'{}')||{};}catch{}
+  return {property:TRY_PROPERTIES.some(p=>p.id===saved.property)?saved.property:TRY_PROPERTIES[0].id,sent:saved.sent===true,checks:Array.from({length:3},(_,i)=>saved.checks?.[i]===true)};
+}
+function trySave(patch) {const next={...(state.tryMemory||tryRead()),...patch};try{sessionStorage.setItem('bre-public-try-v1',JSON.stringify(next));}catch{}state.tryMemory=next;return next;}
+function tryData(){return state.tryMemory||tryRead();}
+function renderTryItOut() {
+  const step=Math.max(0,Math.min(5,Number(state.tryStep)||0)),data=tryData();
+  const property=TRY_PROPERTIES.find(p=>p.id===data.property)||TRY_PROPERTIES[0];
+  const jump=n=>{state.tryStep=n;writeRoute();render();requestAnimationFrame(()=>{document.querySelector('.try-title')?.focus({preventScroll:true});window.scrollTo({top:0,behavior:'auto'});});};
+  const signup=()=>{state.postAuthTarget=null;state.authMode='signup';go('auth');};
+  const action=(text,fn,primary=true)=>el('button',{type:'button',class:primary?'btn-primary':'btn-ghost',onclick:fn},text);
+  const panel=(title,children)=>el('section',{class:'try-panel'},[el('h2',{},title),...children]);
+  const copy=text=>el('p',{},text);
+  const propertySummary=()=>el('div',{class:'try-property-summary'},[el('span',{class:'try-label'},'SAMPLE PROPERTY'),el('h2',{},property.title),copy(property.market),el('strong',{class:'try-price'},money(property.asking)),el('div',{class:'specs'},[`${property.beds} bd`,`${property.baths} ba`,`${property.sqft.toLocaleString()} sqft`,property.type].map(t=>el('span',{},t)))]);
+  const wrap=el('div',{class:'page try-workspace'});
+  wrap.appendChild(el('div',{class:'try-toolbar'},[
+    el('div',{},[el('b',{},'Better · Try it out'),el('small',{},'Guided demo · No account needed')]),
+    el('div',{class:'try-actions'},[action('Back to homepage',()=>go('home'),false),state.user?action('Open my workspace',()=>go('feed')):action('Sign up free',signup)])
+  ]));
+  wrap.appendChild(el('p',{class:'try-disclaimer'},'Illustrative demo: these properties, buyers, messages and deal milestones are samples. Nothing here is posted, sent or transacted.'));
+  wrap.appendChild(el('nav',{class:'try-progress','aria-label':'Demo progress'},TRY_STEPS.map((label,i)=>el('span',{class:i===step?'current':i<step?'done':'','aria-current':i===step?'step':null},`${i+1}. ${label}`))));
+  const headings=['Find your first opportunity.','Get the details in one place.','See who fits the property.','Turn interest into a conversation.','Keep the next steps together.','You took a sample deal from discovery to completion.'];
+  const instructions=['Choose any sample property to start your walkthrough.','Review the sample facts, then explore a buyer whose criteria fit.','Review this sample buyer’s criteria, then open a conversation.','Send a sample message to see how a conversation could begin.','Check each sample milestone, then finish the demonstration.','Now you can create your account and start building your own network.'];
+  wrap.appendChild(el('header',{class:'try-intro'},[el('div',{class:'homeeyebrow'},`STEP ${step+1} OF ${TRY_STEPS.length}`),el('h1',{class:'try-title',tabindex:'-1'},headings[step]),copy(instructions[step])]));
+  const content=el('div',{class:'try-content'});
+  if(step===0) {
+    content.appendChild(el('div',{class:'try-properties'},TRY_PROPERTIES.map(p=>el('article',{class:'try-property-card'},[
+      el('div',{class:'try-property-art','aria-hidden':'true'},[iconSvg('home',56),el('span',{},'ILLUSTRATIVE PROPERTY')]),
+      el('div',{class:'try-property-body'},[el('span',{class:'try-label'},'SAMPLE · '+p.strategy),el('h2',{},p.title),copy(p.market),el('strong',{class:'try-price'},money(p.asking)),copy(`${p.beds} beds · ${p.baths} baths · ${p.sqft.toLocaleString()} sqft`),action('Explore '+p.market,()=>{trySave({property:p.id,sent:false,checks:[false,false,false]});jump(1);})])
+    ]))));
+  } else if(step===1) {
+    content.appendChild(el('div',{class:'try-two-column'},[panel('Property overview',[propertySummary(),copy('Sample description: an off-market opportunity for an investor to evaluate. On a real post, review the seller’s description, photos and available documents before deciding to proceed.'),el('div',{class:'connected-warning'},'Sample asking price and facts only. No verified valuation, title findings or investment returns are represented.')]),panel('From a post to your next step',[copy('Keep the property attached to the conversation, compare buyer criteria and organize follow-up without rebuilding the details in separate places.'),el('ol',{},['Review the property','Connect with relevant people','Track the work in a Deal room'].map(t=>el('li',{},t))),action('Find a sample buyer',()=>jump(2))])]));
+  } else if(step===2) {
+    content.appendChild(el('div',{class:'try-two-column'},[propertySummary(),panel(property.buyer,[el('span',{class:'try-label'},'SAMPLE BUYER · ILLUSTRATIVE FIT'),copy('This demo buyer’s criteria were selected to fit the sample property. Real availability, interest and qualification must be confirmed.'),el('dl',{class:'try-facts'},[
+      el('dt',{},'Market'),el('dd',{},property.market),el('dt',{},'Property type'),el('dd',{},property.type),el('dt',{},'Strategy'),el('dd',{},property.strategy),el('dt',{},'Sample budget'),el('dd',{},'Up to '+money(property.asking+35000))
+    ]),action('Open sample conversation',()=>jump(3))])]));
+  } else if(step===3) {
+    const messages=el('div',{class:'try-messages','aria-live':'polite'},data.sent?[
+      el('div',{class:'try-message outgoing'},[el('b',{},'You · simulated'),copy(`Hi, I’m reviewing the ${property.title.toLowerCase()} in ${property.market}. Does it fit what you’re looking for?`)]),
+      el('div',{class:'try-message'},[el('b',{},property.buyer+' · simulated reply'),copy('The sample property fits my criteria. Let’s review the documents and next steps in the Deal room.')])
+    ]:[copy('Your sample conversation will appear here. No real person receives this message.')]);
+    content.appendChild(panel('Conversation · '+property.title,[messages,data.sent?action('Open sample Deal room',()=>jump(4)):el('div',{class:'try-compose'},[copy(`Hi, I’m reviewing the ${property.title.toLowerCase()} in ${property.market}. Does it fit what you’re looking for?`),action('Send sample message',()=>{trySave({sent:true});render();})])]));
+  } else if(step===4) {
+    const finish=action('Finish sample deal',()=>jump(5));finish.disabled=!data.checks.every(Boolean);
+    const checklist=el('div',{class:'try-checklist'});
+    ['Review sample property details','Confirm sample buyer’s interest','Complete the sample closing milestone'].forEach((label,i)=>{
+      const input=el('input',{type:'checkbox','aria-label':label});input.checked=data.checks[i];
+      input.addEventListener('change',()=>{const checks=[...tryData().checks];checks[i]=input.checked;const updated=trySave({checks});finish.disabled=!updated.checks.every(Boolean);status.textContent=updated.checks.filter(Boolean).length+' of 3 sample milestones complete';});
+      checklist.appendChild(el('label',{},[input,el('span',{},label)]));
+    });
+    const status=el('p',{role:'status','aria-live':'polite'},data.checks.filter(Boolean).length+' of 3 sample milestones complete');
+    content.appendChild(el('div',{class:'try-two-column'},[propertySummary(),panel('Deal room · sample workflow',[copy('Use a shared place for property context, documents and next steps. For this demo, check off three illustrative milestones.'),checklist,status,copy('In a real transaction, due diligence, contracts, funds and closing require the appropriate professionals. Checking a box does not complete those steps.'),finish])]));
+  } else {
+    content.appendChild(panel('That’s the workflow. Your next deal starts with you.',[
+      el('div',{class:'try-complete'},[iconSvg('grid',36),copy('Property → Buyer → Conversation → Deal room')]),
+      copy('You explored a sample property, reviewed a buyer’s criteria, opened a conversation and organized the sample milestones. This was an illustrative successful scenario, not a real closing or a promise of results.'),
+      el('h3',{},'Start with a free account'),copy('Post your own property, add what you’re looking to buy, or connect with other members. Paid tools and limits depend on your membership.'),
+      el('div',{class:'try-actions'},[state.user?action('Open my workspace',()=>go('feed')):action('Sign up free',signup),action('Try another property',()=>{trySave({sent:false,checks:[false,false,false]});jump(0);},false)]),copy('Your demo actions won’t be copied into your account.')
+    ]));
+  }
+  wrap.appendChild(content);
+  if(step>0)wrap.appendChild(el('div',{class:'try-bottom'},[action('Previous step',()=>jump(step-1),false),action('Restart demo',()=>{trySave({sent:false,checks:[false,false,false]});jump(0);},false)]));
+  return wrap;
+}
+
 function renderHome() {
   const p = state.pricing;
   const wrap = el('div', { class: 'homepublic' });
@@ -661,8 +736,8 @@ function renderHome() {
       el('div', { class: 'homeeyebrow' }, 'BUILT FOR REAL ESTATE DEALMAKERS'),
       el('h1', {}, ['The professional network for ', el('em', {}, 'off-market real estate.' )]),
       el('p', {}, 'Discover opportunities, connect with active buyers, market your deals and manage the relationships that move real estate — from one workspace.'),
-      el('div', { class: 'herobtns' }, [primary('Join Better Real Estate'), login()]),
-      el('div', { class: 'homeheronote' }, 'Free to join · No card required')
+      el('div', { class: 'herobtns' }, [el('button', {class:'btn-primary', onclick:()=>go('try',{tryStep:0})}, 'Try it out'), el('button', {class:'btn-ghost', onclick:()=>{state.authMode='signup';go('auth');}}, 'Sign up free')]),
+      el('div', { class: 'homeheronote' }, [el('span',{},'Free to join · No card required'), el('br'), el('span',{},'Try a guided sample deal before signing up.')])
     ]),
     el('div', { class: 'homecap-panel' }, [
       el('div', { class: 'homecap-head' }, [el('span', {}, 'THE PLATFORM'), el('b', {}, 'One professional real estate workspace')]),
@@ -2872,7 +2947,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 79;
+const TUTORIAL_VERSION = 80;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2894,6 +2969,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
  {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
  {view:'affiliate',selector:'.affiliate-center',min:0,release:73,title:'Individual commission agreements',copy:'Admin can propose a personal commission rate. Review and accept it in Affiliate Center to activate it for future eligible first paid memberships. A custom rate replaces automatic leaderboard increases until you accept a return to automatic rates. Past earnings keep their original rate.'},
+ {view:'home',selector:'.herobtns',min:0,release:80,title:'Try Better before signing up',copy:'The public Try it out button opens an isolated, guided sample deal. Browse sample properties, connect with a sample buyer and complete a simulated Deal room checklist. Create a real account whenever you are ready.'},
  {view:'home',selector:'#sitefooter',min:0,release:73,title:'Public real estate guides',copy:'Open Real estate guides in the footer for free guides to posting wholesale properties, finding buyers and reviewing deal evidence. Property Share links provide a branded preview; share only information you are authorized to publish.'},
  {view:'settings',selector:'#app .page',min:0,release:71,title:'Advertising measurement preferences',copy:'Optional Meta Pixel measures public marketing page visits. You can turn advertising measurement off in Settings. Private pages and browser privacy signals are respected; email and phone preferences are separate.'},
  {view:'pipeline',selector:'.pipeline-room-button',min:1,release:79,title:'Open the linked deal room',copy:'Use Deal room on a linked pipeline card to open that property’s existing room. Access still follows the property’s permissions.'},
