@@ -190,7 +190,7 @@ function applyRouteParams(params) {
   if (state.view === 'company') state.companyId = params.get('company') || null;
   if (state.view === 'network') state.networkTab = params.get('tab') || 'discover';
   if (state.view === 'buyerportal') { state.buyerPortalType = params.get('type') || null; state.buyerPortalId = params.get('target') || null; }
-  if (state.view === 'try') state.tryStep = Math.max(0, Math.min(5, Number.parseInt(params.get('step'),10) || 0));
+  if (state.view === 'try') { const screens=['feed','detail','profile','chat','pipeline','dealroom','complete']; state.tryScreen=screens.includes(params.get('screen'))?params.get('screen'):screens[Math.max(0,Math.min(6,Number.parseInt(params.get('step'),10)||0))]; }
   if (params.get('invite')) state.companyInviteToken = params.get('invite');
   if (state.view === 'support') state.supportThreadId = params.get('thread') || null;
   if (state.view === 'search') { state.searchQ=params.get('q')||''; state.searchMarket=params.get('market')||''; }
@@ -202,7 +202,7 @@ function routeUrl(view = state.view) {
   const p = new URLSearchParams();
   if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
-  if (view === 'try' && state.tryStep) p.set('step', state.tryStep);
+  if (view === 'try' && state.tryScreen && state.tryScreen !== 'feed') p.set('screen',state.tryScreen);
   if (view === 'compose' && state.composeEditId) p.set('id', state.composeEditId);
   if (view === 'profile' && state.profileId) p.set('user', state.profileId);
   if(view === 'support' && state.supportThreadId) p.set('thread',state.supportThreadId);
@@ -624,13 +624,13 @@ async function renderApp() {
   };
   let routeLoadTimer=null;
   try {
-    const requestedView = state.view, requestedDetailId = state.detailId, requestedComposeEditId=state.composeEditId||null;
+    const requestedView = state.view, requestedDetailId = state.detailId, requestedComposeEditId=state.composeEditId||null, requestedTryScreen=state.tryScreen||'feed', requestedTryProperty=requestedView==='try'?tryRead().property:null;
     if (requestedView === 'detail' && state.detailPreview?.id === requestedDetailId) app.appendChild(renderDetailPreview(state.detailPreview));
     else routeLoadTimer=setTimeout(()=>{if(state.view===requestedView&&!app.firstChild)app.appendChild(el('div',{class:'route-loading',role:'status','aria-live':'polite'},[el('span',{class:'loading-wheel','aria-hidden':'true'}),el('span',{},'Loading…')]));},220);
     const rendered = await (views[requestedView] || renderHome)();
     clearTimeout(routeLoadTimer); routeLoadTimer=null;
     // Ignore stale async renders if the user navigated elsewhere while data was loading.
-    if (state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId) || (requestedView==='compose'&&(state.composeEditId||null)!==requestedComposeEditId)) return;
+    if ((requestedView==='try'&&((state.tryScreen||'feed')!==requestedTryScreen||tryRead().property!==requestedTryProperty)) || state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId) || (requestedView==='compose'&&(state.composeEditId||null)!==requestedComposeEditId)) return;
     const preserveDetailScroll = requestedView === 'detail' ? window.scrollY : null;
     app.replaceChildren(rendered);
     window.BetterPixel?.update({view:requestedView,signedIn:!!state.user,adMeasurement:state.user?.settings?.adMeasurement});
@@ -651,77 +651,117 @@ async function renderApp() {
 }
 
 /* ================= HOME ================= */
-/* Public, browser-only guided workspace. No member or transaction APIs. */
-const TRY_PROPERTIES = Object.freeze([
-  {id:'sample-1',title:'Single-family renovation',market:'Memphis, TN',asking:115000,beds:3,baths:2,sqft:1450,type:'Single family',strategy:'Fix & flip',buyer:'Sample Buyer A'},
-  {id:'sample-2',title:'Rental portfolio starter',market:'Cleveland, OH',asking:98000,beds:3,baths:1,sqft:1280,type:'Single family',strategy:'Buy & hold',buyer:'Sample Buyer B'},
-  {id:'sample-3',title:'Two-unit opportunity',market:'Birmingham, AL',asking:165000,beds:4,baths:2,sqft:2100,type:'Duplex',strategy:'Buy & hold',buyer:'Sample Buyer C'}
+/* Shared screen context: production screens retain their existing defaults. */
+function liveUIContext(){return {state,api,go,render,openListingDetail,openPropertyShare,refreshUnread,renderTop,renderTabs,demo:false};}
+const TRY_PROPERTIES=Object.freeze([
+ {id:'sample-1',title:'Single-family renovation',market:'Memphis, TN',asking:115000,beds:3,baths:2,sqft:1450,type:'Single family',strategy:'Fix & flip'},
+ {id:'sample-2',title:'Rental portfolio starter',market:'Cleveland, OH',asking:98000,beds:3,baths:1,sqft:1280,type:'Single family',strategy:'Buy & hold'},
+ {id:'sample-3',title:'Two-unit opportunity',market:'Birmingham, AL',asking:165000,beds:4,baths:2,sqft:2100,type:'Duplex',strategy:'Buy & hold'}
 ]);
-const TRY_STEPS = ['Browse properties','Review the property','Find a buyer','Start a conversation','Organize the deal','Finish the walkthrough'];
-function tryRead() {
-  let saved={};try{saved=JSON.parse(sessionStorage.getItem('bre-public-try-v1')||'{}')||{};}catch{}
-  return {property:TRY_PROPERTIES.some(p=>p.id===saved.property)?saved.property:TRY_PROPERTIES[0].id,sent:saved.sent===true,checks:Array.from({length:3},(_,i)=>saved.checks?.[i]===true)};
+const TRY_SCREENS=['feed','detail','profile','chat','pipeline','dealroom','complete'];
+function tryInitial(){return {property:'sample-1',saved:[],messages:[],pipeline:null,room:{stage:'intake',nextAction:'Review the sample property',privateNotes:'',tasks:[]},following:false,guided:true,roomSaved:false,activity:[]};}
+function tryRead(){
+ if(state.tryMemoryV2)return state.tryMemoryV2;
+ const base=tryInitial();let raw;try{raw=JSON.parse(sessionStorage.getItem('bre-public-try-v2')||'null');}catch{}
+ if(raw&&typeof raw==='object'){
+  if(TRY_PROPERTIES.some(p=>p.id===raw.property))base.property=raw.property;
+  base.saved=Array.isArray(raw.saved)?raw.saved.filter(id=>TRY_PROPERTIES.some(p=>p.id===id)):[];
+  base.messages=Array.isArray(raw.messages)?raw.messages.filter(m=>typeof m.body==='string'&&m.body.length<=1000).slice(-20).map((m,i)=>({id:'sample-message-'+i,body:m.body,outgoing:!!m.outgoing,at:typeof m.at==='string'&&Number.isFinite(Date.parse(m.at))?m.at:new Date().toISOString()})):[];
+  const stages=['lead','analyzing','contacted','contract','dispo','closing','closed','dead'];
+  if(raw.pipeline&&stages.includes(raw.pipeline.stage))base.pipeline={id:'sample-pipeline',title:String(raw.pipeline.title||'Sample opportunity').slice(0,100),stage:raw.pipeline.stage,listingId:base.property,nextAction:String(raw.pipeline.nextAction||'').slice(0,300),notes:String(raw.pipeline.notes||'').slice(0,2000)};
+  if(raw.room&&['intake','marketing','buyer-interest','negotiation','title','closing','closed','on-hold'].includes(raw.room.stage))base.room={stage:raw.room.stage,nextAction:String(raw.room.nextAction||'').slice(0,300),privateNotes:String(raw.room.privateNotes||'').slice(0,2000),tasks:[]};
+  base.following=raw.following===true;base.guided=raw.guided!==false;base.roomSaved=raw.roomSaved===true;
+ }
+ state.tryMemoryV2=base;return base;
 }
-function trySave(patch) {const next={...(state.tryMemory||tryRead()),...patch};try{sessionStorage.setItem('bre-public-try-v1',JSON.stringify(next));}catch{}state.tryMemory=next;return next;}
-function tryData(){return state.tryMemory||tryRead();}
-function renderTryItOut() {
-  const step=Math.max(0,Math.min(5,Number(state.tryStep)||0)),data=tryData();
-  const property=TRY_PROPERTIES.find(p=>p.id===data.property)||TRY_PROPERTIES[0];
-  const jump=n=>{state.tryStep=n;writeRoute();render();requestAnimationFrame(()=>{document.querySelector('.try-title')?.focus({preventScroll:true});window.scrollTo({top:0,behavior:'auto'});});};
-  const signup=()=>{state.postAuthTarget=null;state.authMode='signup';go('auth');};
-  const action=(text,fn,primary=true)=>el('button',{type:'button',class:primary?'btn-primary':'btn-ghost',onclick:fn},text);
-  const panel=(title,children)=>el('section',{class:'try-panel'},[el('h2',{},title),...children]);
-  const copy=text=>el('p',{},text);
-  const propertySummary=()=>el('div',{class:'try-property-summary'},[el('span',{class:'try-label'},'SAMPLE PROPERTY'),el('h2',{},property.title),copy(property.market),el('strong',{class:'try-price'},money(property.asking)),el('div',{class:'specs'},[`${property.beds} bd`,`${property.baths} ba`,`${property.sqft.toLocaleString()} sqft`,property.type].map(t=>el('span',{},t)))]);
-  const wrap=el('div',{class:'page try-workspace'});
-  wrap.appendChild(el('div',{class:'try-toolbar'},[
-    el('div',{},[el('b',{},'Better · Try it out'),el('small',{},'Guided demo · No account needed')]),
-    el('div',{class:'try-actions'},[action('Back to homepage',()=>go('home'),false),state.user?action('Open my workspace',()=>go('feed')):action('Sign up free',signup)])
-  ]));
-  wrap.appendChild(el('p',{class:'try-disclaimer'},'Illustrative demo: these properties, buyers, messages and deal milestones are samples. Nothing here is posted, sent or transacted.'));
-  wrap.appendChild(el('nav',{class:'try-progress','aria-label':'Demo progress'},TRY_STEPS.map((label,i)=>el('span',{class:i===step?'current':i<step?'done':'','aria-current':i===step?'step':null},`${i+1}. ${label}`))));
-  const headings=['Find your first opportunity.','Get the details in one place.','See who fits the property.','Turn interest into a conversation.','Keep the next steps together.','You took a sample deal from discovery to completion.'];
-  const instructions=['Choose any sample property to start your walkthrough.','Review the sample facts, then explore a buyer whose criteria fit.','Review this sample buyer’s criteria, then open a conversation.','Send a sample message to see how a conversation could begin.','Check each sample milestone, then finish the demonstration.','Now you can create your account and start building your own network.'];
-  wrap.appendChild(el('header',{class:'try-intro'},[el('div',{class:'homeeyebrow'},`STEP ${step+1} OF ${TRY_STEPS.length}`),el('h1',{class:'try-title',tabindex:'-1'},headings[step]),copy(instructions[step])]));
-  const content=el('div',{class:'try-content'});
-  if(step===0) {
-    content.appendChild(el('div',{class:'try-properties'},TRY_PROPERTIES.map(p=>el('article',{class:'try-property-card'},[
-      el('div',{class:'try-property-art','aria-hidden':'true'},[iconSvg('home',56),el('span',{},'ILLUSTRATIVE PROPERTY')]),
-      el('div',{class:'try-property-body'},[el('span',{class:'try-label'},'SAMPLE · '+p.strategy),el('h2',{},p.title),copy(p.market),el('strong',{class:'try-price'},money(p.asking)),copy(`${p.beds} beds · ${p.baths} baths · ${p.sqft.toLocaleString()} sqft`),action('Explore '+p.market,()=>{trySave({property:p.id,sent:false,checks:[false,false,false]});jump(1);})])
-    ]))));
-  } else if(step===1) {
-    content.appendChild(el('div',{class:'try-two-column'},[panel('Property overview',[propertySummary(),copy('Sample description: an off-market opportunity for an investor to evaluate. On a real post, review the seller’s description, photos and available documents before deciding to proceed.'),el('div',{class:'connected-warning'},'Sample asking price and facts only. No verified valuation, title findings or investment returns are represented.')]),panel('From a post to your next step',[copy('Keep the property attached to the conversation, compare buyer criteria and organize follow-up without rebuilding the details in separate places.'),el('ol',{},['Review the property','Connect with relevant people','Track the work in a Deal room'].map(t=>el('li',{},t))),action('Find a sample buyer',()=>jump(2))])]));
-  } else if(step===2) {
-    content.appendChild(el('div',{class:'try-two-column'},[propertySummary(),panel(property.buyer,[el('span',{class:'try-label'},'SAMPLE BUYER · ILLUSTRATIVE FIT'),copy('This demo buyer’s criteria were selected to fit the sample property. Real availability, interest and qualification must be confirmed.'),el('dl',{class:'try-facts'},[
-      el('dt',{},'Market'),el('dd',{},property.market),el('dt',{},'Property type'),el('dd',{},property.type),el('dt',{},'Strategy'),el('dd',{},property.strategy),el('dt',{},'Sample budget'),el('dd',{},'Up to '+money(property.asking+35000))
-    ]),action('Open sample conversation',()=>jump(3))])]));
-  } else if(step===3) {
-    const messages=el('div',{class:'try-messages','aria-live':'polite'},data.sent?[
-      el('div',{class:'try-message outgoing'},[el('b',{},'You · simulated'),copy(`Hi, I’m reviewing the ${property.title.toLowerCase()} in ${property.market}. Does it fit what you’re looking for?`)]),
-      el('div',{class:'try-message'},[el('b',{},property.buyer+' · simulated reply'),copy('The sample property fits my criteria. Let’s review the documents and next steps in the Deal room.')])
-    ]:[copy('Your sample conversation will appear here. No real person receives this message.')]);
-    content.appendChild(panel('Conversation · '+property.title,[messages,data.sent?action('Open sample Deal room',()=>jump(4)):el('div',{class:'try-compose'},[copy(`Hi, I’m reviewing the ${property.title.toLowerCase()} in ${property.market}. Does it fit what you’re looking for?`),action('Send sample message',()=>{trySave({sent:true});render();})])]));
-  } else if(step===4) {
-    const finish=action('Finish sample deal',()=>jump(5));finish.disabled=!data.checks.every(Boolean);
-    const checklist=el('div',{class:'try-checklist'});
-    ['Review sample property details','Confirm sample buyer’s interest','Complete the sample closing milestone'].forEach((label,i)=>{
-      const input=el('input',{type:'checkbox','aria-label':label});input.checked=data.checks[i];
-      input.addEventListener('change',()=>{const checks=[...tryData().checks];checks[i]=input.checked;const updated=trySave({checks});finish.disabled=!updated.checks.every(Boolean);status.textContent=updated.checks.filter(Boolean).length+' of 3 sample milestones complete';});
-      checklist.appendChild(el('label',{},[input,el('span',{},label)]));
-    });
-    const status=el('p',{role:'status','aria-live':'polite'},data.checks.filter(Boolean).length+' of 3 sample milestones complete');
-    content.appendChild(el('div',{class:'try-two-column'},[propertySummary(),panel('Deal room · sample workflow',[copy('Use a shared place for property context, documents and next steps. For this demo, check off three illustrative milestones.'),checklist,status,copy('In a real transaction, due diligence, contracts, funds and closing require the appropriate professionals. Checking a box does not complete those steps.'),finish])]));
-  } else {
-    content.appendChild(panel('That’s the workflow. Your next deal starts with you.',[
-      el('div',{class:'try-complete'},[iconSvg('grid',36),copy('Property → Buyer → Conversation → Deal room')]),
-      copy('You explored a sample property, reviewed a buyer’s criteria, opened a conversation and organized the sample milestones. This was an illustrative successful scenario, not a real closing or a promise of results.'),
-      el('h3',{},'Start with a free account'),copy('Post your own property, add what you’re looking to buy, or connect with other members. Paid tools and limits depend on your membership.'),
-      el('div',{class:'try-actions'},[state.user?action('Open my workspace',()=>go('feed')):action('Sign up free',signup),action('Try another property',()=>{trySave({sent:false,checks:[false,false,false]});jump(0);},false)]),copy('Your demo actions won’t be copied into your account.')
-    ]));
+function tryPersist(){const d=tryRead();try{sessionStorage.setItem('bre-public-try-v2',JSON.stringify(d));}catch{}return d;}
+function tryListing(p){return {...p,address:p.title+' · Sample',city:p.market,propertyType:p.type,photos:[],ownerId:'sample-seller',ownerName:'Sample Seller',demo:true,notes:'Illustrative property for exploring Better. All facts and asking prices are sample inputs, not verified listing information.',situation:'Sample opportunity',timeline:'Illustrative timeline',locked:false,savedByMe:tryRead().saved.includes(p.id)};}
+function tryPerson(id='sample-buyer'){const p=TRY_PROPERTIES.find(p=>p.id===tryRead().property)||TRY_PROPERTIES[0];return {id,name:id==='sample-seller'?'Sample Seller':'Sample Buyer',role:id==='sample-seller'?'seller':'buyer',roles:[id==='sample-seller'?'seller':'buyer'],username:id,location:p.market,investmentMarkets:[p.market],markets:[p.market],bio:'Illustrative profile for this guided demo. No real member, transaction history or verified buyer is represented.',verified:false,friendStatus:'none'};}
+function tryNavigate(view,extra={}){
+ if(['search','savedsearches'].includes(view)){toast('Search and alerts are available in the full platform. Explore the sample properties here.');return;}
+ state.trySavedOnly=view==='saved';
+ const aliases={saved:'feed',messages:'chat',network:'profile'};view=aliases[view]||view;
+ if(!TRY_SCREENS.includes(view)){toast('That tool is available in the full platform. You can keep exploring the sample screens or sign up free.');return;}
+ if(extra.detailId&&TRY_PROPERTIES.some(p=>p.id===extra.detailId)){const d=tryRead();if(d.property!==extra.detailId){const keep=d.saved;state.tryMemoryV2=tryInitial();state.tryMemoryV2.saved=keep;state.tryMemoryV2.property=extra.detailId;tryPersist();}}
+ state.tryScreen=view;writeRoute();render();window.scrollTo({top:0,behavior:'auto'});
+}
+async function tryApi(method,path,body={}){
+ const d=tryRead(),p=TRY_PROPERTIES.find(p=>p.id===d.property)||TRY_PROPERTIES[0],listing=tryListing(p),at=new Date().toISOString();
+ const clean=v=>String(v||'').slice(0,1000);
+ const result=value=>{if(method!=='GET')tryPersist();return value;};
+ if(method==='GET'&&path.startsWith('/api/feed?'))return {feed:TRY_PROPERTIES.filter(p=>(!state.trySavedOnly||d.saved.includes(p.id))&&(!path.includes('following')||d.following)).map(tryListing)};
+ if(method==='GET'&&path==='/api/pipeline')return {deals:d.pipeline?[d.pipeline]:[]};
+ if(method==='POST'&&path==='/api/pipeline'){
+  if(body.listingId&&!TRY_PROPERTIES.some(x=>x.id===body.listingId))throw Error('Choose a sample property.');
+  if(body.listingId&&body.listingId!==d.property)throw Error('Open that sample property first.');
+  const stage=body.stage||d.pipeline?.stage||'lead';if(!['lead','analyzing','contacted','contract','dispo','closing','closed','dead'].includes(stage))throw Error('Choose a demo pipeline stage.');
+  d.pipeline={...(d.pipeline||{}),id:'sample-pipeline',listingId:d.property,title:clean(body.title||d.pipeline?.title||listing.address),stage,nextAction:clean(body.nextAction??d.pipeline?.nextAction??'Review sample buyer interest'),notes:clean(body.notes??d.pipeline?.notes)};return result({deal:d.pipeline});
+ }
+ if(method==='POST'&&path==='/api/saves/toggle'){
+  if(!TRY_PROPERTIES.some(x=>x.id===body.listingId))throw Error('Choose a sample property.');
+  d.saved=d.saved.includes(body.listingId)?d.saved.filter(x=>x!==body.listingId):[...d.saved,body.listingId];return result({saved:d.saved.includes(body.listingId)});
+ }
+ if(path.startsWith('/api/follow/status/')&&method==='GET')return {following:d.following};
+ if(path==='/api/follow'&&method==='POST'){d.following=!d.following;return result({following:d.following});}
+ if(method==='GET'&&/^\/api\/users\/sample-(buyer|seller)\/listings$/.test(path))return {owner:tryPerson(path.includes('sample-seller')?'sample-seller':'sample-buyer'),listings:[],followerCount:0,friendCount:0,reviews:[]};
+ if(method==='GET'&&/^\/api\/conversations\/sample-(buyer|seller)$/.test(path))return {other:tryPerson(path.includes('sample-seller')?'sample-seller':'sample-buyer'),messages:d.messages};
+ if(method==='POST'&&path==='/api/messages'){
+  if(!['sample-buyer','sample-seller'].includes(body.toUserId))throw Error('Choose a sample participant.');
+  if(!clean(body.body).trim())throw Error('Type a sample message first.');
+  d.messages.push({id:'sample-message-'+Date.now(),body:clean(body.body),outgoing:true,at},{id:'sample-reply-'+Date.now(),body:'Simulated reply: this fits the sample criteria. Let’s review the next steps in the Deal room.',outgoing:false,at});d.messages=d.messages.slice(-20);return result({ok:true});
+ }
+ if(method==='POST'&&path==='/api/offers')return result({ok:true,offer:{id:'sample-offer'}});
+ const match=path.match(/^\/api\/listings\/(sample-[123])(?:\/(.*))?$/);
+ if(match){const item=tryListing(TRY_PROPERTIES.find(x=>x.id===match[1])),suffix=match[2]||'';
+  if(method==='GET'&&!suffix)return {listing:item,owner:tryPerson('sample-seller'),otherListings:[],reviews:[]};
+  if(match[1]!==d.property)throw Error('Open the selected sample property.');
+  if(method==='GET'&&suffix==='deal-room')return {listing:item,room:d.room,canManage:true,messages:d.messages.map(m=>({...m,fromUserId:m.outgoing?'sample-you':'sample-buyer',fromName:'Sample Buyer'})),offers:[],responses:[]};
+  if(method==='PATCH'&&suffix==='deal-room'){
+   if(!['intake','marketing','buyer-interest','negotiation','title','closing','closed','on-hold'].includes(body.stage))throw Error('Choose a demo Deal room stage.');
+   d.room={stage:body.stage,nextAction:clean(body.nextAction),privateNotes:clean(body.privateNotes),tasks:[]};d.roomSaved=true;
+   d.activity.push({id:'sample-activity-'+Date.now(),text:'Sample Deal room saved: '+body.stage,userName:'You · demo',at});
+   if(d.pipeline&&body.stage==='closed')d.pipeline.stage='closed';tryPersist();setTimeout(()=>{if(state.view==='try')render();},0);return {ok:true,room:d.room};
   }
-  wrap.appendChild(content);
-  if(step>0)wrap.appendChild(el('div',{class:'try-bottom'},[action('Previous step',()=>jump(step-1),false),action('Restart demo',()=>{trySave({sent:false,checks:[false,false,false]});jump(0);},false)]));
-  return wrap;
+  if(method==='POST'&&suffix==='deal-room/messages')return tryApi('POST','/api/messages',{toUserId:'sample-buyer',body:body.body});
+ }
+ if(method==='GET'&&path==='/api/deals/'+d.property+'/activity')return {activity:d.activity};
+ throw Error('This tool is outside the demo. No data was sent. Try the guided steps or sign up to use your own workspace.');
+}
+function tryContext(screen){
+ const d=tryRead();return {demo:true,state:{view:screen,user:{id:'sample-you',name:'You · Demo',role:'buyer',roles:['buyer'],settings:{}},access:null,get feedMode(){return d.feedMode||'for-you';},set feedMode(v){d.feedMode=v;},photoIdx:0,detailId:d.property,profileId:'sample-buyer',chatUserId:'sample-buyer',chatListingId:d.property},api:tryApi,go:tryNavigate,render,openListingDetail:l=>tryNavigate('detail',{detailId:l.id}),openPropertyShare:()=>toast('Sample links are not shared. Sign up to share your own properties.'),refreshUnread:async()=>0,renderTop:()=>{},renderTabs:()=>{}};
+}
+async function renderTryItOut(){
+ const d=tryRead(),ready=!!(d.roomSaved&&d.room.stage==='closed'&&d.pipeline&&d.messages.some(m=>m.outgoing));
+ const requested=TRY_SCREENS.includes(state.tryScreen)?state.tryScreen:'feed',screen=requested==='complete'&&!ready?'feed':requested,ctx=tryContext(screen),p=TRY_PROPERTIES.find(x=>x.id===d.property)||TRY_PROPERTIES[0];
+ const button=(text,fn,primary=false)=>el('button',{type:'button',class:primary?'btn-primary':'btn-ghost',onclick:fn},text);
+ const signup=()=>{state.postAuthTarget=null;state.authMode='signup';go('auth');};
+ const wrap=el('div',{class:'try-platform page'});
+ wrap.appendChild(el('div',{class:'try-toolbar'},[el('div',{},[el('b',{},'Better · Interactive demo'),el('small',{},'Actual platform screens · Sample data')]),el('div',{class:'try-actions'},[button('Exit demo',()=>go(state.user?'feed':'home')),state.user?button('My workspace',()=>go('feed'),true):button('Sign up free',signup,true)])]));
+ wrap.appendChild(el('p',{class:'try-disclaimer'},'Demo only: all properties, people, messages and deal activity here are illustrative. Actions stay in this browser tab; no real messages, listings or transactions are created.'));
+ const titles={feed:'Browse the feed',detail:'Review a property',profile:'Meet a sample buyer',chat:'Try messaging',pipeline:'Organize your pipeline',dealroom:'Move the sample deal forward',complete:'Your sample workflow is complete'};
+ const tips={feed:'Open a sample property using View details. You can also try Save.',detail:'Explore the property facts and calculator. Then review the sample buyer below.',profile:'Try Follow, review the sample buying criteria and select Message.',chat:'Type a sample message and press Send. A clearly labeled simulated reply will appear.',pipeline:'Use the stage selector to move your opportunity, add a private note, then select Deal room.',dealroom:'Edit the stage, next action and private notes. Set the stage to Closed and Save deal room to finish the sample workflow.'};
+ if(d.guided)wrap.appendChild(el('aside',{class:'try-guide','aria-label':'Demo guidance'},[el('div',{class:'homeeyebrow'},'GUIDED DEMO · '+(TRY_SCREENS.indexOf(screen)+1)+' OF 7'),el('h1',{class:'try-title'},titles[screen]),el('p',{},tips[screen]||'Create your free account whenever you are ready.'),button('Explore without guidance',()=>{d.guided=false;tryPersist();render();})]));
+ else wrap.appendChild(button('Show guidance',()=>{d.guided=true;tryPersist();render();}));
+ wrap.appendChild(el('nav',{class:'try-app-nav','aria-label':'Demo workspace'},TRY_SCREENS.filter(x=>x!=='complete').map(x=>button(titles[x],()=>tryNavigate(x),screen===x))));
+ const views={feed:renderFeed,detail:renderDetail,profile:renderProfile,chat:renderChat,pipeline:renderPipeline,dealroom:renderDealRoom};
+ if(screen==='complete'){
+  wrap.appendChild(el('section',{class:'try-panel'},[el('h2',{},titles.complete),el('p',{},'You explored a property, started a sample conversation and practiced keeping the work in one place. This is an illustrative successful scenario, not a real closing or a guarantee of results.'),el('p',{},'Real contracts, due diligence, title work, funds and closing require the appropriate parties. Better helps you organize the work.'),state.user?button('Open my workspace',()=>go('feed'),true):button('Sign up free',signup,true),button('Try another property',()=>{state.tryMemoryV2=tryInitial();tryPersist();tryNavigate('feed');})]));
+ }else{
+  const ui=await views[screen](ctx);ui.classList.add('try-live-screen');wrap.appendChild(ui);
+  if(screen==='profile')wrap.appendChild(el('section',{class:'try-panel'},[el('h3',{},'Sample buying criteria'),el('p',{},p.market+' · '+p.type+' · '+p.strategy+' · Up to '+money(p.asking+35000)),el('p',{class:'hint'},'Criteria selected to illustrate a fit. This is not a verified or available real buyer.')]));
+  const next={detail:['Review sample buyer',()=>tryNavigate('profile')],profile:['Message sample buyer',()=>tryNavigate('chat')],chat:['Add sample property to pipeline',async()=>{await tryApi('POST','/api/pipeline',{listingId:d.property,title:p.title+' · Sample',stage:'lead'});tryNavigate('pipeline');}],pipeline:['Open sample Deal room',()=>tryNavigate('dealroom')]};
+  if(next[screen]){
+   const [label,fn]=next[screen];const control=button(label,fn,true);
+   if(d.guided&&screen==='chat'&&!d.messages.some(m=>m.outgoing))control.disabled=true;
+   if(d.guided&&screen==='pipeline'&&(!d.pipeline||d.pipeline.stage==='lead'))control.disabled=true;
+   wrap.appendChild(el('div',{class:'try-next'},[control]));
+  }
+  if(screen==='dealroom'){
+   const finish=button('Finish sample workflow',()=>tryNavigate('complete'),true);finish.disabled=!ready;wrap.appendChild(el('div',{class:'try-next'},[el('p',{role:'status'},finish.disabled?'Send a sample message, add the property to your pipeline and save the Deal room at Closed to finish.':'Sample stage saved. You can finish the walkthrough.'),finish]));
+  }
+ }
+ wrap.appendChild(el('div',{class:'try-bottom'},[button('Restart demo',()=>{state.tryMemoryV2=tryInitial();tryPersist();tryNavigate('feed');})]));
+ return wrap;
 }
 
 function renderHome() {
@@ -736,7 +776,7 @@ function renderHome() {
       el('div', { class: 'homeeyebrow' }, 'BUILT FOR REAL ESTATE DEALMAKERS'),
       el('h1', {}, ['The professional network for ', el('em', {}, 'off-market real estate.' )]),
       el('p', {}, 'Discover opportunities, connect with active buyers, market your deals and manage the relationships that move real estate — from one workspace.'),
-      el('div', { class: 'herobtns' }, [el('button', {class:'btn-primary', onclick:()=>go('try',{tryStep:0})}, 'Try it out'), el('button', {class:'btn-ghost', onclick:()=>{state.authMode='signup';go('auth');}}, 'Sign up free')]),
+      el('div', { class: 'herobtns' }, [el('button', {class:'btn-primary', onclick:()=>go('try',{tryScreen:'feed'})}, 'Try it out'), el('button', {class:'btn-ghost', onclick:()=>{state.authMode='signup';go('auth');}}, 'Sign up free')]),
       el('div', { class: 'homeheronote' }, [el('span',{},'Free to join · No card required'), el('br'), el('span',{},'Try a guided sample deal before signing up.')])
     ]),
     el('div', { class: 'homecap-panel' }, [
@@ -974,10 +1014,11 @@ function payWithCard(clientSecret, amountCents, onSuccess) {
 }
 
 
-async function renderFeed() {
+async function renderFeed(context = liveUIContext()) {
+ const {state, api, go, render} = context;
   const wrap = el('div', { class: 'feedwrap' });
-  const vb = verifyBanner(); if (vb) wrap.appendChild(vb);
-  const tb = trialBar(); if (tb) wrap.appendChild(tb);
+  const vb = context.demo ? null : verifyBanner(); if (vb) wrap.appendChild(vb);
+  const tb = context.demo ? null : trialBar(); if (tb) wrap.appendChild(tb);
   wrap.appendChild(el('div', { class: 'feedhead' }, [
     el('div',{class:'feedmode'},[el('button',{class:state.feedMode==='for-you'?'active':'',onclick:()=>{state.feedMode='for-you';render();}},'For You'),el('button',{class:state.feedMode==='following'?'active':'',onclick:()=>{state.feedMode='following';render();}},'Following')]),
     el('div', {class:'feedtools'}, [el('button', { class: 'filterbtn', onclick: () => go('search') }, 'Search'),el('button', { class: 'filterbtn', onclick: () => go('saved') }, 'Liked'),el('button', { class: 'filterbtn', onclick: () => go('savedsearches') }, 'Deal alerts')])
@@ -985,6 +1026,7 @@ async function renderFeed() {
   const { feed, access, dashboard: dash } = await api('GET', '/api/feed?mode='+encodeURIComponent(state.feedMode));
   state.access = access || state.access;
   if(dash) wrap.insertBefore(el('div',{class:'feedcommand'},[el('div',{class:'feedcommand-stats'},[miniMetric(dash.matched,'Market matches'),miniMetric(dash.buyerMatches,'Buyer matches'),miniMetric(dash.pendingOffers,'Pending offers'),miniMetric(dash.upcoming?new Date(dash.upcoming.at).toLocaleDateString():'—','Next deadline')]) ]), wrap.firstChild);
+  if (!feed.length && context.demo) { wrap.appendChild(el('div',{class:'empty'},[el('h3',{},'No sample properties in this view'),el('p',{},'Switch to For You to browse all sample properties. Save a property to try the Liked view; follow the sample buyer to explore Following.'),el('button',{class:'btn-ghost',onclick:()=>{state.feedMode='for-you';go('feed');}},'Browse sample properties')]));return wrap;}
   if (!feed.length) {
     wrap.appendChild(el('div', { class: 'empty' }, [
       el('h3', {}, state.feedMode==='following'?'Your network is quiet. For now.':'Quiet in here. Let’s fix that.'),
@@ -994,18 +1036,19 @@ async function renderFeed() {
     return wrap;
   }
   feed.forEach((l, i) => {
-    const card = propertyCard(l);
+    const card = propertyCard(l, context);
     card.style.animationDelay = Math.min(i * 45, 400) + 'ms';
     wrap.appendChild(card);
   });
   return wrap;
 }
 
-function propertyCard(l) {
+function propertyCard(l, context = liveUIContext()) {
+ const {api, go, render, openListingDetail, openPropertyShare} = context;
   const spread = l.arv ? l.arv - l.asking : 0;
   let idx = 0;
   const imgEl = el('div', { class: 'imgwrap' });
-  const img = l.photos?.length ? el('img', { src: l.photos[0], alt: l.city }) : el('div', { class: 'nophoto' }, 'No photo added');
+  const img = l.photos?.length ? el('img', { src: l.photos[0], alt: l.city }) : el('div', { class: 'nophoto' }, context.demo ? [iconSvg('home',56),el('small',{},'Sample property · No photograph')] : 'No photo added');
   imgEl.appendChild(img);
   imgEl.appendChild(el('div', { class: 'pricebadge' }, money(l.asking)));
   if (spread > 0) imgEl.appendChild(el('div', { class: 'spreadbadge' }, '+' + money(spread)));
@@ -1264,7 +1307,8 @@ async function maybeShowFirstLoginPayoff() {
 }
 
 /* ================= DETAIL ================= */
-async function renderDetail() {
+async function renderDetail(context = liveUIContext()) {
+ const {state, api, go, render} = context;
   if (!state.detailId) throw new Error('This property link is missing its listing ID. Return to the feed and open it again.');
   const d = await api('GET', '/api/listings/' + encodeURIComponent(state.detailId));
   const { listing, owner, otherListings, reviews } = d;
@@ -1276,7 +1320,7 @@ async function renderDetail() {
   const gal = el('div', { class: 'gallery' });
   const main = el('div', { class: 'main' });
   if (listing.photos?.length) main.appendChild(el('img', { src: listing.photos[state.photoIdx] || listing.photos[0] }));
-  else main.appendChild(el('div', {}, 'No photos on this listing'));
+  else main.appendChild(context.demo ? el('div',{class:'try-sample-art'},[iconSvg('home',56),el('small',{},'Sample property · No photograph')]) : el('div', {}, 'No photos on this listing'));
   gal.appendChild(main);
   if (listing.photos?.length > 1) {
     const th = el('div', { class: 'thumbs' });
@@ -1299,7 +1343,7 @@ async function renderDetail() {
     el('div', {}, [el('h2', {}, listing.address), el('div', { class: 'c' }, listing.city), listing.freshness ? el('div', { class: 'freshnessline' }, [el('span', { class: 'freshnesspill' + (listing.freshness.needsConfirmation ? ' warn' : '') }, listing.freshness.needsConfirmation ? 'Needs seller confirmation' : `Confirmed ${listing.freshness.confirmedDaysAgo === 0 ? 'today' : listing.freshness.confirmedDaysAgo + 'd ago'}`), listing.contractDeadline ? el('span', {}, `Deadline ${listing.contractDeadline}`) : null]) : null]),
     el('div', { class: 'dprice' }, money(listing.asking))
   ]));
-  wrap.appendChild(propertyShareBar(listing));
+  if (!context.demo) wrap.appendChild(propertyShareBar(listing));
   if (state.user && state.user.id === listing.ownerId) {
     const intelligenceSlot=el('div',{class:'buyer-match-slot'}); wrap.appendChild(intelligenceSlot);
     api('GET','/api/listings/'+encodeURIComponent(listing.id)+'/network-intelligence').then(ni=>{
@@ -1421,7 +1465,7 @@ async function renderDetail() {
     wrap.appendChild(el('div',{class:'dsection owner-ops'},[el('h3',{},'Deal operations'),el('div',{class:'owner-ops-actions'},[el('button',{class:'btn-primary',onclick:()=>go('compose',{composeEditId:listing.id})},'Edit property'),el('button',{class:'btn-primary',onclick:()=>go('dealroom',{detailId:listing.id})},'Open deal room'),el('button',{class:'btn-ghost',onclick:async()=>{await api('POST','/api/pipeline',{listingId:listing.id,title:listing.address,stage:'dispo'});toast('Added to pipeline','ok');go('pipeline');}},'Add to pipeline'),el('button',{class:'btn-ghost',onclick:()=>go('analytics',{detailId:listing.id})},'Listing analytics')]) ]));
   }
 
-  if (state.user) {
+  if (state.user && !context.demo) {
     try {
       const sh = await api('GET', '/api/listings/' + encodeURIComponent(listing.id) + '/showings');
       const future = (sh.slots || []).filter(x => new Date(x.at) > new Date());
@@ -1466,7 +1510,7 @@ async function renderDetail() {
     ]));
   }
 
-  if(state.user){try{wrap.appendChild(await renderConnectedListing(listing));}catch(e){wrap.appendChild(el('p',{class:'errmsg'},'Connected tools: '+e.message));}}
+  if(state.user && !context.demo){try{wrap.appendChild(await renderConnectedListing(listing));}catch(e){wrap.appendChild(el('p',{class:'errmsg'},'Connected tools: '+e.message));}}
   if (state.user && state.user.id === owner.id) {
     const command = el('div', { class:'dsection dealcommand' });
     command.appendChild(el('div',{class:'sectioneyebrow'},'DEAL COMMAND CENTER'));
@@ -2947,7 +2991,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 80;
+const TUTORIAL_VERSION = 81;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -2969,7 +3013,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
  {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
  {view:'affiliate',selector:'.affiliate-center',min:0,release:73,title:'Individual commission agreements',copy:'Admin can propose a personal commission rate. Review and accept it in Affiliate Center to activate it for future eligible first paid memberships. A custom rate replaces automatic leaderboard increases until you accept a return to automatic rates. Past earnings keep their original rate.'},
- {view:'home',selector:'.herobtns',min:0,release:80,title:'Try Better before signing up',copy:'The public Try it out button opens an isolated, guided sample deal. Browse sample properties, connect with a sample buyer and complete a simulated Deal room checklist. Create a real account whenever you are ready.'},
+ {view:'home',selector:'.herobtns',min:0,release:81,title:'Try Better before signing up',copy:'The public Try it out button opens an isolated, guided sample deal. Use the actual feed, property, profile, messaging, pipeline and Deal room screens with isolated sample data. Save a property, send a simulated message, move its pipeline stage and save the sample Deal room. Create a real account whenever you are ready.'},
  {view:'home',selector:'#sitefooter',min:0,release:73,title:'Public real estate guides',copy:'Open Real estate guides in the footer for free guides to posting wholesale properties, finding buyers and reviewing deal evidence. Property Share links provide a branded preview; share only information you are authorized to publish.'},
  {view:'settings',selector:'#app .page',min:0,release:71,title:'Advertising measurement preferences',copy:'Optional Meta Pixel measures public marketing page visits. You can turn advertising measurement off in Settings. Private pages and browser privacy signals are respected; email and phone preferences are separate.'},
  {view:'pipeline',selector:'.pipeline-room-button',min:1,release:79,title:'Open the linked deal room',copy:'Use Deal room on a linked pipeline card to open that property’s existing room. Access still follows the property’s permissions.'},
@@ -3756,7 +3800,9 @@ function formatChatTime(iso) {
   if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
-async function renderChat() {
+async function renderChat(context = liveUIContext()) {
+ const {state, api, go, render} = context;
+ const refreshUnread=context.refreshUnread, renderTop=context.renderTop, renderTabs=context.renderTabs;
   if (!state.chatUserId) return renderMessages();
   let { other, messages } = await api('GET', '/api/conversations/' + encodeURIComponent(state.chatUserId));
   await refreshUnread();
@@ -3766,7 +3812,7 @@ async function renderChat() {
   wrap.appendChild(el('div', { class: 'chathead' }, [
     el('button', { class: 'backbtn', onclick: () => go('messages') }, '← Messages'),
     el('div', { class: 'chatperson', onclick: () => go('profile', { profileId: other.id }) }, [avatarNode(other, 'small'), el('div', {}, [el('b', {}, other.name), el('span', {}, [roleLabel(other), ...(other.markets || [])].filter(Boolean).slice(0,2).join(' · '))])]),
-    friendButton(other, () => {})
+    context.demo ? el('span',{class:'demopill'},'SAMPLE BUYER') : friendButton(other, () => {})
   ]));
   const attachedListingId=state.chatListingId||null;
   if(attachedListingId){try{const r=await api('GET','/api/listings/'+encodeURIComponent(attachedListingId));wrap.appendChild(el('div',{class:'connected-card'},[el('b',{},'Attached property: '+r.listing.address),el('p',{class:'hint'},'Review your message before sending. This property stays attached to the conversation.'),connectedAction('View property',()=>go('detail',{detailId:attachedListingId}))]));}catch{state.chatListingId=null;}}
@@ -3826,6 +3872,7 @@ async function renderChat() {
       await withButtonBusy(send, async () => {
         await api('POST', '/api/messages', { toUserId: other.id, listingId:state.chatListingId||null,body });
         await syncChat({ force: true });
+        if(context.demo) render();
       });
     } catch (e) {
       renderMessagesIntoStream(messages);
@@ -3839,7 +3886,7 @@ async function renderChat() {
   send.onclick = doSend;
   input.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); } };
   setTimeout(() => { stream.scrollTop = stream.scrollHeight; input.focus(); }, 0);
-  startViewPolling(async () => {
+  if (!context.demo) startViewPolling(async () => {
     if (state.view !== 'chat' || !state.chatUserId || sendingMessage) return;
     await syncChat();
   }, 6000);
@@ -4018,7 +4065,8 @@ async function renderMe() {
   return wrap;
 }
 
-async function renderProfile() {
+async function renderProfile(context = liveUIContext()) {
+ const {state, api, go, render} = context;
   const { owner, publicMembership, company, listings, followerCount, friendCount, friendship, reviews, credibility } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
   owner.publicMembership = publicMembership || null;
   const wrap = el('div', { class: 'page' });
@@ -4037,7 +4085,7 @@ async function renderProfile() {
   const profileHero = el('div', { class: 'profilehero' }, [avatarNode(owner, 'profile'), profileBody]);
   wrap.appendChild(profileHero);
   if(credibility) wrap.appendChild(el('div',{class:'credibility-row'},[credibility.accountSince?el('span',{},'Member since '+new Date(credibility.accountSince).toLocaleDateString(undefined,{month:'short',year:'numeric'})):null,el('span',{},`${credibility.verifiedClosings||0} verified closing${credibility.verifiedClosings===1?'':'s'}`),credibility.responseRate!==null?el('span',{},`${credibility.responseRate}% response rate`):null].filter(Boolean)));
-  wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${roleLabel(owner)}${owner.location ? ' · ' + owner.location : ''}` }));
+  if (!context.demo) wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${roleLabel(owner)}${owner.location ? ' · ' + owner.location : ''}` }));
 
   if (state.user && state.user.id !== owner.id) {
     const actions = el('div', { class: 'profileactions' });
@@ -4046,7 +4094,7 @@ async function renderProfile() {
     fb.onclick = async () => { try { await withButtonBusy(fb, async () => { const { following } = await api('POST', '/api/follow', { userId: owner.id }); fb.textContent = following ? 'Following' : 'Follow'; }); } catch (e) { toast(e.message, 'err'); } };
     actions.appendChild(fb);
     const friendUser = { ...owner, friendStatus: friendship?.status || 'none', friendRequestId: friendship?.requestId || null };
-    actions.appendChild(friendButton(friendUser, () => render()));
+    if (!context.demo) actions.appendChild(friendButton(friendUser, () => render()));
     actions.appendChild(el('button', { class: 'btn-primary', onclick: () => go('chat', { chatUserId: owner.id }) }, 'Message'));
     if (hasRole(owner, 'seller')) actions.appendChild(el('button', { class: 'btn-ghost', onclick: () => go('buyerportal', { buyerPortalType: 'user', buyerPortalId: owner.id }) }, 'Join buyer list'));
     wrap.appendChild(actions);
@@ -5134,8 +5182,9 @@ async function renderUniversalSearch(){
 async function renderSavedSearches(){
  const wrap=el('div',{class:'page saved-searches-page'});wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Saved searches & deal alerts'),el('div',{class:'sub'},'Keep your best search criteria and see how many live properties match right now.')]),el('button',{class:'btn-primary',onclick:()=>go('search')},'Create from search')]));const r=await api('GET','/api/saved-searches');if(!r.searches.length){wrap.appendChild(el('div',{class:'empty'},[el('h3',{},'No deal alerts yet'),el('p',{},'Search for a market or deal type, then save the search to start tracking it.') ]));return wrap;}const list=el('div',{class:'saved-search-list'});r.searches.forEach(x=>list.appendChild(el('div',{class:'saved-search-card'},[el('div',{class:'grow'},[el('b',{},x.name),el('span',{},[x.query,...(x.states||[]),...(x.propertyTypes||[])].filter(Boolean).join(' · ')||'Any matching property'),el('small',{},`${x.matchCount} live match${x.matchCount===1?'':'es'} · ${x.alerts?'Alerts on':'Alerts off'}`)]),el('button',{onclick:()=>{state.searchQ=x.query||'';go('search');}},'View matches'),el('button',{class:'btn-ghost',onclick:async()=>{if(confirm('Delete this saved search?')){await api('DELETE','/api/saved-searches/'+x.id);render();}}},'Delete')] )));wrap.appendChild(list);return wrap;
 }
-async function renderPipeline(){
- const wrap=el('div',{class:'page pipelinepage'});wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Deal pipeline'),el('div',{class:'sub'},'Move opportunities from first look to closing. Team deals are shared automatically inside a Team workspace.')]),el('button',{class:'btn-primary',onclick:()=>openFormModal('Add pipeline lead',[{key:'title',label:'Deal or lead name',placeholder:'123 Market St or Seller lead'},{key:'nextAction',label:'Next action',placeholder:'Call seller tomorrow'}],'+ Add lead',async v=>{if(!v.title.trim())throw new Error('Add a deal or lead name.');await api('POST','/api/pipeline',{title:v.title,nextAction:v.nextAction,stage:'lead'});render();})},'+ Add lead')]));const {deals}=await api('GET','/api/pipeline'),stages=[['lead','Lead'],['analyzing','Analyzing'],['contacted','Contacted'],['contract','Under contract'],['dispo','Dispo'],['closing','Closing'],['closed','Closed'],['dead','Dead']];const board=el('div',{class:'pipeline-board'});stages.forEach(([key,label])=>{const col=el('div',{class:'pipeline-col'},[el('div',{class:'pipeline-col-head'},[el('b',{},label),el('span',{},String(deals.filter(d=>d.stage===key).length))])]);deals.filter(d=>d.stage===key).forEach(d=>{const select=el('select');stages.forEach(([v,l])=>select.appendChild(el('option',{value:v},l)));select.value=d.stage;select.onchange=async()=>{await api('POST','/api/pipeline',{id:d.id,stage:select.value});render();};col.appendChild(el('div',{class:'pipeline-card'},[el('b',{},d.title),d.nextAction?el('small',{},d.nextAction):null,select,el('button',{class:'btn-ghost',onclick:()=>openFormModal('Private pipeline notes',[{key:'notes',label:'Internal notes',type:'textarea',value:d.notes||'',placeholder:'Context, follow-up notes, seller details…'}],'Save notes',async v=>{await api('POST','/api/pipeline',{id:d.id,notes:v.notes});render();})},d.notes?'Edit notes':'Add notes'),d.listingId?el('button',{class:'btn-primary pipeline-room-button','aria-label':'Open deal room for '+d.title,onclick:()=>go('dealroom',{detailId:d.listingId})},'Deal room'):null]));});board.appendChild(col);});wrap.appendChild(board);wrap.appendChild(await renderPrivateDeals());return wrap;
+async function renderPipeline(context = liveUIContext()){
+ const {state, api, go, render} = context;
+ const wrap=el('div',{class:'page pipelinepage'});wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Deal pipeline'),el('div',{class:'sub'},'Move opportunities from first look to closing. Team deals are shared automatically inside a Team workspace.')]),el('button',{class:'btn-primary',onclick:()=>openFormModal('Add pipeline lead',[{key:'title',label:'Deal or lead name',placeholder:'123 Market St or Seller lead'},{key:'nextAction',label:'Next action',placeholder:'Call seller tomorrow'}],'+ Add lead',async v=>{if(!v.title.trim())throw new Error('Add a deal or lead name.');await api('POST','/api/pipeline',{title:v.title,nextAction:v.nextAction,stage:'lead'});render();})},'+ Add lead')]));const {deals}=await api('GET','/api/pipeline'),stages=[['lead','Lead'],['analyzing','Analyzing'],['contacted','Contacted'],['contract','Under contract'],['dispo','Dispo'],['closing','Closing'],['closed','Closed'],['dead','Dead']];const board=el('div',{class:'pipeline-board'});stages.forEach(([key,label])=>{const col=el('div',{class:'pipeline-col'},[el('div',{class:'pipeline-col-head'},[el('b',{},label),el('span',{},String(deals.filter(d=>d.stage===key).length))])]);deals.filter(d=>d.stage===key).forEach(d=>{const select=el('select',{'aria-label':'Pipeline stage for '+d.title});stages.forEach(([v,l])=>select.appendChild(el('option',{value:v},l)));select.value=d.stage;select.onchange=async()=>{await api('POST','/api/pipeline',{id:d.id,stage:select.value});render();};col.appendChild(el('div',{class:'pipeline-card'},[el('b',{},d.title),d.nextAction?el('small',{},d.nextAction):null,select,el('button',{class:'btn-ghost',onclick:()=>openFormModal('Private pipeline notes',[{key:'notes',label:'Internal notes',type:'textarea',value:d.notes||'',placeholder:'Context, follow-up notes, seller details…'}],'Save notes',async v=>{await api('POST','/api/pipeline',{id:d.id,notes:v.notes});render();})},d.notes?'Edit notes':'Add notes'),d.listingId?el('button',{class:'btn-primary pipeline-room-button','aria-label':'Open deal room for '+d.title,onclick:()=>go('dealroom',{detailId:d.listingId})},'Deal room'):null]));});board.appendChild(col);});wrap.appendChild(board);if(!context.demo)wrap.appendChild(await renderPrivateDeals());return wrap;
 }
 async function renderDealCalendar(){
  const wrap=el('div',{class:'page calendarpage'});wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Deal calendar'),el('div',{class:'sub'},'Closing dates, follow-ups, inspections and offer deadlines in one timeline.')]),el('button',{class:'btn-primary',onclick:()=>openFormModal('Add deal reminder',[{key:'title',label:'Reminder title',placeholder:'Follow up with buyer'},{key:'at',label:'Date & time',type:'datetime-local'}],'Add reminder',async v=>{if(!v.title.trim()||!v.at)throw new Error('Add a title and date.');await api('POST','/api/deal-calendar',{title:v.title,at:v.at});render();})},'+ Add reminder')]));const {events}=await api('GET','/api/deal-calendar');if(!events.length){wrap.appendChild(el('div',{class:'empty'},[el('h3',{},'Your calendar is clear'),el('p',{},'Add a follow-up or deadline from here.')]));return wrap;}const list=el('div',{class:'calendar-list'});events.forEach(e=>list.appendChild(el('div',{class:'calendar-event'},[el('div',{class:'calendar-date'},[el('b',{},new Date(e.at).toLocaleDateString(undefined,{month:'short',day:'numeric'})),el('span',{},new Date(e.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))]),el('div',{class:'grow'},[el('b',{},e.title),el('span',{},e.kind||'Follow-up')]),e.system?el('span',{class:'pill'},'Automatic'):el('button',{class:'btn-ghost',onclick:async()=>{await api('DELETE','/api/deal-calendar/'+e.id);render();}},'Done')] )));wrap.appendChild(list);return wrap;
@@ -5143,15 +5192,19 @@ async function renderDealCalendar(){
 async function renderMarketHubs(){
  const wrap=el('div',{class:'page markethubspage'});wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Market Hubs'),el('div',{class:'sub'},'See where listings, investors and buyer demand are building across Better Real Estate.')]),el('button',{class:'btn-ghost',onclick:()=>go('settings')},'Edit my markets')]));const {markets}=await api('GET','/api/market-hubs');const grid=el('div',{class:'market-grid'});markets.forEach(m=>grid.appendChild(el('div',{class:'market-card'},[el('div',{class:'market-code'},m.state),el('div',{class:'market-stats'},[miniMetric(m.listings,'Listings'),miniMetric(m.buyers,'Buy boxes'),miniMetric(m.investors,'Investors')]),el('button',{class:'btn-primary market-explore',onclick:()=>go('search',{searchQ:'',searchMarket:m.state})},'Explore market')] )));if(!markets.length)grid.appendChild(el('div',{class:'empty'},'Market activity will appear as members choose markets and post properties.'));wrap.appendChild(grid);wrap.append(connectedAction('Open Title Directory',()=>go('titledirectory')));return wrap;
 }
-async function renderDealRoom(){
- const wrap=el('div',{class:'page dealroompage'});wrap.appendChild(el('button',{class:'backbtn',onclick:()=>history.length>1?history.back():go('pipeline')},'← Back'));if(!state.detailId){wrap.appendChild(el('div',{class:'empty'},'Choose a listing or offer to open its deal room.'));return wrap;}let roomData;try{roomData=await api('GET','/api/listings/'+encodeURIComponent(state.detailId)+'/deal-room');}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));return wrap;}const {room,listing,canManage,messages,offers}=roomData;const roomResponses=roomData.responses||[];wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'PRIVATE DEAL ROOM'),el('h2',{},listing.address),el('div',{class:'sub'},listing.city)]),el('button',{class:'btn-ghost',onclick:()=>go('detail',{detailId:state.detailId})},'View listing')]));
- const left=el('section',{class:'ops-card'});left.appendChild(el('h3',{},'Deal status'));if(canManage){const stage=el('select');[['intake','Intake'],['marketing','Marketing'],['buyer-interest','Buyer interest'],['negotiation','Negotiation'],['title','Title'],['closing','Closing'],['closed','Closed'],['on-hold','On hold']].forEach(([v,l])=>stage.appendChild(el('option',{value:v},l)));stage.value=room.stage;const next=el('input',{placeholder:'Next action',value:room.nextAction||''}),notes=el('textarea',{placeholder:'Private deal-team notes'});notes.value=room.privateNotes||'';const save=el('button',{class:'btn-primary'},'Save deal room');save.onclick=async()=>{await api('PATCH','/api/listings/'+state.detailId+'/deal-room',{stage:stage.value,nextAction:next.value,privateNotes:notes.value,tasks:room.tasks||[]});toast('Deal room saved','ok');};left.append(el('label',{},'Stage'),stage,el('label',{},'Next action'),next,el('label',{},'Private team notes'),notes,save);}else left.appendChild(el('div',{class:'deal-stage-public'},[el('b',{},String(room.stage||'active').replace('-',' ')),el('span',{},'Seller-managed deal status')]));
+async function renderDealRoom(context = liveUIContext()){
+ const {state, api, go, render} = context;
+ const wrap=el('div',{class:'page dealroompage'});wrap.appendChild(el('button',{class:'backbtn',onclick:()=>context.demo?go('pipeline'):(history.length>1?history.back():go('pipeline'))},'← Back'));if(!state.detailId){wrap.appendChild(el('div',{class:'empty'},'Choose a listing or offer to open its deal room.'));return wrap;}let roomData;try{roomData=await api('GET','/api/listings/'+encodeURIComponent(state.detailId)+'/deal-room');}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));return wrap;}const {room,listing,canManage,messages,offers}=roomData;const roomResponses=roomData.responses||[];wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'PRIVATE DEAL ROOM'),el('h2',{},listing.address),el('div',{class:'sub'},listing.city)]),el('button',{class:'btn-ghost',onclick:()=>go('detail',{detailId:state.detailId})},'View listing')]));
+ const left=el('section',{class:'ops-card'});left.appendChild(el('h3',{},'Deal status'));if(canManage){const stage=el('select',{'aria-label':'Deal room stage'});[['intake','Intake'],['marketing','Marketing'],['buyer-interest','Buyer interest'],['negotiation','Negotiation'],['title','Title'],['closing','Closing'],['closed','Closed'],['on-hold','On hold']].forEach(([v,l])=>stage.appendChild(el('option',{value:v},l)));stage.value=room.stage;const next=el('input',{placeholder:'Next action',value:room.nextAction||''}),notes=el('textarea',{placeholder:'Private deal-team notes'});notes.value=room.privateNotes||'';const save=el('button',{class:'btn-primary'},'Save deal room');save.onclick=async()=>{await api('PATCH','/api/listings/'+state.detailId+'/deal-room',{stage:stage.value,nextAction:next.value,privateNotes:notes.value,tasks:room.tasks||[]});toast('Deal room saved','ok');};left.append(el('label',{},'Stage'),stage,el('label',{},'Next action'),next,el('label',{},'Private team notes'),notes,save);}else left.appendChild(el('div',{class:'deal-stage-public'},[el('b',{},String(room.stage||'active').replace('-',' ')),el('span',{},'Seller-managed deal status')]));
  const offerBox=el('section',{class:'ops-card'});offerBox.appendChild(el('h3',{},'Offers'));if(!offers.length)offerBox.appendChild(el('div',{class:'hint'},'No structured offers in this room yet.'));offers.forEach(o=>offerBox.appendChild(el('div',{class:'room-offer'},[el('b',{},money(o.amount)),el('span',{},[o.financing?.replace('-',' '),o.emd?`${money(o.emd)} EMD`:null,o.closeDays?`${o.closeDays}d close`:null,o.inspectionDays!==undefined?`${o.inspectionDays}d inspection`:null].filter(Boolean).join(' · ')),el('small',{},o.status)])));
  const msgBox=el('section',{class:'ops-card room-messages'});msgBox.appendChild(el('h3',{},'Deal conversation'));const stream=el('div',{class:'room-message-stream'});(messages||[]).forEach(m=>stream.appendChild(el('div',{class:'room-message '+(m.fromUserId===state.user.id?'mine':'')},[el('b',{},m.fromUserId===state.user.id?'You':(m.fromName||'Participant')),el('span',{},m.body),el('small',{},new Date(m.at).toLocaleString())])));if(!(messages||[]).length)stream.appendChild(el('div',{class:'hint'},'Keep transaction-specific communication attached to the deal.'));const input=el('textarea',{placeholder:'Message the deal room…'}),send=el('button',{class:'btn-primary'},'Send');let recipient=null;if(canManage&&(offers.length||roomResponses.length)){recipient=el('select');const seen=new Set();[...offers,...roomResponses.filter(x=>x.status!=='pass').map(x=>({buyerId:x.userId,buyerName:x.userName}))].forEach(o=>{if(!seen.has(o.buyerId)){seen.add(o.buyerId);recipient.appendChild(el('option',{value:o.buyerId},o.buyerName||'Buyer'));}});msgBox.appendChild(recipient);}send.onclick=async()=>{if(!input.value.trim())return;try{await api('POST',`/api/listings/${state.detailId}/deal-room/messages`,{body:input.value.trim(),toUserId:recipient?.value||null});render();}catch(e){toast(e.message,'err');}};msgBox.append(stream,input,send);
- const vault=el('section',{class:'ops-card deal-vault'},[el('h3',{},'Document vault'),el('p',{class:'sub'},'Deal documents stay private. Team-only files are never shown to buyers.'),await renderVault(state.detailId)]);
- const tools=el('section',{class:'ops-card deal-tools'},[el('h3',{},'Transaction tools'),el('p',{class:'sub'},'Keep the work attached to this deal instead of scattering it across apps.')]);
+ const vault=el('section',{class:'ops-card deal-vault'},[el('h3',{},'Document vault'),el('p',{class:'sub'},'Deal documents stay private. Team-only files are never shown to buyers.'),context.demo ? el('p',{class:'hint'},'Demo vault: documents are not uploaded or shared in this preview.') : await renderVault(state.detailId)]);
+ let tools; let comp=null; if(context.demo)tools=el('section',{class:'ops-card'},[el('h3',{},'Your next steps'),el('p',{class:'hint'},'In this demo, edit the stage, next action and private notes above, then Save deal room. The full platform also includes document and transaction tools.')]);
+ if(!context.demo){
+ tools=el('section',{class:'ops-card deal-tools'},[el('h3',{},'Transaction tools'),el('p',{class:'sub'},'Keep the work attached to this deal instead of scattering it across apps.')]);
  tools.appendChild(el('div',{class:'deal-tool-actions'},[el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add deal task',[{key:'title',label:'Task',placeholder:'Order title search'},{key:'dueAt',label:'Due date',type:'datetime-local'}],'Add task',async v=>{await api('POST','/api/deal-tasks',{...v,listingId:state.detailId});toast('Task added','ok');})},'Add task'),canManage?el('button',{class:'btn-ghost',onclick:async()=>{const r=await api('GET','/api/offers/compare/'+state.detailId);const lines=r.offers.map(o=>`${money(o.amount)} · ${o.financing||'cash'} · ${money(o.emd||0)} EMD · ${o.closeDays||'—'}d close`).join('\n')||'No offers yet.';alert(lines);}},'Compare offers'):null,el('button',{class:'btn-ghost',onclick:()=>openFormModal('Record deal outcome',[{key:'status',label:'Outcome',placeholder:'closed, assigned, sold, held or dead'},{key:'purchase',label:'Purchase price',type:'number'},{key:'rehab',label:'Rehab / work',type:'number'},{key:'holding',label:'Holding costs',type:'number'},{key:'closing',label:'Closing costs',type:'number'},{key:'resale',label:'Resale / exit price',type:'number'},{key:'assignmentFee',label:'Assignment fee',type:'number'},{key:'notes',label:'Outcome notes',type:'textarea'}],'Record outcome',async v=>{await api('POST','/api/deals/'+state.detailId+'/outcome',v);toast('Deal outcome recorded','ok');})},'Record outcome')]));
- const comp=el('section',{class:'ops-card comp-board'},[el('h3',{},'Collaborative comp board'),el('p',{class:'sub'},'Keep the comps you actually trust attached to the deal.')]);try{const cr=await api('GET','/api/deals/'+state.detailId+'/comp-board');const list=el('div',{class:'comp-list'});(cr.board.comps||[]).forEach(c=>list.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},c.address),el('small',{},money(c.salePrice)+(c.distance?' · '+c.distance:''))]),el('span',{class:'pill'},c.included===false?'Excluded':'Included')] )));if(!(cr.board.comps||[]).length)list.appendChild(el('div',{class:'hint'},'No comps saved yet.'));comp.append(list,el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add comparable',[{key:'address',label:'Comp address',placeholder:'123 Comparable St'},{key:'salePrice',label:'Sale price',type:'number'},{key:'distance',label:'Distance / relevance',placeholder:'0.4 mi'},{key:'notes',label:'Notes',type:'textarea'}],'Add comp',async v=>{const latest=await api('GET','/api/deals/'+state.detailId+'/comp-board');const comps=[...(latest.board.comps||[]),{...v,included:true}];await api('POST','/api/deals/'+state.detailId+'/comp-board',{comps,notes:latest.board.notes||''});render();})},'+ Add comp'));}catch{}
+ comp=el('section',{class:'ops-card comp-board'},[el('h3',{},'Collaborative comp board'),el('p',{class:'sub'},'Keep the comps you actually trust attached to the deal.')]);try{const cr=await api('GET','/api/deals/'+state.detailId+'/comp-board');const list=el('div',{class:'comp-list'});(cr.board.comps||[]).forEach(c=>list.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},c.address),el('small',{},money(c.salePrice)+(c.distance?' · '+c.distance:''))]),el('span',{class:'pill'},c.included===false?'Excluded':'Included')] )));if(!(cr.board.comps||[]).length)list.appendChild(el('div',{class:'hint'},'No comps saved yet.'));comp.append(list,el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add comparable',[{key:'address',label:'Comp address',placeholder:'123 Comparable St'},{key:'salePrice',label:'Sale price',type:'number'},{key:'distance',label:'Distance / relevance',placeholder:'0.4 mi'},{key:'notes',label:'Notes',type:'textarea'}],'Add comp',async v=>{const latest=await api('GET','/api/deals/'+state.detailId+'/comp-board');const comps=[...(latest.board.comps||[]),{...v,included:true}];await api('POST','/api/deals/'+state.detailId+'/comp-board',{comps,notes:latest.board.notes||''});render();})},'+ Add comp'));}catch{}
+ }
  const timeline=el('section',{class:'ops-card deal-timeline'},[el('h3',{},'Deal activity')]);try{const ar=await api('GET','/api/deals/'+state.detailId+'/activity');if(!ar.activity.length)timeline.appendChild(el('div',{class:'hint'},'Activity will build as tasks, documents, collaborators and outcomes move forward.'));ar.activity.slice(0,12).forEach(a=>timeline.appendChild(el('div',{class:'timeline-row'},[el('span',{class:'timeline-dot'}),el('div',{},[el('b',{},a.text),el('small',{},a.userName+' · '+new Date(a.at).toLocaleString())])])));}catch{}
  const requests=el('section',{class:'ops-card'},[el('h3',{},'Buyer requests')]);for(const r of roomResponses)requests.append(el('p',{},[el('b',{},r.userName+' · '+r.status),el('span',{},' '+(r.note||'')+(r.nextAction?' · Next: '+r.nextAction:''))]));wrap.appendChild(el('div',{class:'dealroom-grid'},[left,offerBox,msgBox,vault,tools,comp,timeline,requests]));return wrap;
 }
