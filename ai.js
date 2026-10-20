@@ -181,6 +181,7 @@ async function generateAddressDealAnalysis(address, evidence = null) {
       'The selectedClosedComps list is the complete allowed comparable-sale set for this analysis. Never invent another comp, address, sale price, sale date, distance, source, or citation.',
       'Use evidencePacket.compResult as the valuation result. Do not independently change the ARV. If precision is working_range, describe it explicitly as a working evidence-backed ARV range rather than a precise valuation. Preserve the uncertainty.',
       'Use evidencePacket.rehabPlanning as the authoritative repair-planning scenarios. Do not replace its estimates with invented numbers. repair scenarios remain estimates, not inspection findings. Explain the recommended scenario and its evidence basis, and clearly state that actual condition can materially change repair cost.',
+      'For land, never infer bedrooms, bathrooms, living area, building age, residential repair budgets, development approvals, utilities, zoning or buildability. Residential house comps cannot value vacant land. Unsupported land valuation must stay withheld.',
       'Write a concise professional property/deal description separating verified facts from estimates. Avoid protected-class/demographic language and unsupported neighborhood claims.',
       'confidence must be Low, Moderate, or High and should not exceed the compResult confidence.',
       'Return only the requested structured fields.'

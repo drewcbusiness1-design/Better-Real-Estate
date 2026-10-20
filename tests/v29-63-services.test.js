@@ -1,0 +1,34 @@
+'use strict';
+const assert=require('assert');
+const {app,cookie,getDB}=require('./connected-fixture');
+const policy=require('../policy');
+const server=app.listen(0,'127.0.0.1');
+(async()=>{
+ await new Promise(resolve=>server.on('listening',resolve));
+ const base='http://127.0.0.1:'+server.address().port;
+ async function call(user,method,path,body){const r=await fetch(base+path,{method,headers:{...(user?{cookie:cookie(user)}:{}),'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()};}
+ assert.deepEqual(policy.normalizeSignupRoles(['service','seller']),['service','seller']);assert.deepEqual(policy.normalizeSignupRoles(['service','affiliate']),['affiliate']);assert.deepEqual(policy.normalizeSignupRoles(['admin']),[]);
+ assert.equal((await call(null,'GET','/api/services')).status,401);
+ const signup=await call(null,'POST','/api/signup',{name:'Provider signup QA',email:'service-signup@example.test',password:'local-test-password',roles:['service'],serviceCategories:['Landscaping'],marketingOptIn:false});assert.equal(signup.status,200);assert.deepEqual(signup.data.user.roles,['service']);assert.equal(signup.data.user.settings.defaultDashboard,'services');assert.equal(signup.data.user.settings.serviceProvider,false);assert.deepEqual(signup.data.user.settings.serviceTypes,['Landscaping']);
+ const p={enabled:true,businessName:'Fixture landscaping',description:'Lawn care',categories:['Landscaping'],areas:['Trenton, NJ'],availability:'Weekdays',pricing:'Request a quote',defaultDashboard:'services',photos:[]};
+ let r=await call('seller','PATCH','/api/services/me',p);assert.equal(r.status,200);assert.equal(r.data.settings.defaultDashboard,'services');
+ r=await call('buyer','GET','/api/services?area=NJ&category=Landscaping');assert.equal(r.data.providers.length,1);assert(!JSON.stringify(r.data).includes('seller@example'));assert(!JSON.stringify(r.data).includes('password'));
+ assert.equal((await call('buyer','GET','/api/services?area=CA')).data.providers.length,0);
+ assert.equal((await call('buyer','POST','/api/services/seller/inquiries',{title:'Lawn',area:'Trenton, NJ'})).status,400);
+ const inquiry={title:'Lawn care',area:'Trenton, NJ',description:'Please quote monthly mowing',photos:[]};
+ r=await call('buyer','POST','/api/services/seller/inquiries',inquiry);assert.equal(r.status,200);const id=r.data.job.id;assert.equal(getDB().messages.at(-1).toUserId,'seller');
+ assert.equal((await call('buyer','POST','/api/services/seller/inquiries',inquiry)).status,409);
+ assert.equal((await call('seller','POST','/api/services/seller/inquiries',inquiry)).status,400);
+ for(const user of ['buyer','outsider'])assert.equal((await call(user,'PATCH','/api/services/jobs/'+id,{stage:'Completed'})).status,404);
+ assert.equal((await call('seller','PATCH','/api/services/jobs/'+id,{stage:'Made up'})).status,400);
+ assert.equal((await call('seller','PATCH','/api/services/jobs/'+id,{stage:'Scheduled',scheduledDate:'2026-02-30'})).status,400);
+ r=await call('seller','PATCH','/api/services/jobs/'+id,{stage:'Scheduled',scheduledDate:'2026-11-01',notes:'Private gate details'});assert.equal(r.status,200);
+ r=await call('buyer','GET','/api/services/me');assert.equal(r.data.jobs.length,1);assert.equal(r.data.jobs[0].notes,undefined);assert.equal(r.data.jobs[0].scheduledDate,'2026-11-01');
+ assert.equal((await call('outsider','GET','/api/services/me')).data.jobs.length,0);
+ const affiliate=getDB().users.find(u=>u.id==='outsider');affiliate.roles=['affiliate'];affiliate.role='affiliate';
+ assert.equal((await call('outsider','PATCH','/api/services/me',p)).status,403);assert.equal((await call('outsider','POST','/api/services/seller/inquiries',inquiry)).status,403);
+ assert.equal((await call('seller','PATCH','/api/services/me',{...p,photos:['https://unknown.example/photo.png']})).status,400);
+ assert.equal((await call('seller','PATCH','/api/services/me',{...p,enabled:false})).status,200);assert.equal((await call('buyer','GET','/api/services')).data.providers.length,0);assert.equal((await call('buyer','POST','/api/services/seller/inquiries',{...inquiry,title:'Another'})).status,404);
+ assert.equal((await call('buyer','GET','/api/services/me')).data.jobs.length,1);
+ console.log('PASS provider persistence, filtering, free account access, private notes, ownership, duplicates, stage/date validation, affiliate exclusion and unpublished profiles');
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>server.close());

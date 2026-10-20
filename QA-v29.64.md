@@ -1,0 +1,58 @@
+# v29.64 verification
+
+- Full npm test passed, including v29.63 service-provider tests and new land, feedback privacy, owner/admin management, chart range/DST and help tests.
+- npm run build passed (project intentionally serves static assets without a bundler). Modified/new JavaScript syntax and whitespace checks passed.
+- Headless Chromium/Playwright local fixture: owned feed Edit, management Edit/Delete availability, cached-land analysis to listing handoff retaining Land/site-work, dog natural-language navigation, member feedback and admin replies/status, month comparison, line/bar/area controls, date-only and minute-specific ranges passed. API tests verify mark-sold, ownership, deletion and private screenshots.
+- 55 routes reviewed at 1440 and 390 pixels in both themes (220 screenshots); no uncaught page errors or broken images. Wallet empty-state crash and mobile Search overflow found and corrected; all eight focused rechecks clean. Updated routes also checked at 320 pixels in both themes. Screenshot contact sheets reviewed for platform artwork/layout consistency. This is fixture coverage, not a guarantee for every production record or device.
+- Exact PNG artwork and logo bytes retained. Existing payments, mailer, marketing and service-provider implementation unchanged from v29.63.
+- No production deployment, live payment, campaign, customer message, account mutation or external AI/property-provider purchase performed. Real provider availability/production data must be checked in the existing deployment preview.
+- Land valuation is deliberately withheld where evidence is insufficient, rather than applying residential assumptions. Historical chart activity depends on retained data; no reconstruction of deleted users.
+
+Changed existing files relative to v29.63:
+
+- ai.js
+- store.js
+- netlify.toml
+- package-lock.json
+- server.js
+- package.json
+- dealIntelligence.js
+- supportChat.js
+- db.local.json
+- tests/v29-15-complete-intelligence.test.js
+- tests/v29-31-true-live-rig.test.js
+- tests/v26-5-acceptance.test.js
+- tests/v29-32-articulated-header-mascot.test.js
+- tests/v29-3-affiliate-hold-presentation.test.js
+- tests/v29-2-wallet-affiliate-terms.test.js
+- tests/v26-4-guided-tour-ui.test.js
+- tests/v29-15-background-research.test.js
+- tests/v29-21-instant-details.test.js
+- tests/v29-15-perfect-multisource.test.js
+- tests/v26-features.test.js
+- tests/v29-28-interactive-mascot.test.js
+- tests/v29-27-better-guide-learning.test.js
+- tests/v29-transaction-affiliate.test.js
+- tests/v29-14-property-discovery.test.js
+- tests/v29-6-demo-preview.test.js
+- tests/v29-10-mls-intelligence.test.js
+- tests/v29-34-mascot-expressions-property-edits.test.js
+- tests/v29-4-first100-membership.test.js
+- tests/v29-35-mascot-awareness.test.js
+- tests/v29-24-site-cleanup.test.js
+- tests/v29-12-timeout-resilience.test.js
+- tests/v29-13-property-truth.test.js
+- tests/v29-5-demo-accounts.test.js
+- tests/v29-9-demo-dark-ai.test.js
+- tests/v29-29-living-mascot.test.js
+- tests/v29-17-better-moments.test.js
+- tests/v28-growth-referrals-plus.test.js
+- tests/v27-1-presentation.test.js
+- tests/v29-15-production-deal-intelligence.test.js
+- tests/v29-16-signup-roles.test.js
+- tests/v29-15-investor-grade-analysis.test.js
+- tests/release-qa.test.js
+- tests/v27-operating-network.test.js
+- public/style.css
+- public/app.js
+- public/index.html

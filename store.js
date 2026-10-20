@@ -28,7 +28,7 @@ try { ({ Pool } = require('pg')); } catch {}
 const affiliateAccounts = require('./affiliateAccounts');
 const policy = require('./policy');
 const COLLECTIONS = [
-  'matchDeliveries','titleCompanies','buyerResponses','privateDeals','dealIntroductions','supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
+  'feedbackReports','serviceJobs','matchDeliveries','titleCompanies','buyerResponses','privateDeals','dealIntroductions','supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
   'users','companies','companyInvites','listings','saves','follows','friendRequests','friendships','messages','ledger','unlocks',
   'shopItems','orders','offers','reviews','views','promotions','payouts',
   'alerts','tokens','suppliers','supplierOrders','reports','dealNotes','buyerLeads','emailBroadcasts','promoSettings','promoDeliveries','membershipGrants','shareEvents','buyerCrm','dealAnalyses',

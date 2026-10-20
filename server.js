@@ -166,12 +166,16 @@ async function requireAuth(req, res, next) {
   if (changed) await saveDB(db);
   req.user = user; req.db = db; next();
 }
+require('./serviceProviders').register(app,{requireAuth,saveDB,writeImage});
+
 // Belt and braces: the stored role must say admin AND the email must be on
 // the allowlist. A tampered database row alone is not enough.
 const requireAdmin = (req, res, next) =>
   (req.user.role === 'admin' && policy.isAdminEmail(req.user.email))
     ? next()
     : res.status(403).json({ error: 'Admin only' });
+
+require('./releaseRoutes').register(app,{requireAuth,requireAdmin,saveDB,isAdminUser,isDemoUser});
 
 /* ---------- shipping-address autocomplete ----------
    Browser autofill always works without this. If GOOGLE_MAPS_API_KEY is set,
@@ -598,6 +602,7 @@ app.post('/api/signup', async (req, res) => {
     referredBy: referrer ? referrer.id : null, referralPaid: false,
     createdAt: new Date().toISOString()
   };
+  if(selectedRoles.includes('service')){user.settings.serviceProvider=false;user.settings.defaultDashboard='services';user.settings.serviceTypes=Array.isArray(req.body.serviceCategories)?req.body.serviceCategories.filter(c=>require('./serviceProviders').CATEGORIES.includes(c)).slice(0,12):[];}
   ensureUsername(db, user);
   db.users.push(user);
   ensureFirst100FounderProgram(db);
@@ -825,6 +830,8 @@ app.delete('/api/me', requireAuth, async (req, res) => {
   if (walletBalance > 0) return res.status(409).json({ error: `Withdraw your remaining wallet balance of ${money(walletBalance)} before deleting your account.` });
   const activeOrder = req.db.orders.find(o => (o.buyerId === userId || o.sellerId === userId) && !['shipped','delivered','cancelled','refunded'].includes(String(o.shipStatus || o.status || '').toLowerCase()));
   if (activeOrder) return res.status(409).json({ error: 'You still have an active marketplace order. Finish or resolve it before deleting your account so nobody loses shipping or transaction access.' });
+  req.db.feedbackReports=(req.db.feedbackReports||[]).filter(r=>r.userId!==userId);
+  req.db.serviceJobs=(req.db.serviceJobs||[]).filter(j=>j.customerId!==userId&&j.providerId!==userId);
   const deletedId = 'deleted:' + crypto.createHash('sha256').update(userId).digest('hex').slice(0, 18);
   const ownedListingIds = new Set(req.db.listings.filter(l => l.ownerId === userId).map(l => l.id));
   const boughtOrderIds = new Set(req.db.orders.filter(o => o.buyerId === userId).map(o => o.id));
@@ -917,6 +924,9 @@ app.delete('/api/me', requireAuth, async (req, res) => {
 app.patch('/api/me/settings', requireAuth, async (req, res) => {
   const body = req.body || {};
   const next = { ...defaultSettings(), ...req.user.settings };
+  if(typeof body.serviceProvider==='boolean'&&!isAffiliateOnlyUser(req.user))next.serviceProvider=body.serviceProvider;
+  if(Array.isArray(body.serviceTypes)&&!isAffiliateOnlyUser(req.user))next.serviceTypes=[...new Set(body.serviceTypes.map(x=>safeText(x,80)).filter(Boolean))].slice(0,12);
+  if(['services','feed'].includes(body.defaultDashboard)&&!isAffiliateOnlyUser(req.user))next.defaultDashboard=body.defaultDashboard;
   if (body.theme === 'light' || body.theme === 'dark') next.theme = body.theme;
   if (body.feedDensity === 'comfortable' || body.feedDensity === 'compact') next.feedDensity = body.feedDensity;
   if (typeof body.notifyOnMessage === 'boolean') next.notifyOnMessage = body.notifyOnMessage;
@@ -931,7 +941,7 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (Array.isArray(body.guideCourseCompleted)) next.guideCourseCompleted = [...new Set(body.guideCourseCompleted.map(x => safeText(x,40)).filter(Boolean))].slice(0,24);
   if (Array.isArray(body.guideCourseQuizPassed)) next.guideCourseQuizPassed = [...new Set(body.guideCourseQuizPassed.map(x => safeText(x,40)).filter(Boolean))].slice(0,24);
   if (body.guideCourseLastModule !== undefined) next.guideCourseLastModule = safeText(body.guideCourseLastModule,40) || 'foundations';
-  if (Array.isArray(body.quickOptions)) { const allowed=new Set(['compose','dealbuilder','buyercrm','pipeline','buybox','search','messages','liked','admin']); next.quickOptions=[...new Set(body.quickOptions.map(String).filter(x=>allowed.has(x)))].slice(0,6); if(!isAdminUser(req.user)) next.quickOptions=next.quickOptions.filter(x=>x!=='admin'); }
+  if (Array.isArray(body.quickOptions)) { const allowed=new Set(['manageproperties','feedback','services','servicesdirectory','compose','dealbuilder','buyercrm','pipeline','buybox','search','messages','liked','admin']); next.quickOptions=[...new Set(body.quickOptions.map(String).filter(x=>allowed.has(x)))].slice(0,6); if(!isAdminUser(req.user)) next.quickOptions=next.quickOptions.filter(x=>x!=='admin'); }
   if (body.tutorialCompletedVersion !== undefined) next.tutorialCompletedVersion = Math.max(0, Number(body.tutorialCompletedVersion)||0);
   if (body.tutorialDismissedVersion !== undefined) next.tutorialDismissedVersion = Math.max(0, Number(body.tutorialDismissedVersion)||0);
   if (Array.isArray(body.tutorialCompletedKeys)) next.tutorialCompletedKeys = [...new Set(body.tutorialCompletedKeys.map(x => String(x).slice(0,80)))].slice(-30);
@@ -1720,6 +1730,8 @@ app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
     // SECURITY/INTEGRITY: final valuation always uses server-cached evidence. Browser-supplied evidence is intentionally ignored.
     const evidence=JSON.parse(JSON.stringify(cached.evidence)); evidence.serverOwned=true; evidence.cache={...(evidence.cache||{}),hit:true,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:cached.retrievedAt,ageMs:age};
     const intelligence=require('./dealIntelligence'),compAnalysis=intelligence.analyzeComps(evidence.comparisonSubject||evidence.subject||{},evidence.comps||[]); evidence.compAnalysis=compAnalysis;evidence.rehabAnalysis=evidence.rehabAnalysis||intelligence.estimateRehab(evidence.comparisonSubject||evidence.subject||{},evidence.conditionEvidence||[],evidence.fieldEvidence||{});
+    const landContext=require('./landAnalysis').context(evidence,req.body?.propertyKind==='land');
+    if(landContext.active){Object.assign(compAnalysis,require('./landAnalysis').withheld(evidence.comps||[]));evidence.rehabAnalysis=require('./landAnalysis').repairs();}
     const verified=evidence.subject||{},coreFields=['bedrooms','bathrooms','squareFootage','yearBuilt','propertyType'];
     const enoughIdentity=Boolean(evidence.identity?.sufficientForValuation),arvPrecision=intelligence.dealValuationPrecision(evidence,compAnalysis),canShowArv=Boolean(arvPrecision!=='withheld'&&(compAnalysis.estimate||compAnalysis.workingEstimate)),readyForAnalysis=Boolean(enoughIdentity&&canShowArv);
     if(evidence.diagnostics?.stages)evidence.diagnostics.stages.compGate={status:arvPrecision,reviewed:compAnalysis.reviewed,selected:compAnalysis.selected.length,warnings:compAnalysis.warnings,confidence:arvPrecision==='working_range'&&!enoughIdentity?'Low':compAnalysis.confidence,sourceDiversity:compAnalysis.sourceDiversity,distanceVerified:compAnalysis.distanceVerifiedCount};
@@ -1749,6 +1761,7 @@ app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
     analysis.rehab=evidence.rehabAnalysis?.scenarios||analysis.rehab||[];analysis.recommendedRehabKey=evidence.rehabAnalysis?.recommendedKey||analysis.recommendedRehabKey||'moderate';analysis.rehabBasis=evidence.rehabAnalysis?.basis||analysis.rehabBasis||null;
     if(canShowArv){const precise=arvPrecision==='precise';analysis.arv={estimate:precise?compAnalysis.estimate:compAnalysis.workingEstimate,low:precise?compAnalysis.low:compAnalysis.workingLow,high:precise?compAnalysis.high:compAnalysis.workingHigh,precision:arvPrecision};analysis.confidence=arvPrecision==='working_range'&&!enoughIdentity?'Low':compAnalysis.confidence;analysis.arvMethod=compAnalysis.method;analysis.comparables=compAnalysis.selected.map(c=>({address:c.address,price:c.adjustedSalePrice||c.salePrice,salePrice:c.salePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,similarity:c.similarity,source:c.source}));if(!precise)analysis.warnings=[...(analysis.warnings||[]),'This is a working ARV range from researched closed sales. Better does not label it precise until the stricter distance and subject-fact gates pass.'];if(!readyForAnalysis)analysis.warnings=[...(analysis.warnings||[]),'AI narrative synthesis was withheld because core subject facts still need stronger independent confirmation; deterministic ARV, repair planning and deal math remain available.'];}
     else{analysis.arv={estimate:null,low:null,high:null,precision:'withheld'};analysis.confidence='Low';analysis.arvMethod='ARV withheld — closed-sale evidence insufficient';analysis.warnings=[...(analysis.warnings||[]),'Better could not establish enough credible recent closed-sale evidence for a defensible ARV.'];}
+    if(landContext.active)require('./landAnalysis').finalize(analysis,evidence,landContext);
     analysis.auxiliaryFacts=evidence.auxiliaryFacts||{};
     if(evidence.conflicts?.length)analysis.warnings=[...(analysis.warnings||[]),...evidence.conflicts.map(x=>`${x.field} has conflicting source evidence and was not accepted as established property truth.`)].slice(0,8);
     const successfulAnalysis=Boolean(compAnalysis.valuationReady&&readyForAnalysis&&!synthesisDeferred),wasQualified=priorQualifiedDealProperty(req.db,req.user,key),newQualified=successfulAnalysis&&!wasQualified;
@@ -1846,7 +1859,7 @@ app.post('/api/listings/:id/confirm-active', requireAuth, async (req, res) => {
   if (!listing) return res.status(404).json({ error: 'Listing not found.' });
   if (listing.ownerId !== req.user.id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Not your listing.' });
   const now = new Date();
-  listing.availabilityStatus = 'active'; listing.archivedAt = null; listing.lastConfirmedAt = now.toISOString(); listing.freshAt = now.toISOString();
+  listing.availabilityStatus = 'active'; listing.archivedAt = null; listing.sold=false; listing.soldAt=null; listing.lastConfirmedAt = now.toISOString(); listing.freshAt = now.toISOString();
   listing.expiresAt = new Date(now.getTime() + LISTING_CONFIRM_DAYS * 86400000).toISOString();
   notifyListingWatchers(req.db, listing, 'Property confirmed active', `${listing.address} was confirmed active by the seller.`);
   await saveDB(req.db);
@@ -2179,6 +2192,8 @@ app.post('/api/listings', requireAuth, async (req, res) => {
     closedVerified: false,
     createdAt: new Date().toISOString()
   };
+  listing.siteWork=connectedDeals.finite(b.siteWork)?Math.max(0,Number(b.siteWork)):null;
+  if(/\bland\b|vacant\s+lot|unimproved|acreage/i.test(String(listing.propertyType||''))){listing.rehab=0;for(const field of ['beds','baths','sqft','year'])listing[field]=null;}
   req.db.listings.push(listing);
   req.db.dealNotifications=req.db.dealNotifications||[];
   for(const search of (req.db.savedSearches||[]).filter(x=>x.alerts!==false&&x.userId!==req.user.id)){ if(searchMatchesListing(search,listing)) req.db.dealNotifications.push({id:crypto.randomUUID(),userId:search.userId,listingId:listing.id,title:'New deal alert match',body:`${listing.city} matches “${search.name}” at $${Number(listing.asking).toLocaleString()}.`,read:false,at:new Date().toISOString()}); }
@@ -2273,6 +2288,8 @@ app.patch('/api/listings/:id', requireAuth, async (req, res) => {
   if(!String(b.address||'').trim()||!String(b.city||'').trim()||!Number(b.asking))return res.status(400).json({error:'Address, city, and asking price are required.'});
   const photos=(await Promise.all((Array.isArray(b.photos)?b.photos:[]).slice(0,12).map(async x=>String(x||'').startsWith('data:')?writeImage(x):String(x||'')))).filter(Boolean);
   Object.assign(listing,{address:String(b.address).trim(),city:String(b.city).trim(),propertyType:b.propertyType||'Single family',situation:b.situation||'Motivated seller',asking:Number(b.asking),arv:b.arv?Number(b.arv):null,rehab:connectedDeals.finite(b.rehab)?Number(b.rehab):null,beds:b.beds?Number(b.beds):null,baths:b.baths?Number(b.baths):null,sqft:b.sqft?Number(b.sqft):null,year:b.year?Number(b.year):null,timeline:b.timeline||'Flexible',notes:String(b.notes||'').slice(0,1500),videoUrl:String(b.videoUrl||'').slice(0,300)||null,contractDeadline:/^20\d{2}-\d{2}-\d{2}$/.test(String(b.contractDeadline||''))?String(b.contractDeadline):null,openToJV:b.openToJV===true||b.openToJV==='true',photos,updatedAt:new Date().toISOString()});
+  listing.siteWork=connectedDeals.finite(b.siteWork)?Math.max(0,Number(b.siteWork)):null;
+  if(/\bland\b|vacant\s+lot|unimproved|acreage/i.test(String(listing.propertyType||''))){listing.rehab=0;for(const field of ['beds','baths','sqft','year'])listing[field]=null;}
   if(previousEvidenceFacts!==connectedDeals.fingerprint(listing))listing.evidenceInvalidatedAt=new Date().toISOString();
   queueConditionalUpdates(req.db,listing);
   queueBuyerMatches(req.db,listing);
@@ -2505,6 +2522,7 @@ app.get('/api/notifications', requireAuth, async (req,res)=>{const rows=(req.db.
 app.post('/api/notifications/read', requireAuth, async (req,res)=>{for(const n of (req.db.dealNotifications||[]))if(n.userId===req.user.id)n.read=true;await saveDB(req.db);res.json({ok:true});});
 app.get('/api/admin/activity', requireAuth, requireAdmin, async (req,res)=>{
   const now=Date.now(), preset=String(req.query.preset||'24h'); let start;
+  if(preset==='custom'&&/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.start||''))){try{const r=require('./chartRanges').range(req.query);req.query.start=new Date(r.start).toISOString();req.query.end=new Date(r.end).toISOString();}catch(e){return res.status(400).json({error:e.message});}}
   if(preset==='custom'&&(!Number.isFinite(Date.parse(req.query.start))||!Number.isFinite(Date.parse(req.query.end))||Date.parse(req.query.start)>Date.parse(req.query.end)))return res.status(400).json({error:'Choose a valid start and end, with start before end.'});
   if(preset==='all'){ start=0; } else if(preset==='custom'){ const d=new Date(req.query.start); start=Number.isFinite(d.getTime())?d.getTime():now-86400000; } else start=now-(activityWindowMs[preset]||86400000);
   const endQ=new Date(req.query.end); const end=preset==='custom'&&Number.isFinite(endQ.getTime())?Math.min(now,endQ.getTime()):now;
@@ -2583,7 +2601,7 @@ app.post('/api/deals/:listingId/outcome', requireAuth, async(req,res)=>{if(!canA
 
 app.get('/api/deals/:listingId/comp-board', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});const board=(req.db.compBoards||[]).find(x=>x.listingId===req.params.listingId)||{listingId:req.params.listingId,comps:[],notes:''};res.json({board});});
 app.post('/api/deals/:listingId/comp-board', requireAuth, async(req,res)=>{if(!canAccessDeal(req.db,req.user,req.params.listingId))return res.status(403).json({error:'Deal access required.'});req.db.compBoards=req.db.compBoards||[];let board=req.db.compBoards.find(x=>x.listingId===req.params.listingId);if(!board){board={id:crypto.randomUUID(),listingId:req.params.listingId,comps:[],notes:'',createdAt:new Date().toISOString()};req.db.compBoards.push(board);}if(Array.isArray(req.body?.comps))board.comps=req.body.comps.slice(0,30).map(c=>({address:safeText(c.address,180),salePrice:Number(c.salePrice)||0,distance:safeText(c.distance,40),notes:safeText(c.notes,300),included:c.included!==false}));if('notes'in(req.body||{}))board.notes=safeText(req.body.notes,2000);board.updatedAt=new Date().toISOString();logDealActivity(req.db,req.params.listingId,req.user,'comps','Collaborative comp board updated');await saveDB(req.db);res.json({board});});
-app.get('/api/service-providers', requireAuth, async(req,res)=>{const q=safeText(req.query.q,80).toLowerCase(),market=safeText(req.query.market,40).toUpperCase();const rows=req.db.users.filter(u=>!isAffiliateOnlyUser(u)&&u.id!==req.user.id&&u.settings?.serviceProvider===true).filter(u=>!q||[u.name,u.bio,...(u.settings?.serviceTypes||[])].join(' ').toLowerCase().includes(q)).filter(u=>!market||(u.investmentMarkets||[]).includes(market)).slice(0,100).map(u=>({...publicProfileUser(u),serviceTypes:Array.isArray(u.settings?.serviceTypes)?u.settings.serviceTypes:[]}));res.json({providers:rows});});
+app.get('/api/service-providers', requireAuth, async(req,res)=>{const q=safeText(req.query.q,80).toLowerCase(),market=safeText(req.query.market,40).toUpperCase();const rows=req.db.users.filter(u=>!isAffiliateOnlyUser(u)&&u.id!==req.user.id&&u.settings?.serviceProvider===true).filter(u=>!q||[u.name,u.bio,...(u.settings?.serviceTypes||[])].join(' ').toLowerCase().includes(q)).filter(u=>!market||[...(u.investmentMarkets||[]),...(u.settings?.serviceProfile?.areas||[])].some(x=>String(x).toUpperCase().includes(market))).slice(0,100).map(u=>({...publicProfileUser(u),serviceTypes:Array.isArray(u.settings?.serviceTypes)?u.settings.serviceTypes:[]}));res.json({providers:rows});});
 
 app.get('/api/offers/compare/:listingId', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the seller/team can compare offers.'});res.json({listing:{id:l.id,address:l.address},offers:req.db.offers.filter(o=>o.listingId===l.id).sort((a,b)=>Number(b.amount)-Number(a.amount))});});
 app.get('/api/buyer-matches/:listingId', requireAuth, async(req,res)=>{const l=req.db.listings.find(x=>x.id===req.params.listingId);if(!l||!canManageListing(req.db,req.user,l))return res.status(403).json({error:'Only the listing owner/team can view buyer matches.'});const rows=buyerMatchesForListing(req.db,l).map(x=>{const u=req.db.users.find(u=>u.id===(x.userId||x.id));const reasons=[];if(u?.investmentMarkets?.some(m=>String(l.city||'').includes(m)))reasons.push('Works in this market');if(getBuyBoxes(u||{}).some(bb=>(bb.cities||[]).some(c=>String(l.city||'').toLowerCase().includes(String(c).toLowerCase()))))reasons.push('Buy box location match');if((req.db.saves||[]).some(s=>s.userId===u?.id))reasons.push('Active property saver');return {...x,reasons:reasons.length?reasons:['Matches stated buying criteria']};});res.json({matches:rows});});

@@ -119,7 +119,7 @@ function isAdminEmail(email) {
 }
 
 /** Roles a person may actually choose when signing up. Note: no 'admin'. */
-const SIGNUP_ROLES = ['buyer', 'seller', 'lender', 'affiliate'];
+const SIGNUP_ROLES = ['buyer', 'seller', 'lender', 'service', 'affiliate'];
 
 /** Normalize multi-select public roles. Admin is never accepted from the client. */
 function normalizeSignupRoles(input) {

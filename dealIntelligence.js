@@ -1,4 +1,5 @@
 function dealValuationPrecision(ev,ca){
+  if(/\bland\b|vacant\s+lot|unimproved|acreage/i.test(String(ev?.subject?.propertyType||ev?.fieldEvidence?.propertyType?.recordedValue||'')))return 'withheld';
   if(!ev?.identity?.addressMatched||(!ca?.valuationReady&&!ca?.indicativeReady))return 'withheld';
   const fields=ev.fieldEvidence||{},core=['bedrooms','bathrooms','squareFootage','propertyType'];
   if(core.some(f=>String(fields[f]?.status||'').includes('conflict')))return 'withheld';
@@ -27,6 +28,7 @@ function similarity(subject,c){
 }
 function adjustedSalePrice(subject,c){const sale=num(c.salePrice||c.price);if(!sale)return null;const ss=num(subject.squareFootage),cs=num(c.squareFootage);if(!ss||!cs||Math.abs(ss-cs)/ss<.03)return Math.round(sale);const ppsf=sale/cs,raw=(ss-cs)*ppsf*.35,cap=sale*.15,adj=clamp(raw,-cap,cap);return Math.round(sale+adj)}
 function analyzeComps(subject={},raw=[]){
+  if(require('./landAnalysis').land(subject.propertyType))return require('./landAnalysis').withheld(raw);
   const seen=new Map();let comps=[];
   for(let i=0;i<(raw||[]).length;i++){
     const c=raw[i]||{},price=num(c.salePrice||c.price);if(!price||!c.address)continue;
@@ -59,6 +61,7 @@ function analyzeComps(subject={},raw=[]){
   return {estimate,low,high,workingEstimate,workingLow,workingHigh,confidence,valuationReady,indicativeReady,precision:valuationReady?'precise':indicativeReady?'working_range':'withheld',selected:selected.map(c=>({...c,included:true})),excluded:comps.filter(c=>!selected.includes(c)).map(c=>({...c,included:false,reasons:[...c.reasons,...(c.similarity<55?['similarity below selection threshold']:[]),...(!c.hardRejected&&!c.outlier&&c.similarity>=55?['outside the top eight comparable sales']:[])]})),reviewed:comps.length,rejected:comps.filter(c=>c.outlier||c.hardRejected||c.similarity<55).length,distanceVerifiedCount,recentCount,sourceDiversity,strongCount:strong.length,usableWorkingCount,method,generatedAt:new Date().toISOString(),warnings};
 }
 function estimateRehab(subject={},conditionEvidence=[],fieldEvidence={}){
+  if(require('./landAnalysis').context({subject,fieldEvidence}).active)return require('./landAnalysis').repairs();
   const recordedSqft=num(fieldEvidence?.squareFootage?.recordedValue),sqft=num(subject.squareFootage)||recordedSqft;
   const recordedYear=num(fieldEvidence?.yearBuilt?.recordedValue),year=num(subject.yearBuilt)||recordedYear;
   const text=(conditionEvidence||[]).map(x=>`${x.summary||''} ${x.evidenceText||''}`).join(' ').toLowerCase();

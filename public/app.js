@@ -48,6 +48,7 @@ const ACCOUNT_ROLE_OPTIONS = [
   ['buyer','Buyer / Investor','Find and acquire deals'],
   ['seller','Seller / Wholesaler','Post and move properties'],
   ['lender','Lender / Funder','Provide capital and connect with deals'],
+  ['service','Offer property services','Landscaping, repairs and other property services'],
   ['affiliate','Marketing / Affiliate only','Promote Better and apply for affiliate access. Hidden from the real estate Network.']
 ];
 const ACCOUNT_ROLE_LABELS = Object.fromEntries(ACCOUNT_ROLE_OPTIONS.map(([value,label]) => [value,label]));
@@ -58,6 +59,7 @@ function userRoles(user) {
   return [...new Set(roles.filter(r => ACCOUNT_ROLE_LABELS[r]))];
 }
 function hasRole(user, role) { return userRoles(user).includes(role); }
+function defaultMemberDashboard(){return hasRole(state.user,'affiliate')?'affiliate':state.user?.settings?.defaultDashboard==='services'?'services':'feed';}
 function roleLabel(user) {
   if (user?.role === 'admin') return 'Admin';
   const labels = userRoles(user).map(r => ACCOUNT_ROLE_LABELS[r]);
@@ -172,7 +174,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['try','support','home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['manageproperties','feedback','services','servicesdirectory','try','support','home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
@@ -269,7 +271,7 @@ async function boot() {
   if (state.verifyToken) state.view = 'verify';
   else if (state.resetToken) state.view = 'reset';
   else if (state.companyInviteToken && state.user) state.view = 'companyjoin';
-  else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed');
+  else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : defaultMemberDashboard();
   else if (state.companyInviteToken) { state.view = 'auth'; state.authMode = 'signup'; }
   else {
     const publicWithoutAccount = new Set(['try','home','auth','about','terms','privacy','contact','faq','forgot','buyerportal','affiliate']);
@@ -320,7 +322,7 @@ function startViewPolling(fn, ms = 5000) {
     Promise.resolve().then(fn).catch(() => {});
   }, ms);
 }
-function go(view, extra = {}, options = {}) { if(view==='chat'&&!Object.prototype.hasOwnProperty.call(extra,'chatListingId'))state.chatListingId=null; if(view==='compose'&&!Object.prototype.hasOwnProperty.call(extra,'composeEditId')){state.composeEditId=null;state.composePhotos=[];if(!Object.prototype.hasOwnProperty.call(extra,'dealBuilderDraft'))state.dealBuilderDraft=null;} Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
+function go(view, extra = {}, options = {}) { if(view==='feedback')state.feedbackPage=state.view==='feedback'?(state.feedbackPage||'home'):state.view; if(view==='chat'&&!Object.prototype.hasOwnProperty.call(extra,'chatListingId'))state.chatListingId=null; if(view==='compose'&&!Object.prototype.hasOwnProperty.call(extra,'composeEditId')){state.composeEditId=null;state.composePhotos=[];if(!Object.prototype.hasOwnProperty.call(extra,'dealBuilderDraft'))state.dealBuilderDraft=null;} Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
 function openListingDetail(listingOrId, photoIdx = 0) {
   const preview = listingOrId && typeof listingOrId === 'object' ? listingOrId : null;
   const id = String(preview?.id || listingOrId || '').trim();
@@ -358,7 +360,7 @@ function render() {
 window.addEventListener('popstate', () => {
   const params = new URLSearchParams(location.search);
   const requested = applyRouteParams(params);
-  if (state.user) state.view = requested && ROUTED_VIEWS.has(requested) && !['home','auth'].includes(requested) ? requested : (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed');
+  if (state.user) state.view = requested && ROUTED_VIEWS.has(requested) && !['home','auth'].includes(requested) ? requested : defaultMemberDashboard();
   else state.view = requested && ROUTED_VIEWS.has(requested) ? requested : 'home';
   window.scrollTo(0, 0);
   render();
@@ -555,7 +557,7 @@ function renderTop() {
   const brandEl = document.querySelector('.brand');
   if (brandEl && !brandEl.dataset.wired) {
     brandEl.dataset.wired = '1';
-    brandEl.onclick = () => go(state.user ? (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed') : 'home');
+    brandEl.onclick = () => go(state.user ? defaultMemberDashboard() : 'home');
   }
   const nav = document.getElementById('navlinks');
   const previousGuide=nav.querySelector('.better-guide-trigger'),motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -595,7 +597,7 @@ function renderTabs() {
   const tabs = document.getElementById('tabbar');
   tabs.innerHTML = '';
   if (!state.user) return;
-  const items = hasRole(state.user,'affiliate') ? [['affiliate','grid','Affiliate'],['wallet','wallet','Wallet'],['settings','settings','Settings']] : [['feed','home','Feed'], ['shop','shop','Shop'], ['compose','plus','Post'], ['network','network','Network'], ['me','user','Profile']];
+  const items = hasRole(state.user,'affiliate') ? [['affiliate','grid','Affiliate'],['wallet','wallet','Wallet'],['settings','settings','Settings']] : ['services','servicesdirectory'].includes(state.view)?[['services','home','Services'],['servicesdirectory','search','Find services'],['messages','chat','Messages'],['network','network','Network'],['me','user','Profile']] : [[state.user.settings?.defaultDashboard==='services'?'services':'feed','home',state.user.settings?.defaultDashboard==='services'?'Services':'Feed'], ['shop','shop','Shop'], ['compose','plus','Post'], ['network','network','Network'], ['me','user','Profile']];
   items.forEach(([v, ic, label]) => {
     const active = state.view === v || (v === 'shop' && ['shopitem','sellitem','shopmanage','shopedit'].includes(state.view));
     const icon = el('span', { class: 'ic' }, iconSvg(ic, 21));
@@ -612,7 +614,7 @@ async function renderApp() {
   if(state.user||!['home','about','faq','upgrade','affiliate'].includes(state.view))window.BetterPixel?.pause();
   app.innerHTML = '';
   const views = {
-    try: renderTryItOut, home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
+    manageproperties: renderManageProperties, feedback: renderFeedback, services: renderServices, servicesdirectory: renderServicesDirectory, try: renderTryItOut, home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
     compose: renderCompose, saved: renderSaved, messages: renderMessages, chat: renderChat, network: renderNetwork,
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
@@ -863,14 +865,16 @@ function renderAuth() {
   const name = el('input', { placeholder: 'Jordan Alvarez' });
   const email = el('input', { type: 'text', autocomplete: 'username', placeholder: isSignup ? 'you@email.com' : 'Email or @username' });
   const pass = el('input', { type: 'password', placeholder: isSignup ? 'At least 6 characters' : 'Your password' });
+  const signupServices=el('select',{'aria-label':'Primary service category'});['Landscaping','Contractor','Cleaning','Painting','Roofing','Plumbing','Electrical','Property management','Photography','Title','Lending','Other'].forEach(c=>signupServices.appendChild(el('option',{value:c},c)));
+  const signupServicesBox=el('div',{style:'display:none'},[el('label',{},'Primary service'),signupServices]);
   const signupPhone = el('input', {type:'tel',name:'phone',autocomplete:'tel',inputmode:'tel',maxlength:'40',placeholder:'+1 555 123 4567','aria-label':'Phone number (optional)'});
   const ref = el('input', { placeholder: 'Optional', value: state.pendingReferral || '' });
   const err = el('div', { class: 'errmsg' });
 
   if (isSignup) {
     wrap.appendChild(el('label', {}, "How do you work in real estate?"));
-    const rolePicker = buildRoleSelector(roles, next => { roles = next; });
-    wrap.appendChild(rolePicker.element);
+    const rolePicker = buildRoleSelector(roles, next => { roles = next; signupServicesBox.style.display=roles.includes('service')?'block':'none'; });
+    wrap.append(rolePicker.element,signupServicesBox);
     wrap.appendChild(el('div', { class: 'hint' }, 'Choose all that apply for real estate, or choose Marketing / Affiliate only to keep your account separate from Network. Affiliate links require application approval.'));
     wrap.appendChild(el('label', {}, 'Name')); wrap.appendChild(name);
   }
@@ -890,7 +894,7 @@ function renderAuth() {
       await withButtonBusy(submit, async () => {
       if (isSignup && !roles.length) throw new Error('Choose at least one role.');
       const payload = isSignup
-        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role: roles[0], roles, referralCode: ref.value.trim(), affiliateCode: state.pendingAffiliate || '', phone: signupPhone.value.trim(), marketingOptIn: true }
+        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role: roles[0], roles, serviceCategories:roles.includes('service')?[signupServices.value]:[], referralCode: ref.value.trim(), affiliateCode: state.pendingAffiliate || '', phone: signupPhone.value.trim(), marketingOptIn: true }
         : { email: email.value.trim(), password: pass.value };
       const d = await api('POST', isSignup ? '/api/signup' : '/api/login', payload);
       state.user = d.user; if (d.pricing) state.pricing = d.pricing;
@@ -906,7 +910,7 @@ function renderAuth() {
       else if (state.postAuthTarget) {
         const target = state.postAuthTarget; state.postAuthTarget = null;
         go(target.view || 'feed', { detailId: target.detailId, profileId: target.profileId, companyId: target.companyId, shopItemId: target.shopItemId, networkTab: target.networkTab || 'discover' });
-      } else go(hasRole(state.user,'affiliate') ? 'affiliate' : 'feed');
+      } else godefaultMemberDashboard();
       });
     } catch (e) { err.textContent = e.message; }
   };
@@ -1124,6 +1128,7 @@ function propertyCard(l, context = liveUIContext()) {
       l.momentum?.label ? el('div',{class:'deal-momentum '+(l.momentum.level||'quiet')},[el('span',{class:'momentum-dot'},''),el('b',{},l.momentum.label),el('span',{},l.momentum.detail||'')]) : null,
       el('div', { class: 'actions' }, [
         saveBtn,
+        !context.demo&&context.state.user?.id===l.ownerId?el('button',{class:'btn-ghost',onclick:e=>{e.stopPropagation();go('compose',{composeEditId:l.id});}},'Edit property'):null,
         el('button', { onclick: e => { e.stopPropagation(); openPropertyShare(l); } }, 'Share'),
         el('button', { title:'Hide this property and improve recommendations', onclick: async e => { e.stopPropagation(); await api('POST','/api/feed/feedback',{listingId:l.id,kind:'hide'}); toast('Hidden from your feed','ok'); render(); } }, 'Not interested'),
         el('button', { class: 'primary', onclick: e => { e.stopPropagation(); openListingDetail(l, idx); } }, l.locked ? '🔒 Unlock' : 'View details')
@@ -1464,6 +1469,8 @@ async function renderDetail(context = liveUIContext()) {
   if (state.user && (state.user.id === owner.id || (listing.companyId && state.user.companyId === listing.companyId) || state.access?.adminUnlimited)) {
     wrap.appendChild(el('div',{class:'dsection owner-ops'},[el('h3',{},'Deal operations'),el('div',{class:'owner-ops-actions'},[el('button',{class:'btn-primary',onclick:()=>go('compose',{composeEditId:listing.id})},'Edit property'),el('button',{class:'btn-primary',onclick:()=>go('dealroom',{detailId:listing.id})},'Open deal room'),el('button',{class:'btn-ghost',onclick:async()=>{await api('POST','/api/pipeline',{listingId:listing.id,title:listing.address,stage:'dispo'});toast('Added to pipeline','ok');go('pipeline');}},'Add to pipeline'),el('button',{class:'btn-ghost',onclick:()=>go('analytics',{detailId:listing.id})},'Listing analytics')]) ]));
   }
+  if(!context.demo&&state.user&&(state.user.id===listing.ownerId||state.access?.adminUnlimited)){const manager=el('section',{class:'card service-form listing-top-actions'},[el('h3',{},'Manage this property'),listingManagerActions(listing)]);wrap.insertBefore(manager,wrap.children[1]||null);}
+
 
   if (state.user && !context.demo) {
     try {
@@ -1584,6 +1591,7 @@ async function renderDetail(context = liveUIContext()) {
 
 /* deal calculator — client side, no data leaves the page */
 function dealCalculator(listing) {
+  if(/\bland\b|vacant\s+lot|unimproved|acreage/i.test(String(listing.propertyType||'')))return landListingCalculator(listing);
   const box = el('div', { class: 'calcbox' });
   const arv = el('input', { type: 'number', value: listing.arv || '' });
   const rehab = el('input', { type: 'number', value: listing.rehab || 0 });
@@ -1781,6 +1789,7 @@ function tierCard({ key, name, tagline, priceLine, perks, current, featured, onM
 /* ================= WALLET ================= */
 async function renderWallet() {
   const w = await api('GET', '/api/wallet');
+  w.paymentMethods=Array.isArray(w.paymentMethods)?w.paymentMethods:[];w.ledger=Array.isArray(w.ledger)?w.ledger:[];
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Wallet'));
   wrap.appendChild(el('div', { class: 'sub' }, 'Cash earnings and Better Credits stay clearly separated. Seller proceeds are real cash and can be withdrawn after payout setup.'));
@@ -2947,7 +2956,7 @@ function openBetterGuide(){
     el('button',{onclick:()=>navigateFromGuide('faq')},[el('b',{},'Help center'),el('span',{},'Browse common questions')]),
     el('button',{onclick:()=>navigateFromGuide('support')},[el('b',{},'Chat with Better'),el('span',{},'AI help or request a person')])
   );
-  panel.appendChild(quick);
+  panel.appendChild(quick);panel.appendChild(platformHelpPanel());
   panel.appendChild(el('div',{class:'guide-section-label'},'SEARCH BETTER HELP'));
   const input=el('input',{class:'guide-search',placeholder:affiliateGuideOnly()?'Try “scripts”, “prospects”, or “earnings”':'Try “ARV”, “post a property”, or “affiliate”','aria-label':'Search Better Help'}),results=el('div',{class:'guide-search-results'});
   const drawResults=()=>{const q=input.value.trim().toLowerCase();results.innerHTML='';const rows=(q?guideHelpCatalog().filter(x=>(x.terms+' '+x.title+' '+x.copy).toLowerCase().includes(q)):guideHelpCatalog().slice(0,4)).slice(0,6);if(!rows.length){results.appendChild(el('div',{class:'guide-empty'},'No exact help topic found. Try a shorter search or contact support.'));return;}rows.forEach(x=>results.appendChild(el('button',{onclick:()=>navigateFromGuide(x.view)},[el('b',{},x.title),el('span',{},x.copy)])));};
@@ -2991,7 +3000,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 81;
+const TUTORIAL_VERSION = 83;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3012,6 +3021,11 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:75,title:'A shorter introduction',copy:'The main tutorial now takes 10 steps. Open Full platform walkthrough in the dog menu or Settings for all existing feature guidance. Both tutorials can be skipped.'},
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
  {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
+ {view:'manageproperties',selector:'.manage-properties',min:0,release:83,title:'Manage your property posts',copy:'Open Manage my properties from Profile or Quick Options. Edit, mark sold or delete your own posts; deletion asks for confirmation.'},
+ {view:'feedback',selector:'.feedback-page',min:0,release:83,title:'Private reports and feedback',copy:'Use the Better dog to report issues, suggest features and review admin replies. Screenshot attachments stay private to your report.'},
+ {view:'admin',selector:'.advanced-charts',min:0,release:83,title:'Compare and style growth charts',copy:'Choose dates with optional times, compare months and switch line, bar or area charts. Current-month comparison defaults to matched elapsed days.'},
+ {view:'services',selector:'.service-workspace',min:0,release:82,title:'Your service workspace',copy:'Publish services and areas, receive quote requests, reply in Messages and track jobs. Switch to Main dashboard anytime. Private notes are visible only to you. Free tools do not require a paid plan.'},
+ {view:'servicesdirectory',selector:'.service-workspace',min:0,release:82,title:'Find property services',copy:'Search by service and location, view member portfolios and request a quote. Confirm credentials and terms directly; inquiries do not book work or process payments.'},
  {view:'affiliate',selector:'.affiliate-center',min:0,release:73,title:'Individual commission agreements',copy:'Admin can propose a personal commission rate. Review and accept it in Affiliate Center to activate it for future eligible first paid memberships. A custom rate replaces automatic leaderboard increases until you accept a return to automatic rates. Past earnings keep their original rate.'},
  {view:'home',selector:'.herobtns',min:0,release:81,title:'Try Better before signing up',copy:'The public Try it out button opens an isolated, guided sample deal. Use the actual feed, property, profile, messaging, pipeline and Deal room screens with isolated sample data. Save a property, send a simulated message, move its pipeline stage and save the sample Deal room. Create a real account whenever you are ready.'},
  {view:'home',selector:'#sitefooter',min:0,release:73,title:'Public real estate guides',copy:'Open Real estate guides in the footer for free guides to posting wholesale properties, finding buyers and reviewing deal evidence. Property Share links provide a branded preview; share only information you are authorized to publish.'},
@@ -3212,6 +3226,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false,inDepth
 }
 
 function dealValuationPrecision(ev,ca){
+  if(/\bland\b|vacant\s+lot|unimproved|acreage/i.test(String(ev?.subject?.propertyType||ev?.fieldEvidence?.propertyType?.recordedValue||'')))return 'withheld';
   if(!ev?.identity?.addressMatched||(!ca?.valuationReady&&!ca?.indicativeReady))return 'withheld';
   const fields=ev.fieldEvidence||{},core=['bedrooms','bathrooms','squareFootage','propertyType'];
   if(core.some(f=>String(fields[f]?.status||'').includes('conflict')))return 'withheld';
@@ -3225,10 +3240,11 @@ function dealValuationPrecision(ev,ca){
 async function renderDealBuilder(){
   const wrap=el('div',{class:'page dealbuilderpage'});
   wrap.appendChild(el('div',{class:'pagehead'},[el('div',{},[el('div',{class:'dispoeyebrow'},'PROPERTY INTELLIGENCE'),el('h2',{},'AI Deal Builder'),el('div',{class:'sub'},'Start with an address. Better resolves the exact property first, checks approved records and authorized MLS data, conditionally corroborates unresolved facts on the public web, screens closed-sale comps, and only then allows AI to synthesize the verified evidence.')]) ]));
+  const propertyKind=el('select',{'aria-label':'Property analysis type'},[el('option',{value:'auto'},'Detect property type from evidence'),el('option',{value:'land'},'Land / vacant lot — confirm with sources')]);
   const address=el('input',{placeholder:'123 Main St, City, ST 12345',value:state.analysisAddress||''}),run=el('button',{class:'btn-primary'},'Analyze property'),status=el('div',{class:'hint'}),results=el('div'),usage=el('div',{class:'dealbuilderusage'});
   const paintUsage=(u)=>{usage.innerHTML='';if(!u)return;usage.appendChild(el('div',{class:'usagepill '+(u.unlimited?'unlimited':'')},u.label));if(!u.unlimited)usage.appendChild(el('div',{class:'hint'},u.limit===5?'Plus includes 5 successful new-property analyses per day.':'Free trial includes one successful property analysis.'));};
   try{paintUsage((await api('GET','/api/deal-builder/usage')).usage)}catch(e){status.textContent=e.message||'Unable to load Deal Builder allowance.'}
-  const search=el('div',{class:'card dealbuildersearch'},[el('div',{class:'dealbuildersearchtop'},[el('label',{},'Property address'),usage]),el('div',{class:'dealbuildersearchrow'},[address,run]),status]);wrap.appendChild(search);wrap.appendChild(results);
+  const search=el('div',{class:'card dealbuildersearch'},[el('div',{class:'dealbuildersearchtop'},[el('label',{},'Property address'),usage]),el('div',{class:'dealbuildersearchrow'},[address,run]),status]);search.append(propertyKind);wrap.appendChild(search);wrap.appendChild(results);
   const fmtFact=(field,v)=>{if(v===null||v===undefined||v==='')return '—';if(field==='squareFootage')return Number(v).toLocaleString()+' sq ft';if(field==='bathrooms')return Number(v)%1?Number(v).toFixed(1):String(Number(v));return String(v)};
   async function analyze(forceRefresh=false){
     if(!address.value.trim()){status.textContent='Enter a complete address.';return}
@@ -3253,8 +3269,9 @@ async function renderDealBuilder(){
         }
       }
       status.textContent='Research complete · assembling the cross-source investor analysis…';
-      const r=await api('POST','/api/deal-builder/address',{address:address.value.trim()});paintUsage(r.usage);
+      const r=await api('POST','/api/deal-builder/address',{address:address.value.trim(),propertyKind:propertyKind.value});paintUsage(r.usage);
       const a=r.analysis,ev=r.evidence||ev0,live=ev.subject||{},p={...(a.subject||{})},aiDraft=r.aiDraft||null;
+      if(a.landMode){status.textContent='Land research complete · Automated land valuation withheld; review parcel evidence and your own assumptions.';results.appendChild(renderLandAnalysis(a,ev,address.value));return;}
       const cacheText=ev.cache?.retrievedAt?` · Research ${ev.cache.hit?'reused':'updated'} ${new Date(ev.cache.retrievedAt).toLocaleString()}`:''; const synthText=r.synthesisReused?' · AI synthesis reused — no new AI call':r.synthesisDeferred?' · AI synthesis unavailable — verified evidence/comp result preserved without consuming an analysis use':'';
       status.textContent=`Analysis generated ${new Date(a.generatedAt).toLocaleString()} · ${a.provider}. Confidence: ${a.confidence||'Low'}. ${a.arvMethod||'Analysis'}${cacheText}${synthText} · Verified facts are source-backed; repair scenarios remain estimates.`;
       const selected=new Set((a.comparables||[]).map((_,i)=>i));let workingArv=a.arv?.precision==='withheld'?0:Number(a.arv?.estimate)||0;
@@ -3325,9 +3342,9 @@ async function renderDealBuilder(){
         metricCard('Evidence confidence',a.confidence||identity.confidence||'Low',`${foundCount}/5 surfaced · ${establishedCount} independently established${recordedCount?' · '+recordedCount+' recorded':''}${conflictCount?' · '+conflictCount+' conflict'+(conflictCount===1?'':'s'):''}`)
       ]);results.append(snapshot,evidenceCard);
 
-      const rehabSel=el('select',{},rehabRows.map(x=>el('option',{value:x.key,selected:recommendedRehab?.key===x.key?'selected':null},`${x.label} — ${money(x.estimate)}`))),ask=el('input',{type:'number',placeholder:'Your purchase / contract price',value:ev.marketSnapshot?.askingPrice||ev.auxiliaryFacts?.currentListPrice?.value||''}),assignment=el('input',{type:'number',value:'10000'}),hold=el('input',{type:'number',value:'12000'}),numbers=el('div',{class:'dealnumbers'});
-      const update=()=>{const arv=calcArv(),rh=(rehabRows.find(x=>x.key===rehabSel.value)||recommendedRehab)?.estimate||0,purchase=Number(ask.value)||0,fees=Number(assignment.value)||0,hc=Number(hold.value)||0;numbers.innerHTML='';snapshot.firstElementChild.replaceWith(metricCard(workingPrecision==='working_range'?'Working ARV':'After-repair value',arv?money(arv):'Withheld',arv?`${workingLow&&workingHigh?money(workingLow)+'–'+money(workingHigh)+' · ':''}${workingPrecision==='working_range'?'Working range; confirm before underwriting':'Comp-supported valuation'}`:'Awaiting subject facts and defensible sold-comp support'));if(!arv){numbers.append(metricCard('ARV','—','Awaiting sufficient sold-comp support'));numbers.append(metricCard('Repair estimate',rh?money(rh):'—','Planning estimate remains available'));numbers.append(metricCard('70% MAO','—','Unlocks when ARV passes the evidence gate'));numbers.append(metricCard('Projected spread','—','Unlocks when ARV passes the evidence gate'));return}const flip=arv-purchase-rh-hc,mao70=Math.max(0,Math.round(arv*.70-rh-fees)),projectCost=purchase+rh+hc;numbers.append(metricCard(workingPrecision==='working_range'?'Working ARV':'ARV',money(arv),workingPrecision==='working_range'?'Working comp range — not a precise valuation':'Comp-supported valuation'));numbers.append(metricCard('Repair estimate',money(rh),(rehabRows.find(x=>x.key===rehabSel.value)||recommendedRehab)?.label||'Planning scenario'));numbers.append(metricCard('70% MAO',money(mao70),'ARV × 70% − repairs − assignment target'));numbers.append(metricCard('Projected flip spread',purchase>0?money(flip):'—',purchase>0?'ARV − purchase − repairs − holding/closing':'Enter your purchase / contract price'));numbers.append(metricCard('Projected project cost',purchase>0?money(projectCost):'—',purchase>0?'Purchase + repairs + holding/closing':'Enter your purchase / contract price'));};
-      const analyzer=el('section',{class:'card dealanalyzer'},[el('div',{class:'analysis-section-head'},[el('div',{},[el('div',{class:'sectiontitle'},'Deal Analyzer'),el('div',{class:'hint'},hasArv()?'Edit your acquisition assumptions below. Better keeps sourced property facts separate from your deal inputs.':'Repair planning stays available even when valuation evidence is limited. Selected and excluded sold comps show their screening reasons and source links. A working range is low-confidence underwriting support, not a precise ARV. ARV-dependent math unlocks when Better has a defensible precise or clearly-labeled working ARV range.')]),ev.marketSnapshot?.askingPrice?el('span',{class:'market-price-pill'},`Current ask ${money(ev.marketSnapshot.askingPrice)}`):null].filter(Boolean)),twoUp('Purchase / contract price',ask,'Repair scenario',rehabSel),twoUp('Assignment target',assignment,'Holding / closing allowance',hold),numbers]);[rehabSel,ask,assignment,hold].forEach(x=>x.oninput=update);update();results.appendChild(analyzer);
+      const rehabSel=el('select',{},[{key:'none',label:'No repairs / Not applicable',estimate:0},...rehabRows].map(x=>el('option',{value:x.key,selected:recommendedRehab?.key===x.key?'selected':null},`${x.label} — ${money(x.estimate)}`))),ask=el('input',{type:'number',placeholder:'Your purchase / contract price',value:ev.marketSnapshot?.askingPrice||ev.auxiliaryFacts?.currentListPrice?.value||''}),assignment=el('input',{type:'number',value:'',min:'0'}),hold=el('input',{type:'number',min:'0',value:''}),numbers=el('div',{class:'dealnumbers'});
+      const update=()=>{const arv=calcArv(),rh=rehabSel.value==='none'?0:(rehabRows.find(x=>x.key===rehabSel.value)||recommendedRehab)?.estimate||0,purchase=Number(ask.value)||0,fees=Number(assignment.value)||0,hc=Number(hold.value)||0;numbers.innerHTML='';snapshot.firstElementChild.replaceWith(metricCard(workingPrecision==='working_range'?'Working ARV':'After-repair value',arv?money(arv):'Withheld',arv?`${workingLow&&workingHigh?money(workingLow)+'–'+money(workingHigh)+' · ':''}${workingPrecision==='working_range'?'Working range; confirm before underwriting':'Comp-supported valuation'}`:'Awaiting subject facts and defensible sold-comp support'));if(!arv){numbers.append(metricCard('ARV','—','Awaiting sufficient sold-comp support'));numbers.append(metricCard('Repair estimate',rh?money(rh):'—','Planning estimate remains available'));numbers.append(metricCard('70% MAO','—','Unlocks when ARV passes the evidence gate'));numbers.append(metricCard('Projected spread','—','Unlocks when ARV passes the evidence gate'));return}const flip=arv-purchase-rh-hc,mao70=Math.max(0,Math.round(arv*.70-rh-fees)),projectCost=purchase+rh+hc;numbers.append(metricCard(workingPrecision==='working_range'?'Working ARV':'ARV',money(arv),workingPrecision==='working_range'?'Working comp range — not a precise valuation':'Comp-supported valuation'));numbers.append(metricCard('Repair estimate',money(rh),(rehabRows.find(x=>x.key===rehabSel.value)||recommendedRehab)?.label||'Planning scenario'));numbers.append(metricCard('70% MAO',money(mao70),'ARV × 70% − repairs − assignment target'));numbers.append(metricCard('Projected flip spread',purchase>0?money(flip):'—',purchase>0?'ARV − purchase − repairs − holding/closing':'Enter your purchase / contract price'));numbers.append(metricCard('Projected project cost',purchase>0?money(projectCost):'—',purchase>0?'Purchase + repairs + holding/closing':'Enter your purchase / contract price'));};
+      const analyzer=el('section',{class:'card dealanalyzer'},[el('div',{class:'analysis-section-head'},[el('div',{},[el('div',{class:'sectiontitle'},'Deal Analyzer'),el('div',{class:'hint'},hasArv()?'Edit your acquisition assumptions below. Better keeps sourced property facts separate from your deal inputs.':'Repair planning stays available even when valuation evidence is limited. Selected and excluded sold comps show their screening reasons and source links. A working range is low-confidence underwriting support, not a precise ARV. ARV-dependent math unlocks when Better has a defensible precise or clearly-labeled working ARV range.')]),ev.marketSnapshot?.askingPrice?el('span',{class:'market-price-pill'},`Current ask ${money(ev.marketSnapshot.askingPrice)}`):null].filter(Boolean)),twoUp('Purchase / contract price',ask,'Repair scenario',rehabSel),twoUp('Assignment target',assignment,'Holding / closing allowance',hold),numbers]);[rehabSel,ask,assignment,hold].forEach(x=>x.oninput=update);update();analyzer.append(el('p',{class:'hint'},'Assignment target is your desired gross assignment fee, before your expenses. Holding / closing allowance is your estimate of transaction and ownership costs, not an earnest-money deposit. Leave assumptions blank until you have a basis; blank is treated as zero for calculation only.'));results.appendChild(analyzer);
 
       const assumptions=el('div',{class:'card compsworkspace'},[el('div',{class:'sectiontitle'},'Smart Comps Workspace · Comp-supported valuation'),el('div',{class:'hint'},'Better favors recent nearby SOLD comps and does not use disputed subject facts as if they were verified. Add or remove sold comps you trust below.')]);(a.assumptions||[]).forEach(x=>assumptions.appendChild(el('div',{class:'rehabrow'},[el('span',{},x)])));(a.warnings||[]).forEach(x=>assumptions.appendChild(el('div',{class:'hint'},`Review: ${x}`)));results.appendChild(assumptions);
       const verifiedComps=(ev.comps||[]).filter(x=>x.salePrice).map(x=>({...x})),compHost=el('div',{class:'verified-comp-list'}),compSummary=el('div',{class:'comp-summary'});
@@ -3335,7 +3352,7 @@ async function renderDealBuilder(){
       const compCard=el('div',{class:'card verified-comps-card'},[el('div',{class:'sectiontitle'},'Closed-sale comps · researched automatically'),el('div',{class:'hint'},ev.configured?'Better researches multiple public real-estate and brokerage sources by default, adds authorized MLS/RESO when configured, and uses parcel records only as optional corroboration. Closed sales are cross-checked, deduplicated, screened for distress/outliers, and ranked by recency and similarity before ARV is calculated.':'No live evidence source is connected. Add closed-sale evidence you trust manually.')]);
       const addComp=el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add verified sold comp',[{key:'address',label:'Comp address',placeholder:'123 Comparable St'},{key:'salePrice',label:'Sold price',type:'number'},{key:'saleDate',label:'Sale date',type:'date'},{key:'distanceMiles',label:'Distance (miles)',type:'number'},{key:'squareFootage',label:'Square feet',type:'number'},{key:'bedrooms',label:'Beds',type:'number'},{key:'bathrooms',label:'Baths',type:'number'},{key:'yearBuilt',label:'Year built',type:'number'},{key:'propertyType',label:'Property type',placeholder:'Single family'}],'Add sold comp',async v=>{if(!v.address.trim()||Number(v.salePrice)<=0)throw new Error('Comp address and sold price are required.');verifiedComps.push({...v,salePrice:Number(v.salePrice),distanceMiles:Number(v.distanceMiles)||null,squareFootage:Number(v.squareFootage)||null,bedrooms:Number(v.bedrooms)||null,bathrooms:Number(v.bathrooms)||null,yearBuilt:Number(v.yearBuilt)||null});await repaintComps();})},'Add verified sold comp');compCard.append(addComp,compSummary,compHost);results.appendChild(compCard);await repaintComps(false);
       const rh=el('section',{class:'card rehabcards'},[el('div',{class:'analysis-section-head'},[el('div',{},[el('div',{class:'sectiontitle'},'Repair planning'),el('div',{class:'hint'},a.rehabBasis||ev.rehabAnalysis?.basis||'Scenario planning from established/recorded size, age and sourced condition evidence.')]),el('span',{class:'fact-status corroborated'},'Planning estimate')]),el('div',{class:'rehab-scenario-grid'})]);const rhGrid=rh.querySelector('.rehab-scenario-grid');rehabRows.forEach(x=>rhGrid.appendChild(el('div',{class:`rehab-scenario ${recommendedRehab?.key===x.key?'recommended':''}`},[el('div',{class:'rehab-scenario-head'},[el('b',{},x.label),recommendedRehab?.key===x.key?el('span',{class:'recommended-pill'},'Recommended'):null].filter(Boolean)),el('strong',{},money(x.estimate)),x.low&&x.high?el('small',{},`${money(x.low)}–${money(x.high)} planning range`):null,el('div',{class:'hint'},x.scope),el('small',{},`~$${x.perSqFt}/sf midpoint`)])));rh.appendChild(el('div',{class:'rehab-disclaimer'},ev.rehabAnalysis?.disclaimer||'Planning estimate only — actual contractor scope and hidden conditions can materially change cost.'));results.appendChild(rh);
-      const use=el('button',{class:'submitbtn'},'Use this property in a new listing');use.onclick=()=>{state.dealBuilderDraft={address:p.addressLine1||p.formattedAddress||address.value,city:[p.city,p.state].filter(Boolean).join(', '),propertyType:p.propertyType||'',arv:calcArv()||'',beds:p.bedrooms,baths:p.bathrooms,sqft:p.squareFootage,year:p.yearBuilt,rehab:(a.rehab||[]).find(x=>x.key===rehabSel.value)?.estimate||'',asking:ask.value,notes:aiDraft?.description||''};go('compose',{dealBuilderDraft:state.dealBuilderDraft})};results.appendChild(use);
+      const use=el('button',{class:'submitbtn'},'Use this property in a new listing');use.onclick=()=>{state.dealBuilderDraft={address:p.addressLine1||p.formattedAddress||address.value,city:[p.city,p.state].filter(Boolean).join(', '),propertyType:p.propertyType||'',arv:calcArv()||'',beds:p.bedrooms,baths:p.bathrooms,sqft:p.squareFootage,year:p.yearBuilt,rehab:rehabSel.value==='none'?0:((a.rehab||[]).find(x=>x.key===rehabSel.value)?.estimate??''),asking:ask.value,notes:aiDraft?.description||''};go('compose',{dealBuilderDraft:state.dealBuilderDraft})};results.appendChild(use);
     }catch(e){status.textContent=e.message}finally{run.disabled=false;run.textContent='Analyze property'}
   }
   run.onclick=()=>analyze(false);
@@ -3385,6 +3402,7 @@ async function renderCompose() {
     asking: el('input', { type: 'number', placeholder: '185000' }),
     arv: el('input', { type: 'number', placeholder: '260000' }),
     rehab: el('input', { type: 'number', placeholder: '35000' }),
+    siteWork:el('input',{type:'number',min:'0',placeholder:'Your clearing / site-work allowance'}),
     beds: el('input', { type: 'number', placeholder: '3' }),
     baths: el('input', { type: 'number', placeholder: '2' }),
     sqft: el('input', { type: 'number', placeholder: '1450' }),
@@ -3394,8 +3412,8 @@ async function renderCompose() {
     videoUrl: el('input', { placeholder: 'https://youtube.com/… (optional walkthrough)' }),
     notes: el('textarea', { placeholder: 'Condition, access, why they\'re selling.' })
   };
-  if(editingListing){['address','city','propertyType','situation','asking','arv','rehab','beds','baths','sqft','year','timeline','contractDeadline','videoUrl','notes'].forEach(k=>{if(editingListing[k]!==undefined&&editingListing[k]!==null&&f[k])f[k].value=editingListing[k];});}
-  if (state.dealBuilderDraft&&!editingListing) { const d=state.dealBuilderDraft; ['address','city','propertyType','asking','arv','rehab','beds','baths','sqft','year','notes'].forEach(k=>{ if(d[k]!==undefined&&d[k]!==null&&f[k]) f[k].value=d[k]; }); state.dealBuilderDraft=null; }
+  if(editingListing){['address','city','propertyType','situation','asking','arv','rehab','siteWork','beds','baths','sqft','year','timeline','contractDeadline','videoUrl','notes'].forEach(k=>{if(editingListing[k]!==undefined&&editingListing[k]!==null&&f[k])f[k].value=editingListing[k];});}
+  if (state.dealBuilderDraft&&!editingListing) { const d=state.dealBuilderDraft; ['address','city','propertyType','asking','arv','rehab','siteWork','beds','baths','sqft','year','notes'].forEach(k=>{ if(d[k]!==undefined&&d[k]!==null&&f[k]) f[k].value=d[k]; }); state.dealBuilderDraft=null; }
   const builderLink = el('button',{class:'btn-primary',type:'button',onclick:()=>go('dealbuilder')},'Analyze an address with AI Deal Builder');
   if(!editingListing)wrap.appendChild(el('div',{class:'dealbuilderentry'},[el('div',{},[el('b',{},'Starting with an address?'),el('div',{class:'hint'},'Generate a preliminary description, ARV range, repair scenarios and deal analysis from the address before you build the listing.')]),builderLink]));
   const importText = el('textarea', { placeholder: 'Paste your existing Facebook deal post, email blast, text message or deal notes here…', style: 'min-height:130px' });
@@ -3411,7 +3429,7 @@ async function renderCompose() {
       if (d.city) f.city.value = d.city;
       if (d.propertyType) f.propertyType.value = d.propertyType;
       if (d.situation) f.situation.value = d.situation;
-      ['asking','arv','rehab','beds','baths','sqft','year'].forEach(k => { if (d[k] !== null && d[k] !== undefined && d[k] !== '') f[k].value = d[k]; });
+      ['asking','arv','rehab','siteWork','beds','baths','sqft','year'].forEach(k => { if (d[k] !== null && d[k] !== undefined && d[k] !== '') f[k].value = d[k]; });
       if (d.timeline && [...f.timeline.options].some(o => o.value === d.timeline)) f.timeline.value = d.timeline;
       if (d.contractDeadline) f.contractDeadline.value = d.contractDeadline;
       if (d.notes) f.notes.value = d.notes;
@@ -3463,9 +3481,8 @@ async function renderCompose() {
   wrap.appendChild(el('label', {}, 'Property type')); wrap.appendChild(f.propertyType);
   wrap.appendChild(el('label', {}, 'Situation')); wrap.appendChild(f.situation);
   wrap.appendChild(twoUp('Asking price ($)', f.asking, 'Estimated ARV ($)', f.arv));
-  wrap.appendChild(el('label', {}, 'Rehab estimate ($)')); wrap.appendChild(f.rehab);
-  wrap.appendChild(twoUp('Beds', f.beds, 'Baths', f.baths));
-  wrap.appendChild(twoUp('Sq ft', f.sqft, 'Year built', f.year));
+  const repairLabel=el('label',{},'Rehab estimate ($)'),siteLabel=el('label',{},'Clearing / site-work budget ($; your estimate)'),buildingRows=el('div',{},[twoUp('Beds',f.beds,'Baths',f.baths),twoUp('Sq ft',f.sqft,'Year built',f.year)]);wrap.append(repairLabel,f.rehab,siteLabel,f.siteWork,buildingRows);
+  const syncPropertyKind=()=>{const land=/land/i.test(f.propertyType.value);buildingRows.hidden=land;siteLabel.hidden=f.siteWork.hidden=!land;f.rehab.readOnly=land;repairLabel.textContent=land?'Building repairs — Not applicable ($0)':'Rehab estimate ($)';if(land)f.rehab.value='0';};f.propertyType.onchange=syncPropertyKind;syncPropertyKind();
   wrap.appendChild(el('label', {}, 'Seller timeline')); wrap.appendChild(f.timeline);
   wrap.appendChild(el('label', {}, 'Contract / assignment deadline (optional)')); wrap.appendChild(f.contractDeadline);
   wrap.appendChild(el('label', {}, 'Video walkthrough')); wrap.appendChild(f.videoUrl);
@@ -3499,6 +3516,7 @@ async function renderCompose() {
     try {
       const payload = { photos: state.composePhotos };
       for (const k in f) payload[k] = f[k].value;
+      if(/land/i.test(f.propertyType.value)){for(const k of ['beds','baths','sqft','year'])payload[k]='';payload.rehab=0;}
       payload.openToJV = openToJV.checked;
       const r=editingListing?await api('PATCH','/api/listings/'+encodeURIComponent(editingListing.id),payload):await api('POST','/api/listings',payload);
       state.composePhotos=[];state.composeEditId=null;mascotSiteEvent('listing');
@@ -3507,6 +3525,7 @@ async function renderCompose() {
     }catch(e){err.textContent=e.message;mascotSiteEvent('error');submit.disabled=false;submit.textContent=editingListing?'Save property changes':'Post to feed';}
   };
   wrap.appendChild(err); wrap.appendChild(submit);
+  if(editingListing&&(editingListing.ownerId===state.user.id||state.access?.adminUnlimited))wrap.appendChild(serviceAction('Delete listing',async()=>deleteManagedListing(editingListing.id)));
   return wrap;
 }
 function twoUp(l1, i1, l2, i2) {
@@ -3644,7 +3663,7 @@ async function renderNetwork() {
     tabs.appendChild(el('button', { class: state.networkTab === key ? 'active' : '', onclick: () => { state.networkTab = key; writeRoute('replace'); render(); } }, label));
   });
   wrap.appendChild(tabs);
-
+  wrap.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('servicesdirectory')},'Find property services'));
 
   if (state.networkTab === 'buyers') {
     const hero = el('div', { class: 'buyerslookinghero' }, [
@@ -3716,7 +3735,7 @@ async function renderNetwork() {
   const controls = el('div', { class: 'networksearch' });
   const q = el('input', { placeholder: 'Search name, @username, company, market or role…', value: state.networkQ || '' });
   const role = el('select');
-  [['all','All people'],['buyer','Buyers / Investors'],['seller','Sellers / Wholesalers'],['lender','Lenders / Funders']].forEach(([v,l]) => role.appendChild(el('option', { value: v, selected: state.networkRole === v ? 'selected' : null }, l)));
+  [['all','All people'],['buyer','Buyers / Investors'],['seller','Sellers / Wholesalers'],['lender','Lenders / Funders'],['service','Service providers']].forEach(([v,l]) => role.appendChild(el('option', { value: v, selected: state.networkRole === v ? 'selected' : null }, l)));
   controls.appendChild(q); controls.appendChild(role); wrap.appendChild(controls);
   const results = el('div', { class: 'peoplegrid' }); wrap.appendChild(results);
   let searchTimer = null, seq = 0;
@@ -4005,7 +4024,7 @@ async function renderMe() {
 
   const toolgroups = el('div', { class: 'profile-toolgroups' });
   const groups=[
-    ['Workspace', [['Command center','commandcenter'],['Transaction hub','transactionhub'],['Deal pipeline','pipeline'],['Deal calendar','dealcalendar'],['AI Deal Builder','dealbuilder'],['Buyer CRM','buyercrm'],['Investor workspace'+(state.access?.platinum?'':' 🔒'),'workspace']]],
+    ['Workspace', [['Manage my properties','manageproperties'],['Command center','commandcenter'],['Transaction hub','transactionhub'],['Deal pipeline','pipeline'],['Deal calendar','dealcalendar'],['AI Deal Builder','dealbuilder'],['Buyer CRM','buyercrm'],['Investor workspace'+(state.access?.platinum?'':' 🔒'),'workspace']]],
     ['Discover', [['Liked properties','saved'],['Saved searches & alerts','savedsearches'],['Buy box','buybox'],['Buyer demand insights','insights'],['Market Hubs','markethubs'],['Title Directory','titledirectory'],['Network & friends','network']]],
     ['Account & commerce', [['Messages','messages'],['Offers','offers'],['Affiliate center','affiliate'],['Wallet & payouts','wallet'],['Orders','orders'],[state.user.role==='admin'?'Admin — shop listings':'My shop listings','shopmanage'],['Plans & billing','upgrade']]]
   ];
@@ -4097,6 +4116,7 @@ async function renderProfile(context = liveUIContext()) {
     if (!context.demo) actions.appendChild(friendButton(friendUser, () => render()));
     actions.appendChild(el('button', { class: 'btn-primary', onclick: () => go('chat', { chatUserId: owner.id }) }, 'Message'));
     if (hasRole(owner, 'seller')) actions.appendChild(el('button', { class: 'btn-ghost', onclick: () => go('buyerportal', { buyerPortalType: 'user', buyerPortalId: owner.id }) }, 'Join buyer list'));
+    if(!context.demo&&hasRole(owner,'service'))actions.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('servicesdirectory')},'Explore property services'));
     wrap.appendChild(actions);
   }
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Listings'));
@@ -4382,7 +4402,7 @@ function renderSettings() {
   dbox.appendChild(delSt); wrap.appendChild(dbox);
 
   wrap.appendChild(el('div',{class:'sectiontitle'},'Professional services profile'));
-  const spbox=el('div',{class:'card'});const spTypes=el('input',{placeholder:'Services, comma separated — Title, Lending, Contractor',value:(state.user.settings?.serviceTypes||[]).join(', ')});spbox.appendChild(toggleRow('List me as a service provider','Make your professional services discoverable to investors in your markets.',state.user.settings?.serviceProvider===true,async on=>{const r=await api('PATCH','/api/me/settings',{serviceProvider:on,serviceTypes:spTypes.value.split(',').map(x=>x.trim()).filter(Boolean)});state.user.settings=r.settings;}));spbox.appendChild(el('div',{style:'padding:0 16px 16px'},[spTypes,el('button',{class:'btn-ghost',style:'margin-top:8px',onclick:async()=>{const r=await api('PATCH','/api/me/settings',{serviceTypes:spTypes.value.split(',').map(x=>x.trim()).filter(Boolean)});state.user.settings=r.settings;toast('Service profile updated','ok');}},'Save services')]));wrap.appendChild(spbox);
+  wrap.appendChild(el('div',{class:'card service-form'},[el('p',{},'Publish your service areas and portfolio, choose your starting dashboard, and manage inquiries.'),el('button',{class:'btn-primary',onclick:()=>go('services')},'Open service workspace')]));
   wrap.appendChild(el('div',{class:'sectiontitle'},'Notification center'));
   const np=state.user.settings?.notificationPrefs||{}; const nbox=el('div',{class:'card notification-settings'});
   [['deals','Deals'],['messages','Messages'],['offers','Offers'],['pipeline','Pipeline'],['referrals','Referrals'],['social','Social'],['savedSearches','Saved searches'],['marketing','Marketing']].forEach(([key,label])=>nbox.appendChild(toggleRow(label,'Control in-app and email attention for this category.',np[key]!==false,async on=>{np[key]=on;const r=await api('PATCH','/api/me/settings',{notificationPrefs:np});state.user.settings=r.settings;})));
@@ -4957,7 +4977,7 @@ async function renderTransactionHub(){
  const intake=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'DEAL INTAKE'),el('h3',{},'Let opportunities come to you')]),el('button',{class:'btn-ghost',onclick:async()=>{const x=await api('GET','/api/intake-link');try{await navigator.clipboard.writeText(x.url);toast('Deal intake link copied','ok')}catch{prompt('Copy your deal intake link',x.url);}}},'Copy intake link')])]);if(!d.intake.length)intake.appendChild(el('div',{class:'hub-empty'},'Share your intake link with sellers and partners. New submissions land here.'));d.intake.slice(0,10).forEach(x=>intake.appendChild(el('div',{class:'hub-row'},el('div',{class:'grow'},[el('b',{},x.address),el('span',{},x.name+(x.asking?' · '+money(x.asking):'')),x.notes?el('small',{},x.notes):null]))));grid.appendChild(intake);
  const outcomes=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'CLOSING RECORDS'),el('h3',{},'Outcomes & profit')]),el('button',{class:'btn-ghost',onclick:()=>downloadExport('outcomes')},'Export CSV')])]);if(!d.outcomes.length)outcomes.appendChild(el('div',{class:'hub-empty'},'Closed and completed deal outcomes will appear here.'));d.outcomes.slice(0,10).forEach(x=>outcomes.appendChild(el('div',{class:'hub-row'},[el('div',{class:'grow'},[el('b',{},x.status.toUpperCase()),el('span',{},'Recorded '+new Date(x.createdAt).toLocaleDateString())]),el('strong',{class:x.profit>=0?'positive':'negative'},money(x.profit))])));grid.appendChild(outcomes);
  const creds=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'BUYER CREDENTIALS'),el('h3',{},'Proof & qualifications')]),el('button',{class:'btn-ghost',onclick:()=>openFormModal('Add buyer credential',[{key:'label',label:'Credential name',placeholder:'Proof of Funds — Sept 2026'},{key:'note',label:'Private note',type:'textarea',placeholder:'Reference or verification note'}],'Add credential',async v=>{await api('POST','/api/credentials',{type:'proof-of-funds',...v});render();})},'+ Credential')])]);if(!d.credentials.length)creds.appendChild(el('div',{class:'hub-empty'},'Keep credential references here and selectively share deal documents through Deal Rooms.'));d.credentials.forEach(x=>creds.appendChild(el('div',{class:'hub-row'},el('div',{class:'grow'},[el('b',{},x.label),el('small',{},x.note||x.type)]))));grid.appendChild(creds);
- const services=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'SERVICE NETWORK'),el('h3',{},'Professionals for the deal')]),el('button',{class:'btn-ghost',onclick:()=>go('settings')},'My service profile')])]);try{const sr=await api('GET','/api/service-providers');if(!sr.providers.length)services.appendChild(el('div',{class:'hub-empty'},'Title, lending, contractor and other service profiles will appear as professionals opt in.'));sr.providers.slice(0,8).forEach(u=>services.appendChild(el('button',{class:'hub-provider',onclick:()=>go('profile',{profileId:u.id})},[avatarNode(u),el('div',{},[el('b',{},u.name),el('span',{},(u.serviceTypes||[]).join(' · ')||roleLabel(u))])])));}catch{}grid.appendChild(services);
+ const services=el('section',{class:'hub-panel'},[el('div',{class:'hub-panel-head'},[el('div',{},[el('div',{class:'eyebrow'},'SERVICE NETWORK'),el('h3',{},'Professionals for the deal')]),el('button',{class:'btn-ghost',onclick:()=>go('servicesdirectory')},'Find services')])]);try{const sr=await api('GET','/api/service-providers');if(!sr.providers.length)services.appendChild(el('div',{class:'hub-empty'},'Title, lending, contractor and other service profiles will appear as professionals opt in.'));sr.providers.slice(0,8).forEach(u=>services.appendChild(el('button',{class:'hub-provider',onclick:()=>go('profile',{profileId:u.id})},[avatarNode(u),el('div',{},[el('b',{},u.name),el('span',{},(u.serviceTypes||[]).join(' · ')||roleLabel(u))])])));}catch{}grid.appendChild(services);
  wrap.appendChild(grid);wrap.appendChild(el('div',{class:'hub-exportbar'},[el('div',{},[el('b',{},'Your data stays portable.'),el('span',{},'Export serious business records whenever you need them.')]),el('button',{class:'btn-ghost',onclick:()=>downloadExport('pipeline')},'Export pipeline CSV')]));return wrap;
 }
 function renderAffiliateCalculator(d){
@@ -5131,6 +5151,10 @@ function miniMetric(value,label){return el('div',{class:'mini-metric'},[el('b',{
 function quickOptionCatalog(){
  if(hasRole(state.user,'affiliate'))return [{id:'affiliate',title:'Affiliate center',desc:'Application, tracked link and earnings',view:'affiliate'},{id:'wallet',title:'Wallet & payouts',desc:'Manage your cash balance',view:'wallet'},{id:'settings',title:'Settings',desc:'Account type, profile and help',view:'settings'}];
  const base=[
+  {id:'manageproperties',title:'Manage my properties',desc:'Edit, mark sold or delete your posts',view:'manageproperties'},
+  {id:'feedback',title:'Report an issue',desc:'Private reports and feedback',view:'feedback'},
+  {id:'services',title:'Service workspace',desc:'Profile, inquiries and jobs',view:'services'},
+  {id:'servicesdirectory',title:'Find services',desc:'Property professionals near you',view:'servicesdirectory'},
   {id:'compose',title:'Post a property',desc:'Create or import a listing',view:'compose'},
   {id:'dealbuilder',title:'Analyze a deal',desc:'Open AI Deal Builder',view:'dealbuilder'},
   {id:'buyercrm',title:'Buyer CRM',desc:'Manage buyers and relationships',view:'buyercrm'},
@@ -5145,7 +5169,7 @@ function quickOptionCatalog(){
  if(state.access?.adminUnlimited) base.push({id:'admin',title:'Admin users',desc:'User activity and account controls',view:'admin'});
  return base;
 }
-function selectedQuickOptions(){const allowed=new Set(quickOptionCatalog().map(x=>x.id));const saved=state.user?.settings?.quickOptions;const defaults=hasRole(state.user,'affiliate')?['affiliate','wallet','settings']:state.access?.adminUnlimited?['admin','transactionhub','compose','dealbuilder','pipeline']:['transactionhub','compose','dealbuilder','pipeline','liked'];return (Array.isArray(saved)?saved:defaults).filter(x=>allowed.has(x)).slice(0,6);}
+function selectedQuickOptions(){const allowed=new Set(quickOptionCatalog().map(x=>x.id));const saved=state.user?.settings?.quickOptions;const defaults=hasRole(state.user,'affiliate')?['affiliate','wallet','settings']:state.access?.adminUnlimited?['admin','transactionhub','compose','dealbuilder','pipeline']:state.user?.settings?.defaultDashboard==='services'?['services','servicesdirectory']:['manageproperties','transactionhub','compose','dealbuilder','pipeline','liked'];return (Array.isArray(saved)?saved:defaults).filter(x=>allowed.has(x)).slice(0,6);}
 async function saveQuickOptions(ids){const {settings}=await api('PATCH','/api/me/settings',{quickOptions:ids});state.user.settings=settings;}
 function openQuickOptions(){
  const shade=el('div',{class:'quick-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card'});
@@ -5231,11 +5255,11 @@ async function renderAdmin() {
 
   wrap.appendChild(el('div',{class:'sectiontitle'},'User activity'));
   const activityCard=el('div',{class:'card admin-activity'}),activityControls=el('div',{class:'activity-controls'}),activityHost=el('div');
-  const customStart=el('input',{type:'datetime-local','aria-label':'Growth start date and time'}),customEnd=el('input',{type:'datetime-local','aria-label':'Growth end date and time'});let activityPreset='24h',showGrowth=false,activityRequest=0;
+  const customStart=el('input',{type:'date','aria-label':'Growth start date'}),customEnd=el('input',{type:'date','aria-label':'Growth end date'});const customStartTime=el('input',{type:'time',step:'60','aria-label':'Growth start time (optional)'}),customEndTime=el('input',{type:'time',step:'60','aria-label':'Growth end time (optional)'});let activityPreset='24h',showGrowth=false,activityRequest=0;
   const growthHost=el('div'),growthToggle=el('button',{class:'btn-ghost growth-toggle','aria-expanded':'false'},'View growth charts');
-  const loadActivity=async()=>{const request=++activityRequest;if(activityPreset==='custom'&&(!customStart.value||!customEnd.value||new Date(customStart.value)>new Date(customEnd.value))){toast('Choose a start date before the end date.','err');return;}let url='/api/admin/activity?preset='+activityPreset+(showGrowth?'&charts=1':'');if(activityPreset==='custom')url+=`&start=${encodeURIComponent(new Date(customStart.value).toISOString())}&end=${encodeURIComponent(new Date(customEnd.value).toISOString())}`;const d=await api('GET',url);if(request!==activityRequest)return;growthHost.replaceChildren();if(showGrowth&&d.growth)growthHost.appendChild(renderGrowthCharts(d.growth));activityHost.innerHTML='';if(d.historyNote)activityHost.appendChild(el('p',{class:'sub'},d.historyNote));activityHost.appendChild(el('div',{class:'statgrid'},[stat(d.metrics.activeNow,'Active now'),stat(d.metrics.uniqueActive,'Unique active'),stat(d.metrics.returning,'Returning'),stat(d.metrics.signups,'New signups'),stat(d.metrics.listings,'Listings'),stat(d.metrics.messages,'Messages'),stat(d.metrics.dealBuilderRuns,'Deal analyses'),stat(d.metrics.profilesCompleted,'Profiles set up'),stat(d.metrics.engaged,'Engaged users'),stat(d.metrics.paid,'Paid access')]));if(d.activeNow.length){activityHost.appendChild(el('div',{class:'admin-active-list'},[el('b',{},'On the site now'),...d.activeNow.map(u=>el('div',{class:'admin-active-user'},[el('span',{},u.name),el('small',{},[u.plan,...(u.markets||[])].filter(Boolean).join(' · '))]))]));}if(d.markets.length)activityHost.appendChild(el('div',{class:'market-mini'},d.markets.map(m=>el('span',{},`${m.state} · ${m.count}`))));if(d.plans)activityHost.appendChild(el('div',{class:'market-mini'},Object.entries(d.plans).map(([p,n])=>el('span',{},`${p} · ${n}`))));};
-  [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['all','All time'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
-  customStart.style.display=customEnd.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd);growthToggle.onclick=()=>withButtonBusy(growthToggle,async()=>{showGrowth=!showGrowth;growthToggle.textContent=showGrowth?'Hide growth charts':'View growth charts';growthToggle.setAttribute('aria-expanded',String(showGrowth));try{await loadActivity();}catch(e){toast(e.message,'err');}});activityCard.append(activityControls,activityHost,growthToggle,growthHost);wrap.appendChild(activityCard);await loadActivity();
+  const loadActivity=async()=>{const request=++activityRequest;if(activityPreset==='custom'&&(!customStart.value||!customEnd.value||new Date(customStart.value)>new Date(customEnd.value))){toast('Choose a start date before the end date.','err');return;}let url='/api/admin/activity?preset='+activityPreset+(showGrowth?'&charts=1':'');if(activityPreset==='custom')url+=`&start=${encodeURIComponent(customStart.value)}&end=${encodeURIComponent(customEnd.value)}&startTime=${encodeURIComponent(customStartTime.value)}&endTime=${encodeURIComponent(customEndTime.value)}&timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York')}`;const d=await api('GET',url);if(request!==activityRequest)return;growthHost.replaceChildren();if(showGrowth&&d.growth)growthHost.appendChild(renderGrowthCharts(d.growth));activityHost.innerHTML='';if(d.historyNote)activityHost.appendChild(el('p',{class:'sub'},d.historyNote));activityHost.appendChild(el('div',{class:'statgrid'},[stat(d.metrics.activeNow,'Active now'),stat(d.metrics.uniqueActive,'Unique active'),stat(d.metrics.returning,'Returning'),stat(d.metrics.signups,'New signups'),stat(d.metrics.listings,'Listings'),stat(d.metrics.messages,'Messages'),stat(d.metrics.dealBuilderRuns,'Deal analyses'),stat(d.metrics.profilesCompleted,'Profiles set up'),stat(d.metrics.engaged,'Engaged users'),stat(d.metrics.paid,'Paid access')]));if(d.activeNow.length){activityHost.appendChild(el('div',{class:'admin-active-list'},[el('b',{},'On the site now'),...d.activeNow.map(u=>el('div',{class:'admin-active-user'},[el('span',{},u.name),el('small',{},[u.plan,...(u.markets||[])].filter(Boolean).join(' · '))]))]));}if(d.markets.length)activityHost.appendChild(el('div',{class:'market-mini'},d.markets.map(m=>el('span',{},`${m.state} · ${m.count}`))));if(d.plans)activityHost.appendChild(el('div',{class:'market-mini'},Object.entries(d.plans).map(([p,n])=>el('span',{},`${p} · ${n}`))));};
+  [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['all','All time'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=customStartTime.style.display=customEndTime.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
+  customStart.style.display=customEnd.style.display=customStartTime.style.display=customEndTime.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd,customStartTime,customEndTime);growthToggle.onclick=()=>withButtonBusy(growthToggle,async()=>{showGrowth=!showGrowth;growthToggle.textContent=showGrowth?'Hide growth charts':'View growth charts';growthToggle.setAttribute('aria-expanded',String(showGrowth));try{await loadActivity();}catch(e){toast(e.message,'err');}});activityCard.append(activityControls,activityHost,growthToggle,growthHost);wrap.appendChild(activityCard);wrap.appendChild(await advancedChartsPanel());await loadActivity();
   wrap.appendChild(el('div',{class:'sectiontitle'},'Demo accounts'));
   const demoCard=el('div',{class:'card demo-account-card'});
   const demoHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'CONTROLLED TESTING'),el('h3',{},'Create demo account'),el('p',{class:'sub'},'Create a safe account for testing Better Real Estate. Demo activity never consumes Founder places, changes growth analytics, or creates real billing, referral rewards, affiliate commissions or payouts.')]),el('span',{class:'demo-admin-badge'},'DEMO')]);
@@ -5357,7 +5381,7 @@ function renderFooter() {
 
 const staticPage = (title, sub, blocks) => {
   const wrap = el('div', { class: 'page staticpage' });
-  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.user ? (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed') : 'home') }, '← Back'));
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.user ? defaultMemberDashboard() : 'home') }, '← Back'));
   wrap.appendChild(el('h2', {}, title));
   if (sub) wrap.appendChild(el('div', { class: 'sub' }, sub));
   blocks.forEach(([h, body]) => {
@@ -5424,6 +5448,7 @@ function pageTerms() {
 function pagePrivacy() {
   return staticPage('Privacy Policy', 'Last updated October 10, 2026.', [
     [null, 'This policy explains what Better Real Estate collects, why we use it, which service providers may receive it, and the choices available to you.'],
+    ['Service profiles and jobs', 'If you offer services, your published business description, service categories, service areas, availability, price information and portfolio appear to signed-in members. Quote-request descriptions, general locations, reference photos, stages and dates are shared with the provider and requesting member. Provider notes remain visible only to the provider. Reference photos and portfolio images can be opened by anyone who has their image link, so do not upload private addresses or sensitive details. Inquiries also create a message between the requesting member and provider. Deleting an account removes its service profile and associated job records.'],
     ['What we collect', 'Account information you give us, including your name, username, email address, phone number if you add one (required for a new admin-reviewed verification badge request, but not ordinary signup or email confirmation), profile photo, bio and optional market/location. If you use a Wholesale Teams workspace, we also collect company profile details, team membership, role, invitations and shared acquisition criteria. Content you post, including property listings, addresses, photos, notes, deal-import text and marketplace items. If you join a wholesaler or company buyer list, we collect the contact information and acquisition criteria you choose to submit and share those details with the specific wholesaler/company whose buyer-list page you used. Activity such as what you view, like/save, watch, unlock, offer on, buy or sell, people you follow, friend requests and friendships, messages you send through the site, selected investment markets, saved-search criteria, deal-pipeline activity, deal-room messages and documents you choose to upload, deal-calendar reminders and recent account activity used to show the site owner aggregate usage analytics and current active-user status. For shipped marketplace orders, we collect the delivery name, street address, apartment or unit, city, state, ZIP code and optional phone number needed to quote shipping and fulfil the order.'],
     ['Address autofill and autocomplete', el('span', {}, [
       'Your browser may offer its own saved-address autofill. When typed address suggestions are enabled, partial address text and an autocomplete session identifier are sent through our server to Google Maps Platform so suggestions can be returned. If you select a suggestion, Google may return address components such as street, city, state and ZIP to fill the checkout form. We do not use device geolocation for this feature. We keep the shipping address needed for the order, but we do not intentionally store the list of autocomplete suggestions. Google handles its data under the ',
@@ -5457,7 +5482,7 @@ function pagePrivacy() {
 
 function pageContact() {
   const wrap = el('div', { class: 'page staticpage' });
-  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.user ? (hasRole(state.user,'affiliate') ? 'affiliate' : 'feed') : 'home') }, '← Back'));
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.user ? defaultMemberDashboard() : 'home') }, '← Back'));
   wrap.appendChild(el('h2', {}, 'Contact'));
   wrap.appendChild(el('div', { class: 'sub' }, 'A real person reads these.'));
   wrap.appendChild(el('div', { class: 'card', style: 'padding:22px' }, [
@@ -6239,6 +6264,7 @@ function openHomeFeature(title){
 async function renderSupportChat(){
  const wrap=el('section',{class:'page support-page'}),admin=!!state.access?.adminUnlimited;
  wrap.append(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Chat with Better'),el('p',{class:'sub'},'Private platform help from Better Guide and the Better team.')]),el('button',{class:'btn-ghost',onclick:()=>go('feed')},'Back to feed')]));
+ wrap.appendChild(platformHelpPanel());
  const head=el('div',{class:'support-guide-head'},[el('div',{class:'guide-mascot-stage is-panel support-dog'},createBetterMascotRig({variant:'panel',label:'Better Guide'})),el('div',{},[el('b',{},'Better Guide'),el('p',{class:'hint'},'AI help uses Better’s platform reference. Do not share passwords, card details or API keys.')])]);wrap.append(head);
  const status=el('div',{class:'support-status',role:'status'}),stream=el('div',{class:'support-stream','aria-label':'Support conversation','aria-live':'polite'}),input=el('textarea',{placeholder:'How can we help?',maxlength:'2000','aria-label':'Support message'}),notice=el('div',{class:'errmsg',role:'status'}),actions=el('div',{class:'support-actions'});
  let thread=null,busy=false,messageId=null,lastBody='',activeId=state.supportThreadId||null;
@@ -6286,7 +6312,7 @@ async function renderPrivateDeals(){
  const {deals}=await api('GET','/api/private-deals'),saved=(await api('GET','/api/saves/mine')).listings||[],selected=new Set(),list=el('div',{class:'connected-grid'});
  const edit=(d={})=>{const {card,close}=connectedModal(d.id?'Edit private opportunity':'Add private opportunity'),fields={};for(const [k,label] of Object.entries({address:'Property address or label',city:'City, state',sourceUrl:'Source link (optional)',asking:'Asking price',arv:'Your ARV estimate',rehab:'Your repair estimate',notes:'Private details',nextAction:'Next action'}))fields[k]=connectedField(card,label,d[k]??'',k==='notes'?'textarea':['asking','arv','rehab'].includes(k)?'number':'text');const stage=el('select',{'aria-label':'Private deal stage'},['review','contact','negotiation','title','closed','passed'].map(x=>el('option',{value:x},x)));stage.value=d.stage||'review';card.append(el('label',{},'Stage'),stage);card.append(connectedAction('Save privately',async()=>{await api('POST','/api/private-deals',{...d,...Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value])),stage:stage.value});close();render();},true));};
  host.append(el('div',{class:'connected-actions'},[connectedAction('Add private opportunity',()=>edit(),true),connectedAction('Compare selected',()=>openComparison([...selected]))]));
- for(const d of deals){const checkbox=el('input',{type:'checkbox','aria-label':'Compare '+d.address});checkbox.onchange=()=>{if(checkbox.checked&&selected.size>=3){checkbox.checked=false;toast('Compare up to three properties','err');return;}checkbox.checked?selected.add(d.id):selected.delete(d.id);};list.append(el('article',{class:'connected-card'},[el('label',{},[checkbox,' Compare']),el('h4',{},d.address),el('p',{},d.city+' · '+d.stage),el('p',{},d.nextAction||'No next action saved'),d.sourceUrl?el('a',{href:d.sourceUrl,target:'_blank',rel:'noopener noreferrer'},'View original source'):null,el('div',{class:'connected-actions'},[connectedAction('Edit',()=>edit(d)),connectedAction('Documents',()=>openPrivateDocuments(d)),connectedAction('Prepare public listing',()=>{go('compose',{dealBuilderDraft:Object.fromEntries(['address','city','asking','arv','rehab','beds','baths','sqft','year','propertyType'].map(k=>[k,d[k]]))});toast('Review all fields before publishing. Private notes have not been copied.','ok');}),connectedAction('Remove',async()=>{if(confirm('Remove this private opportunity?')){await api('DELETE','/api/private-deals/'+d.id);render();}})])]));}
+ for(const d of deals){const checkbox=el('input',{type:'checkbox','aria-label':'Compare '+d.address});checkbox.onchange=()=>{if(checkbox.checked&&selected.size>=3){checkbox.checked=false;toast('Compare up to three properties','err');return;}checkbox.checked?selected.add(d.id):selected.delete(d.id);};list.append(el('article',{class:'connected-card'},[el('label',{},[checkbox,' Compare']),el('h4',{},d.address),el('p',{},d.city+' · '+d.stage),el('p',{},d.nextAction||'No next action saved'),d.sourceUrl?el('a',{href:d.sourceUrl,target:'_blank',rel:'noopener noreferrer'},'View original source'):null,el('div',{class:'connected-actions'},[connectedAction('Edit',()=>edit(d)),connectedAction('Documents',()=>openPrivateDocuments(d)),connectedAction('Prepare public listing',()=>{go('compose',{dealBuilderDraft:Object.fromEntries(['address','city','asking','arv','rehab','siteWork','beds','baths','sqft','year','propertyType'].map(k=>[k,d[k]]))});toast('Review all fields before publishing. Private notes have not been copied.','ok');}),connectedAction('Remove',async()=>{if(confirm('Remove this private opportunity?')){await api('DELETE','/api/private-deals/'+d.id);render();}})])]));}
  for(const d of saved){const cb=el('input',{type:'checkbox','aria-label':'Compare saved '+d.address});cb.onchange=()=>{if(cb.checked&&selected.size>=3){cb.checked=false;return toast('Compare up to three properties','err');}cb.checked?selected.add(d.id):selected.delete(d.id);};list.append(el('label',{class:'connected-card'},[cb,' Saved property: '+d.address+' · '+d.city]));}
  if(!deals.length)list.append(el('p',{class:'hint'},'Add a property to track it without publishing it.'));host.append(list);
  const r=await api('GET','/api/deal-introductions'),inbox=el('div',{class:'connected-card'},[el('h3',{},'Property introductions')]);for(const x of r.introductions){const actions=el('div',{class:'connected-actions'},[connectedAction('Review property',()=>go('detail',{detailId:x.listingId}))]);if(x.recipientId===state.user.id&&x.status==='pending'){actions.append(connectedAction('Accept and message seller',async()=>{await api('POST',`/api/deal-introductions/${x.id}/respond`,{accept:true});render();},true),connectedAction('Decline',async()=>{await api('POST',`/api/deal-introductions/${x.id}/respond`,{accept:false});render();}));}inbox.append(el('article',{class:'connected-card'},[el('b',{},`${x.senderName} → ${x.recipientName} · ${x.status}`),el('p',{},x.note),actions]));}if(!r.introductions.length)inbox.append(el('p',{class:'hint'},'Introductions you send and receive will appear here.'));host.append(inbox);return host;

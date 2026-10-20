@@ -1,5 +1,6 @@
 const fs=require('fs'), assert=require('assert');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/service-provider-ui.js','utf8')+'\n'+fs.readFileSync('public/bundle-ui.js','utf8');
+assert(fs.readFileSync('public/index.html','utf8').includes('/service-provider-ui.js'),'provider UI must be loaded by app shell');
 const server=fs.readFileSync('server.js','utf8');
 const css=fs.readFileSync('public/style.css','utf8');
 // Every URL-routable view must have a renderer; every literal go() target must render.
