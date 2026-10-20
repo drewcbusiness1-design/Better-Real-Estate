@@ -1574,3 +1574,13 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 /* Keep the final search layout responsive after desktop overrides. */
 @media(max-width:900px){.searchbar-pro{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 @media(max-width:620px){.searchbar-pro{grid-template-columns:minmax(0,1fr)}}
+
+/* Workspace continuity and compact administration. */
+.manage-properties{padding:24px;gap:16px}
+.manage-properties>.btn-primary{align-self:flex-start;margin:4px 0 8px;max-width:100%}
+.growth-disclosure{padding:0;overflow:hidden}
+.growth-disclosure>summary{cursor:pointer;padding:20px;font-weight:700;color:var(--ink);min-height:44px;box-sizing:border-box}
+.growth-disclosure>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-4px}
+.growth-disclosure[open]>summary{border-bottom:1px solid var(--line)}
+.land-research-facts{display:grid;gap:8px;border-bottom:1px solid var(--line);padding-bottom:16px}
+@media(max-width:600px){.manage-properties{padding:16px}.growth-disclosure>summary{padding:16px}}

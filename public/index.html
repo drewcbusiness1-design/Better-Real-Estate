@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="light" class="bre-starting">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -17,10 +17,58 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<script>
+try { if (localStorage.getItem('bre_theme') === 'dark') document.documentElement.dataset.theme = 'dark'; } catch {}
+</script>
+<style>
+html.bre-starting { background:#FAFAF8; }
+html.bre-starting[data-theme="dark"] { background:#0B0B0A; }
+.bre-starting body > :is(header,main,footer,nav) { visibility:hidden; }
+.bre-startup { position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:24px;box-sizing:border-box;background:var(--bg,#FAFAF8);color:var(--ink,#111);font-family:Inter,system-ui,sans-serif;transition:opacity .14s ease; }
+[data-theme="dark"] .bre-startup { background:var(--bg,#0B0B0A);color:var(--ink,#F7F6F1); }
+.bre-startup-inner { width:min(100%,340px);text-align:center; }
+.bre-startup-logo { display:block;width:min(100%,270px);height:auto;margin:0 auto 28px;padding:14px;box-sizing:border-box;background:#FAFAF8;border-radius:12px; }
+.bre-startup p { font-size:14px;line-height:1.6;margin:16px 0;color:var(--ink-soft,#63615C); }
+[data-theme="dark"] .bre-startup p { color:var(--ink-soft,#9C9A92); }
+.bre-startup-ring { display:block;width:24px;height:24px;margin:auto;border:2px solid var(--line,#E4E1D6);border-top-color:var(--accent,#E8590C);border-radius:50%;animation:bre-startup-spin 1s linear infinite; }
+.bre-startup a { display:inline-flex;align-items:center;justify-content:center;padding:11px 18px;border-radius:9px;background:var(--accent,#E8590C);color:var(--onaccent,#FFF);font-size:14px;font-weight:600;text-decoration:none; }
+.bre-startup a:focus-visible { outline:2px solid currentColor;outline-offset:4px; }
+.bre-startup [hidden] { display:none; }
+.bre-startup-done { opacity:0;pointer-events:none; }
+@keyframes bre-startup-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .bre-startup { transition:none; } .bre-startup-ring { animation:none; } }
+</style>
 <link rel="stylesheet" href="/style.css">
 <script src="/meta-pixel.js"></script>
 </head>
 <body>
+<div id="bre-startup" class="bre-startup" role="status" aria-live="polite" aria-label="Loading Better Real Estate">
+  <div class="bre-startup-inner">
+    <img class="bre-startup-logo" src="/brand-logo-header.png" alt="Better Real Estate — Make better your standard." width="540" height="160">
+    <span class="bre-startup-ring" aria-hidden="true"></span>
+    <p id="bre-startup-message">Loading Better Real Estate…</p>
+    <a id="bre-startup-retry" href="" hidden>Reload page</a>
+    <noscript><style>.bre-startup-ring,#bre-startup-message { display:none; }</style><p>JavaScript is required to use Better Real Estate. Enable it, then reload this page.</p></noscript>
+  </div>
+</div>
+<script>
+(() => {
+  const panel = document.getElementById('bre-startup');
+  const timer = setTimeout(() => {
+    document.getElementById('bre-startup-message').textContent = 'This is taking longer than expected. Check your connection or reload to try again.';
+    document.getElementById('bre-startup-retry').hidden = false;
+  }, 20000);
+  window.betterStartupReady = () => {
+    clearTimeout(timer);
+    document.documentElement.classList.remove('bre-starting');
+    panel.classList.add('bre-startup-done');
+    panel.setAttribute('aria-hidden', 'true');
+    panel.inert = true;
+    setTimeout(() => panel.remove(), 160);
+    delete window.betterStartupReady;
+  };
+})();
+</script>
 <header id="topbar">
   <div class="bar">
     <div class="brand"><img class="brand-logo" src="/brand-logo-header.png" alt="Better Real Estate — Make better your standard."></div>

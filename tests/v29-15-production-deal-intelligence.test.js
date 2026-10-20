@@ -4,7 +4,7 @@ const ds=require('../dealSources');
 const di=require('../dealIntelligence');
 const pkg=require('../package.json');
 
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.51','2.9.53','2.9.54','2.9.55','2.9.57','2.9.58','2.9.59','2.9.60','2.9.61','2.9.62','2.9.63','2.9.64'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.51','2.9.53','2.9.54','2.9.55','2.9.57','2.9.58','2.9.59','2.9.60','2.9.61','2.9.62','2.9.63','2.9.64','2.9.65','2.9.66'].includes(pkg.version));
 
 // Production regression: directional words/abbreviations and Regrid context must not reject the real parcel.
 const palestine={properties:{headline:'503 West Grand Prairie Street',context:{headline:'Palestine, IL',path:'/us/il/crawford/palestine'},score:96,ll_uuid:'parcel-503',fields:{
@@ -134,7 +134,7 @@ assert.equal(safe.subject.llUuid,'parcel-503');
   assert(server.includes('if(newQualified){')&&server.includes('successfulAnalysis=Boolean(compAnalysis.valuationReady&&readyForAnalysis&&!synthesisDeferred)'),'reopening the same qualified property must not create duplicate analytics/quota events');
   assert(server.includes('DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000')&&server.includes('evidenceOnlyDealAnalysis'),'AI synthesis failure must degrade to verified evidence instead of failing the whole request or burning retries');
   assert(server.includes('synthesisFailureRecorded'),'synthesis failures must be cached for a retry cooldown without consuming quota');
-  assert(app.includes('const TUTORIAL_VERSION = 83;')||app.includes('const TUTORIAL_VERSION = 83;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
+  assert(app.includes('const TUTORIAL_VERSION = 84;')||app.includes('const TUTORIAL_VERSION = 84;')&&app.includes("release:44,title:'Property research reliability'"),'tutorial v44 required for the retrieval correction');
   assert(app.includes("const r=await api('POST','/api/deal-builder/address',{address:address.value.trim(),propertyKind:propertyKind.value})"),'browser must not resend evidence');
   assert(app.includes("fe.status==='recorded'?['Recorded','recorded']")&&app.includes("fe.status==='corroborated'||fe.status==='corroborated_with_conflict'?['Corroborated','corroborated']"),'Recorded / Corroborated / Verified UX required');
   assert(app.includes("fe.status==='recorded'&&fe.recordedValue"),'single-source values must be visibly shown as Recorded while remaining excluded from verified valuation facts');

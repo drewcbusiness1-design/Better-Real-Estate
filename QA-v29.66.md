@@ -1,0 +1,6 @@
+## Verification
+Full npm test suite passed, including new executable DOM-level workspace tests and the prior signup/login handler checks. New tests exercise shared-route service navigation, URL restoration, explicit main-dashboard exit, collapsed chart controls, land results without inputs, house/land classification, admin ancillary failures, inspector Retry and stale same-route render ordering. Service endpoint integration tests check authentication, published-only access and no email/password exposure. Syntax checks for server, app, release UI, service UI, service providers and land module passed. npm run build passed.
+
+Browser visual QA is pending. This session has no Chromium executable; the browser-install attempt during v29.65 returned invalid archives. DOM tests do not establish visual fit. Before production, review 320px/390px and desktop in light/dark, service navigation and Back/Forward, provider profile/quote controls, repeated admin visits and inspector searches, Title companies editing, growth disclosure keyboard behavior, own-listing Edit, Manage my properties padding and startup behavior with slow requests. Test real house/land addresses using authorized research when available; no paid research or live payments were run here.
+
+The handoff records implemented source changes, not deployment completion.

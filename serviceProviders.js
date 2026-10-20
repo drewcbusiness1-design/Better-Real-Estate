@@ -16,6 +16,7 @@ function register(app,{requireAuth,saveDB,writeImage}) {
     res.json({providers:providers.slice(0,100),categories:CATEGORIES});
   });
   app.get('/api/services/me',requireAuth,(req,res)=>res.json({enabled:enabled(req.user),profile:profile(req.user),categories:CATEGORIES,stages:STAGES,jobs:(req.db.serviceJobs||[]).filter(j=>j.providerId===req.user.id||j.customerId===req.user.id).map(j=>({...j,notes:j.providerId===req.user.id?j.notes:undefined,customerName:req.db.users.find(u=>u.id===j.customerId)?.name||'Member',providerName:req.db.users.find(u=>u.id===j.providerId)?.name||'Provider'}))}));
+  app.get('/api/services/profiles/:id',requireAuth,(req,res)=>{const u=req.db.users.find(u=>u.id===req.params.id);if(!enabled(u))return res.status(404).json({error:'No published service profile.'});res.json({profile:profile(u)});});
   app.patch('/api/services/me',requireAuth,async(req,res)=>{
     if((req.user.roles||[req.user.role]).includes('affiliate'))return res.status(403).json({error:'Choose a real estate or service-provider account in Settings first.'});
     const b=req.body||{},old=req.user.settings?.serviceProfile||{};

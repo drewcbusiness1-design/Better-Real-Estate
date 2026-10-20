@@ -59,6 +59,7 @@ function userRoles(user) {
   return [...new Set(roles.filter(r => ACCOUNT_ROLE_LABELS[r]))];
 }
 function hasRole(user, role) { return userRoles(user).includes(role); }
+function workspaceDashboard(){return state.navigationWorkspace==='services'?'services':defaultMemberDashboard();}
 function defaultMemberDashboard(){return hasRole(state.user,'affiliate')?'affiliate':state.user?.settings?.defaultDashboard==='services'?'services':'feed';}
 function roleLabel(user) {
   if (user?.role === 'admin') return 'Admin';
@@ -177,6 +178,7 @@ const applyTheme = t => document.documentElement.setAttribute('data-theme', t ==
 const ROUTED_VIEWS = new Set(['manageproperties','feedback','services','servicesdirectory','try','support','home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
+  state.navigationWorkspace = params.get('workspace') === 'services' || ['services','servicesdirectory'].includes(requested) ? 'services' : 'main';
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
   const id = params.get('id');
   const userId = params.get('user');
@@ -202,6 +204,7 @@ function applyRouteParams(params) {
 }
 function routeUrl(view = state.view) {
   const p = new URLSearchParams();
+  if (state.navigationWorkspace === 'services') p.set('workspace','services');
   if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
   if (view === 'try' && state.tryScreen && state.tryScreen !== 'feed') p.set('screen',state.tryScreen);
@@ -289,6 +292,7 @@ async function boot() {
       state.authMode = 'signup';
     } else state.view = requestedView && ROUTED_VIEWS.has(requestedView) ? requestedView : 'home';
   }
+  if(['services','servicesdirectory'].includes(state.view))state.navigationWorkspace='services';
   if (state.user) { refreshUnread().then(()=>{ renderTop(); renderTabs(); }).catch(()=>{}); const prior=Number(state.user.settings?.tutorialHighestRank??-1), now=TUTORIAL_RANK[tutorialTier()]??0; if(prior>=0 && now>prior) state.launchNewFeatureTutorial=true; const completed=Number(state.user.settings?.tutorialCompletedVersion||0); if(completed>=28 && completed<TUTORIAL_VERSION) state.launchProductUpdateTutorial=true; const dp=state.user?.demoPreview?.type; if(state.user?.demo&&dp&&!sessionStorage.getItem('bre-demo-preview:'+dp)){sessionStorage.setItem('bre-demo-preview:'+dp,'1');if(dp==='onboarding')state.launchTutorialAfterNav=true;if(dp==='whatsnew')state.launchProductUpdateTutorial=true;} }
   if (!state.verifyToken && !state.resetToken) writeRoute('replace');
   render();
@@ -322,7 +326,7 @@ function startViewPolling(fn, ms = 5000) {
     Promise.resolve().then(fn).catch(() => {});
   }, ms);
 }
-function go(view, extra = {}, options = {}) { if(view==='feedback')state.feedbackPage=state.view==='feedback'?(state.feedbackPage||'home'):state.view; if(view==='chat'&&!Object.prototype.hasOwnProperty.call(extra,'chatListingId'))state.chatListingId=null; if(view==='compose'&&!Object.prototype.hasOwnProperty.call(extra,'composeEditId')){state.composeEditId=null;state.composePhotos=[];if(!Object.prototype.hasOwnProperty.call(extra,'dealBuilderDraft'))state.dealBuilderDraft=null;} Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
+function go(view, extra = {}, options = {}) { if(['services','servicesdirectory'].includes(view))state.navigationWorkspace='services';else if(view==='feed')state.navigationWorkspace='main'; if(view==='feedback')state.feedbackPage=state.view==='feedback'?(state.feedbackPage||'home'):state.view; if(view==='chat'&&!Object.prototype.hasOwnProperty.call(extra,'chatListingId'))state.chatListingId=null; if(view==='compose'&&!Object.prototype.hasOwnProperty.call(extra,'composeEditId')){state.composeEditId=null;state.composePhotos=[];if(!Object.prototype.hasOwnProperty.call(extra,'dealBuilderDraft'))state.dealBuilderDraft=null;} Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
 function openListingDetail(listingOrId, photoIdx = 0) {
   const preview = listingOrId && typeof listingOrId === 'object' ? listingOrId : null;
   const id = String(preview?.id || listingOrId || '').trim();
@@ -557,7 +561,7 @@ function renderTop() {
   const brandEl = document.querySelector('.brand');
   if (brandEl && !brandEl.dataset.wired) {
     brandEl.dataset.wired = '1';
-    brandEl.onclick = () => go(state.user ? defaultMemberDashboard() : 'home');
+    brandEl.onclick = () => go(state.user ? workspaceDashboard() : 'home');
   }
   const nav = document.getElementById('navlinks');
   const previousGuide=nav.querySelector('.better-guide-trigger'),motionOff=state.user?.settings?.guideAnimations===false||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -572,6 +576,7 @@ function renderTop() {
       renderTop();
     }
   }, iconSvg(document.documentElement.getAttribute('data-theme') === 'dark' ? 'sun' : 'moon', 19)));
+  if(state.user && state.navigationWorkspace==='services')nav.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('feed')},'Main dashboard'));
   if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
   if (state.user?.demo && state.demoAdminSession) nav.appendChild(el('button',{class:'demo-return-btn',title:'Return to Admin',onclick:async()=>{try{await api('POST','/api/demo/return-admin');await refreshMe();go('admin',{}, {replace:true});}catch(e){toast(e.message,'err');}}},'Return to Admin'));
   if(!hasRole(state.user,'affiliate')){
@@ -597,7 +602,7 @@ function renderTabs() {
   const tabs = document.getElementById('tabbar');
   tabs.innerHTML = '';
   if (!state.user) return;
-  const items = hasRole(state.user,'affiliate') ? [['affiliate','grid','Affiliate'],['wallet','wallet','Wallet'],['settings','settings','Settings']] : ['services','servicesdirectory'].includes(state.view)?[['services','home','Services'],['servicesdirectory','search','Find services'],['messages','chat','Messages'],['network','network','Network'],['me','user','Profile']] : [[state.user.settings?.defaultDashboard==='services'?'services':'feed','home',state.user.settings?.defaultDashboard==='services'?'Services':'Feed'], ['shop','shop','Shop'], ['compose','plus','Post'], ['network','network','Network'], ['me','user','Profile']];
+  const items = hasRole(state.user,'affiliate') ? [['affiliate','grid','Affiliate'],['wallet','wallet','Wallet'],['settings','settings','Settings']] : state.navigationWorkspace==='services'||['services','servicesdirectory'].includes(state.view)?[['services','home','Services'],['servicesdirectory','search','Find services'],['messages','chat','Messages'],['network','network','Network'],['me','user','Profile']] : [[state.user.settings?.defaultDashboard==='services'?'services':'feed','home',state.user.settings?.defaultDashboard==='services'?'Services':'Feed'], ['shop','shop','Shop'], ['compose','plus','Post'], ['network','network','Network'], ['me','user','Profile']];
   items.forEach(([v, ic, label]) => {
     const active = state.view === v || (v === 'shop' && ['shopitem','sellitem','shopmanage','shopedit'].includes(state.view));
     const icon = el('span', { class: 'ic' }, iconSvg(ic, 21));
@@ -609,7 +614,9 @@ function renderTabs() {
   });
 }
 
+let appRenderGeneration=0;
 async function renderApp() {
+  const generation=++appRenderGeneration;
   const app = document.getElementById('app');
   if(state.user||!['home','about','faq','upgrade','affiliate'].includes(state.view))window.BetterPixel?.pause();
   app.innerHTML = '';
@@ -628,13 +635,14 @@ async function renderApp() {
   try {
     const requestedView = state.view, requestedDetailId = state.detailId, requestedComposeEditId=state.composeEditId||null, requestedTryScreen=state.tryScreen||'feed', requestedTryProperty=requestedView==='try'?tryRead().property:null;
     if (requestedView === 'detail' && state.detailPreview?.id === requestedDetailId) app.appendChild(renderDetailPreview(state.detailPreview));
-    else routeLoadTimer=setTimeout(()=>{if(state.view===requestedView&&!app.firstChild)app.appendChild(el('div',{class:'route-loading',role:'status','aria-live':'polite'},[el('span',{class:'loading-wheel','aria-hidden':'true'}),el('span',{},'Loading…')]));},220);
+    else routeLoadTimer=setTimeout(()=>{if(generation===appRenderGeneration&&state.view===requestedView&&!app.firstChild)app.appendChild(el('div',{class:'route-loading',role:'status','aria-live':'polite'},[el('span',{class:'loading-wheel','aria-hidden':'true'}),el('span',{},'Loading…')]));},220);
     const rendered = await (views[requestedView] || renderHome)();
     clearTimeout(routeLoadTimer); routeLoadTimer=null;
     // Ignore stale async renders if the user navigated elsewhere while data was loading.
-    if ((requestedView==='try'&&((state.tryScreen||'feed')!==requestedTryScreen||tryRead().property!==requestedTryProperty)) || state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId) || (requestedView==='compose'&&(state.composeEditId||null)!==requestedComposeEditId)) return;
+    if (generation!==appRenderGeneration || (requestedView==='try'&&((state.tryScreen||'feed')!==requestedTryScreen||tryRead().property!==requestedTryProperty)) || state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId) || (requestedView==='compose'&&(state.composeEditId||null)!==requestedComposeEditId)) return;
     const preserveDetailScroll = requestedView === 'detail' ? window.scrollY : null;
     app.replaceChildren(rendered);
+    window.betterStartupReady?.();
     window.BetterPixel?.update({view:requestedView,signedIn:!!state.user,adMeasurement:state.user?.settings?.adMeasurement});
     if (requestedView === 'detail') {
       state.detailPreview = null;
@@ -644,11 +652,13 @@ async function renderApp() {
   }
   catch (e) {
     if(routeLoadTimer)clearTimeout(routeLoadTimer);
+    if(generation!==appRenderGeneration)return;
     app.innerHTML='';
     app.appendChild(el('div', { class: 'page' }, el('div', { class: 'empty' }, [
       el('h3', {}, 'Something went wrong'), el('p', {}, e.message),
       el('button', { class: 'btn-ghost', style: 'margin-top:18px', onclick: () => render() }, 'Try again')
     ])));
+    window.betterStartupReady?.();
   }
 }
 
@@ -910,7 +920,7 @@ function renderAuth() {
       else if (state.postAuthTarget) {
         const target = state.postAuthTarget; state.postAuthTarget = null;
         go(target.view || 'feed', { detailId: target.detailId, profileId: target.profileId, companyId: target.companyId, shopItemId: target.shopItemId, networkTab: target.networkTab || 'discover' });
-      } else godefaultMemberDashboard();
+      } else go(defaultMemberDashboard());
       });
     } catch (e) { err.textContent = e.message; }
   };
@@ -3000,7 +3010,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 83;
+const TUTORIAL_VERSION = 84;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3021,11 +3031,11 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:75,title:'A shorter introduction',copy:'The main tutorial now takes 10 steps. Open Full platform walkthrough in the dog menu or Settings for all existing feature guidance. Both tutorials can be skipped.'},
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
  {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
- {view:'manageproperties',selector:'.manage-properties',min:0,release:83,title:'Manage your property posts',copy:'Open Manage my properties from Profile or Quick Options. Edit, mark sold or delete your own posts; deletion asks for confirmation.'},
+ {view:'manageproperties',selector:'.manage-properties',min:0,release:84,title:'Manage your property posts',copy:'Open Manage my properties from Profile or Quick Options. Edit, mark sold or delete your own posts; deletion asks for confirmation.'},
  {view:'feedback',selector:'.feedback-page',min:0,release:83,title:'Private reports and feedback',copy:'Use the Better dog to report issues, suggest features and review admin replies. Screenshot attachments stay private to your report.'},
  {view:'admin',selector:'.advanced-charts',min:0,release:83,title:'Compare and style growth charts',copy:'Choose dates with optional times, compare months and switch line, bar or area charts. Current-month comparison defaults to matched elapsed days.'},
  {view:'services',selector:'.service-workspace',min:0,release:82,title:'Your service workspace',copy:'Publish services and areas, receive quote requests, reply in Messages and track jobs. Switch to Main dashboard anytime. Private notes are visible only to you. Free tools do not require a paid plan.'},
- {view:'servicesdirectory',selector:'.service-workspace',min:0,release:82,title:'Find property services',copy:'Search by service and location, view member portfolios and request a quote. Confirm credentials and terms directly; inquiries do not book work or process payments.'},
+ {view:'servicesdirectory',selector:'.service-workspace',min:0,release:84,title:'Find property services',copy:'Services, Find services, Messages, Network and Profile stay in the service workspace. Main dashboard returns to the full platform. Search providers and request quotes; verify qualifications directly.'},
  {view:'affiliate',selector:'.affiliate-center',min:0,release:73,title:'Individual commission agreements',copy:'Admin can propose a personal commission rate. Review and accept it in Affiliate Center to activate it for future eligible first paid memberships. A custom rate replaces automatic leaderboard increases until you accept a return to automatic rates. Past earnings keep their original rate.'},
  {view:'home',selector:'.herobtns',min:0,release:81,title:'Try Better before signing up',copy:'The public Try it out button opens an isolated, guided sample deal. Use the actual feed, property, profile, messaging, pipeline and Deal room screens with isolated sample data. Save a property, send a simulated message, move its pipeline stage and save the sample Deal room. Create a real account whenever you are ready.'},
  {view:'home',selector:'#sitefooter',min:0,release:73,title:'Public real estate guides',copy:'Open Real estate guides in the footer for free guides to posting wholesale properties, finding buyers and reviewing deal evidence. Property Share links provide a branded preview; share only information you are authorized to publish.'},
@@ -3271,7 +3281,7 @@ async function renderDealBuilder(){
       status.textContent='Research complete · assembling the cross-source investor analysis…';
       const r=await api('POST','/api/deal-builder/address',{address:address.value.trim(),propertyKind:propertyKind.value});paintUsage(r.usage);
       const a=r.analysis,ev=r.evidence||ev0,live=ev.subject||{},p={...(a.subject||{})},aiDraft=r.aiDraft||null;
-      if(a.landMode){status.textContent='Land research complete · Automated land valuation withheld; review parcel evidence and your own assumptions.';results.appendChild(renderLandAnalysis(a,ev,address.value));return;}
+      if(a.landMode){status.textContent='Land research complete · Automated land valuation withheld; review researched facts and parcel evidence.';results.appendChild(renderLandAnalysis(a,ev,address.value));return;}
       const cacheText=ev.cache?.retrievedAt?` · Research ${ev.cache.hit?'reused':'updated'} ${new Date(ev.cache.retrievedAt).toLocaleString()}`:''; const synthText=r.synthesisReused?' · AI synthesis reused — no new AI call':r.synthesisDeferred?' · AI synthesis unavailable — verified evidence/comp result preserved without consuming an analysis use':'';
       status.textContent=`Analysis generated ${new Date(a.generatedAt).toLocaleString()} · ${a.provider}. Confidence: ${a.confidence||'Low'}. ${a.arvMethod||'Analysis'}${cacheText}${synthText} · Verified facts are source-backed; repair scenarios remain estimates.`;
       const selected=new Set((a.comparables||[]).map((_,i)=>i));let workingArv=a.arv?.precision==='withheld'?0:Number(a.arv?.estimate)||0;
@@ -3994,6 +4004,7 @@ function openAdminAccessModal(u,onDone=()=>{}){
 
 /* ================= PROFILES ================= */
 async function renderMe() {
+  if(state.navigationWorkspace==='services')return renderServiceAccountProfile();
   const wrap = el('div', { class: 'page' });
   const [d,w] = await Promise.all([api('GET', '/api/users/' + state.user.id + '/listings'),api('GET', '/api/wallet')]);
   const mineHeader = el('div', { class: 'profilehero' }, [
@@ -4089,7 +4100,7 @@ async function renderProfile(context = liveUIContext()) {
   const { owner, publicMembership, company, listings, followerCount, friendCount, friendship, reviews, credibility } = await api('GET', '/api/users/' + encodeURIComponent(state.profileId) + '/listings');
   owner.publicMembership = publicMembership || null;
   const wrap = el('div', { class: 'page' });
-  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('feed') }, '← Back'));
+  wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.navigationWorkspace==='services'?'servicesdirectory':'feed') }, '← Back'));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
   const profileBody = el('div', { class: 'profileherobody' }, [
     el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, owner.foundingMember ? el('span',{class:'founding-badge'},owner.founderLaunchPosition?`Founding Member · #${owner.founderLaunchPosition}`:'Founding Member') : null, membershipBadge(owner.publicMembership)]),
@@ -4103,6 +4114,7 @@ async function renderProfile(context = liveUIContext()) {
   ]);
   const profileHero = el('div', { class: 'profilehero' }, [avatarNode(owner, 'profile'), profileBody]);
   wrap.appendChild(profileHero);
+  if(!context.demo && state.navigationWorkspace==='services'){try{const service=await api('GET','/api/services/profiles/'+encodeURIComponent(owner.id));wrap.appendChild(servicePublicProfileCard(service.profile));}catch(e){wrap.appendChild(el('p',{class:'hint'},'No published service profile is available for this member.'));}}
   if(credibility) wrap.appendChild(el('div',{class:'credibility-row'},[credibility.accountSince?el('span',{},'Member since '+new Date(credibility.accountSince).toLocaleDateString(undefined,{month:'short',year:'numeric'})):null,el('span',{},`${credibility.verifiedClosings||0} verified closing${credibility.verifiedClosings===1?'':'s'}`),credibility.responseRate!==null?el('span',{},`${credibility.responseRate}% response rate`):null].filter(Boolean)));
   if (!context.demo) wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${roleLabel(owner)}${owner.location ? ' · ' + owner.location : ''}` }));
 
@@ -5154,6 +5166,7 @@ function quickOptionCatalog(){
   {id:'manageproperties',title:'Manage my properties',desc:'Edit, mark sold or delete your posts',view:'manageproperties'},
   {id:'feedback',title:'Report an issue',desc:'Private reports and feedback',view:'feedback'},
   {id:'services',title:'Service workspace',desc:'Profile, inquiries and jobs',view:'services'},
+  {id:'titledirectory',title:'Title companies',desc:'Find and manage independent title contacts',view:'titledirectory'},
   {id:'servicesdirectory',title:'Find services',desc:'Property professionals near you',view:'servicesdirectory'},
   {id:'compose',title:'Post a property',desc:'Create or import a listing',view:'compose'},
   {id:'dealbuilder',title:'Analyze a deal',desc:'Open AI Deal Builder',view:'dealbuilder'},
@@ -5242,7 +5255,7 @@ async function renderAdmin() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('me') }, '← Back'));
   wrap.appendChild(el('h2', {}, 'Admin'));
-  wrap.appendChild(await renderTitleDirectory('',true));
+  wrap.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('titledirectory')},'Manage title companies'));
   try {
     const rev = await api('GET', '/api/admin/revenue');
     wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Revenue'));
@@ -5259,7 +5272,7 @@ async function renderAdmin() {
   const growthHost=el('div'),growthToggle=el('button',{class:'btn-ghost growth-toggle','aria-expanded':'false'},'View growth charts');
   const loadActivity=async()=>{const request=++activityRequest;if(activityPreset==='custom'&&(!customStart.value||!customEnd.value||new Date(customStart.value)>new Date(customEnd.value))){toast('Choose a start date before the end date.','err');return;}let url='/api/admin/activity?preset='+activityPreset+(showGrowth?'&charts=1':'');if(activityPreset==='custom')url+=`&start=${encodeURIComponent(customStart.value)}&end=${encodeURIComponent(customEnd.value)}&startTime=${encodeURIComponent(customStartTime.value)}&endTime=${encodeURIComponent(customEndTime.value)}&timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York')}`;const d=await api('GET',url);if(request!==activityRequest)return;growthHost.replaceChildren();if(showGrowth&&d.growth)growthHost.appendChild(renderGrowthCharts(d.growth));activityHost.innerHTML='';if(d.historyNote)activityHost.appendChild(el('p',{class:'sub'},d.historyNote));activityHost.appendChild(el('div',{class:'statgrid'},[stat(d.metrics.activeNow,'Active now'),stat(d.metrics.uniqueActive,'Unique active'),stat(d.metrics.returning,'Returning'),stat(d.metrics.signups,'New signups'),stat(d.metrics.listings,'Listings'),stat(d.metrics.messages,'Messages'),stat(d.metrics.dealBuilderRuns,'Deal analyses'),stat(d.metrics.profilesCompleted,'Profiles set up'),stat(d.metrics.engaged,'Engaged users'),stat(d.metrics.paid,'Paid access')]));if(d.activeNow.length){activityHost.appendChild(el('div',{class:'admin-active-list'},[el('b',{},'On the site now'),...d.activeNow.map(u=>el('div',{class:'admin-active-user'},[el('span',{},u.name),el('small',{},[u.plan,...(u.markets||[])].filter(Boolean).join(' · '))]))]));}if(d.markets.length)activityHost.appendChild(el('div',{class:'market-mini'},d.markets.map(m=>el('span',{},`${m.state} · ${m.count}`))));if(d.plans)activityHost.appendChild(el('div',{class:'market-mini'},Object.entries(d.plans).map(([p,n])=>el('span',{},`${p} · ${n}`))));};
   [['24h','24 hours'],['7d','1 week'],['30d','1 month'],['all','All time'],['custom','Custom']].forEach(([v,l])=>activityControls.appendChild(el('button',{class:v==='24h'?'active':'',onclick:async e=>{activityPreset=v;[...activityControls.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));e.currentTarget.classList.add('active');customStart.style.display=customEnd.style.display=customStartTime.style.display=customEndTime.style.display=v==='custom'?'block':'none';if(v!=='custom'||(customStart.value&&customEnd.value))await loadActivity();}},l)));
-  customStart.style.display=customEnd.style.display=customStartTime.style.display=customEndTime.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd,customStartTime,customEndTime);growthToggle.onclick=()=>withButtonBusy(growthToggle,async()=>{showGrowth=!showGrowth;growthToggle.textContent=showGrowth?'Hide growth charts':'View growth charts';growthToggle.setAttribute('aria-expanded',String(showGrowth));try{await loadActivity();}catch(e){toast(e.message,'err');}});activityCard.append(activityControls,activityHost,growthToggle,growthHost);wrap.appendChild(activityCard);wrap.appendChild(await advancedChartsPanel());await loadActivity();
+  customStart.style.display=customEnd.style.display=customStartTime.style.display=customEndTime.style.display='none';customStart.onchange=customEnd.onchange=()=>{if(customStart.value&&customEnd.value)loadActivity();};activityControls.append(customStart,customEnd,customStartTime,customEndTime);growthToggle.onclick=()=>withButtonBusy(growthToggle,async()=>{showGrowth=!showGrowth;growthToggle.textContent=showGrowth?'Hide growth charts':'View growth charts';growthToggle.setAttribute('aria-expanded',String(showGrowth));try{await loadActivity();}catch(e){toast(e.message,'err');}});activityCard.append(activityControls,activityHost,growthToggle,growthHost);wrap.appendChild(activityCard);wrap.appendChild(await advancedChartsPanel());loadActivity().catch(e=>activityHost.replaceChildren(el('p',{class:'errmsg'},e.message),serviceAction('Retry activity',loadActivity)));
   wrap.appendChild(el('div',{class:'sectiontitle'},'Demo accounts'));
   const demoCard=el('div',{class:'card demo-account-card'});
   const demoHead=el('div',{class:'demo-account-head'},[el('div',{},[el('div',{class:'dispoeyebrow'},'CONTROLLED TESTING'),el('h3',{},'Create demo account'),el('p',{class:'sub'},'Create a safe account for testing Better Real Estate. Demo activity never consumes Founder places, changes growth analytics, or creates real billing, referral rewards, affiliate commissions or payouts.')]),el('span',{class:'demo-admin-badge'},'DEMO')]);
@@ -5285,11 +5298,15 @@ async function renderAdmin() {
   pvClear.onclick=async()=>{if(!pvUser.value)return;try{await api('POST',`/api/admin/demo-accounts/${pvUser.value}/preview`,{type:'none'});pvStatus.innerHTML='';pvStatus.append(el('b',{},'Preview reset'),el('span',{},'The selected demo account is back to its normal demo state.'));toast('Demo preview reset','ok');}catch(e){pvStatus.textContent=e.message;}};
   pvEnter.onclick=async()=>{if(!pvUser.value)return;if(!confirm('Enter this demo account now? You can return to Admin using the “Return to Admin” button in the top navigation.'))return;try{const r=await api('POST',`/api/admin/demo-accounts/${pvUser.value}/enter`);state.user=r.user;state.access=r.access;state.demoAdminSession=true;state.launchTutorialAfterNav=false;state.launchProductUpdateTutorial=false;go('feed',{}, {replace:true});}catch(e){toast(e.message,'err');}};
   previewGrid.append(field('Demo account',pvUser,'Only controlled Demo accounts appear here.'),field('Experience',pvType),field('Founder position',pvPosition,'Used only for the Founder welcome.'));
-  previewCard.append(previewHead,previewGrid,el('div',{class:'demo-action-row preview-actions'},[pvRun,pvEnter,pvClear]),pvStatus);wrap.appendChild(previewCard);await refreshDemoChoices();
+  previewCard.append(previewHead,previewGrid,el('div',{class:'demo-action-row preview-actions'},[pvRun,pvEnter,pvClear]),pvStatus);wrap.appendChild(previewCard);refreshDemoChoices().catch(e=>{pvStatus.textContent=e.message;pvStatus.append(serviceAction('Retry demo list',refreshDemoChoices));});
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
   const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;
+  let inspectorRequest=0;
   const loadInspector=async()=>{
-    const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));ih.innerHTML='';
+    const request=++inspectorRequest;
+    try {
+    const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));if(request!==inspectorRequest)return;ih.innerHTML='';
+    if(!r.users.length)ih.appendChild(el('p',{class:'hint'},'No matching members.'));
     r.users.slice(0,20).forEach(u=>{
       const badges=el('div',{class:'inspector-badges'});
       if(u.demo)badges.appendChild(el('span',{class:'demo-admin-badge'},'DEMO'));
@@ -5312,10 +5329,11 @@ async function renderAdmin() {
       if (!hasRole(u,'affiliate')) actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{const next=!u.foundingMember;if(!confirm(`${next?'Grant':'Remove'} Founding Member status for ${u.name}?`))return;try{await api('POST','/api/admin/set-founding-member',{userId:u.id,foundingMember:next});toast(next?'Founding Member granted':'Founding Member removed','ok');await loadInspector();}catch(e){toast(e.message,'err')} }},u.foundingMember?'Remove founding':'Grant founding'));
       ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,u.phone,accessText].filter(Boolean).join(' · ')),el('small',{},details.join(' · '))]),badges,actions]));
     });
+    }catch(e){if(request!==inspectorRequest)return;ih.replaceChildren(el('p',{class:'errmsg'},e.message),serviceAction('Retry user inspector',loadInspector));}
   };
-  iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};await loadInspector();
+  iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};loadInspector();
 
-  const { pending } = await api('GET', '/api/admin/pending');
+  let pending=[];try{pending=(await api('GET','/api/admin/pending')).pending;}catch(e){wrap.appendChild(el('p',{class:'errmsg'},'Closed-deal queue unavailable: '+e.message));}
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Verify closed deals'));
   const c = el('div', { class: 'card' });
   if (!pending.length) c.appendChild(el('div', { class: 'listrow' }, el('div', { class: 's' }, 'Nothing pending.')));
@@ -5328,7 +5346,7 @@ async function renderAdmin() {
   ])));
   wrap.appendChild(c);
 
-  const { pending: vpend } = await api('GET', '/api/admin/verifications');
+  let vpend=[];try{vpend=(await api('GET','/api/admin/verifications')).pending;}catch(e){wrap.appendChild(el('p',{class:'errmsg'},'Verification queue unavailable: '+e.message));}
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Seller verification requests'));
   const v = el('div', { class: 'card' });
   if (!vpend.length) v.appendChild(el('div', { class: 'listrow' }, el('div', { class: 's' }, 'Nothing pending.')));
@@ -6321,7 +6339,7 @@ async function openComparison(ids){if(!ids.length)throw new Error('Select one to
 async function openPrivateDocuments(d){const {card}=connectedModal('Private documents'),list=el('div'),file=el('input',{type:'file',accept:'.pdf,image/png,image/jpeg,image/webp','aria-label':'Choose document'});const load=async()=>{const r=await api('GET',`/api/private-deals/${d.id}/documents`);list.replaceChildren();for(const x of r.documents)list.append(el('p',{},[el('a',{href:x.url,target:'_blank',rel:'noopener'},x.name),connectedAction('Remove',async()=>{await api('DELETE',`/api/private-deals/${d.id}/documents/${x.id}`);await load();})]));};card.append(el('p',{class:'sub'},'Upload only documents you have permission to use. These files are visible only to you.'),list,file,connectedAction('Upload',async()=>{const f=file.files?.[0];if(!f||f.size>5*1024*1024)throw new Error('Choose a PDF or image up to 5 MB.');const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(f);});await api('POST',`/api/private-deals/${d.id}/documents`,{name:f.name,dataUrl});file.value='';await load();},true));await load();}
 async function openCrmImport(){const {card,close}=connectedModal('Import private buyer contacts'),file=el('input',{type:'file',accept:'.csv,text/csv','aria-label':'Choose CSV'}),preview=el('div');let csv='',mapping={},selected=[],headers=[];card.append(el('p',{class:'sub'},'Up to 500 contacts. Preview and choose rows before importing. Existing contacts are not overwritten, and no invitations or accounts are created.'),file,preview);const show=async()=>{const r=await api('POST','/api/buyer-crm/import',{csv,mapping});headers=r.headers;selected=r.rows.filter(x=>!x.error&&!x.duplicate).map(x=>x.index);preview.replaceChildren();const maps=el('div',{class:'connected-grid'});for(const k of ['name','email','phone','markets','buyBox','notes','status','criteria']){const select=el('select',{'aria-label':'CSV column for '+k},[el('option',{value:-1},'Do not import'),...headers.map((h,i)=>el('option',{value:i},h))]);select.value=mapping[k]??headers.findIndex(h=>h.toLowerCase().trim()===k.toLowerCase());select.onchange=()=>{mapping[k]=Number(select.value);};maps.append(el('label',{},[k,select]));}preview.append(maps,connectedAction('Refresh preview',show));for(const x of r.rows){const cb=el('input',{type:'checkbox',disabled:!!(x.error||x.duplicate)});cb.checked=selected.includes(x.index);cb.onchange=()=>{selected=cb.checked?[...selected,x.index]:selected.filter(i=>i!==x.index);};preview.append(el('label',{class:'connected-card'},[cb,`${x.row.name||'(No name)'} · ${x.row.email||'No email'}${x.duplicate?' · Duplicate skipped':''}${x.error?' · '+x.error:''}`]));}preview.append(connectedAction('Import selected contacts',async()=>{const r=await api('POST','/api/buyer-crm/import',{csv,mapping,commit:true,selected});close();toast(`${r.imported} contacts imported`,'ok');render();},true));};file.onchange=async()=>{try{if(!file.files[0]||file.files[0].size>1000000)throw new Error('Choose a CSV smaller than 1 MB.');csv=await file.files[0].text();mapping={};await show();}catch(e){toast(e.message,'err');}};}
 
-async function renderTitleDirectoryPage(){const page=el('div',{class:'page title-directory-page'},[el('h2',{},'Title Directory')]);page.append(await renderTitleDirectory('',state.user?.role==='admin'));return page;}
+async function renderTitleDirectoryPage(){const page=el('div',{class:'page title-directory-page'},[el('h2',{},'Title companies'),serviceAction('Back to '+(state.access?.adminUnlimited?'Admin':'Profile'),async()=>go(state.access?.adminUnlimited?'admin':'me'))]);page.append(await renderTitleDirectory('',state.user?.role==='admin'));return page;}
 async function promoEmailControls(){
  const data=await api('GET','/api/admin/email-center/promotions'),host=el('section',{class:'card promo-controls',style:'padding:16px'}),config=data.config;
  host.append(el('h3',{},'Automatic promotional emails'),el('p',{class:'sub'},data.configured?'Provider configuration is ready. Sending also depends on the pause control below and each member’s eligibility.':'Sending is unavailable: the environment switch, provider key and mailing address must all be configured.'),el('p',{class:'hint'},`${data.eligibleCount} currently eligible member${data.eligibleCount===1?'':'s'}. Verified, opted-in, non-demo members only; unsubscribed members are excluded. At most one automatic promotional email per member per selected interval; the daily job checks eligibility.`));
