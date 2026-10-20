@@ -1,0 +1,6 @@
+## Validation and limits
+Full npm test suite, build and server/app/shared-UI syntax checks passed. New integration fixtures exceed the previous 40-account cutoff and verify that traversing pages returns every retained ID exactly once, with affiliates/providers/admins/demos/unconfirmed accounts included, newest-first order, filtered/search inventory, page-size bounds, empty results and admin-only access. Executed DOM tests cover 25 displayed rows, counts, Previous/Next through the final page, affiliate filtering and search reset. A real local signup/apply flow confirms the distinction between affiliate signup, Not submitted inspector status and a submitted Pending application appearing in admin requests. No real customer account was used.
+
+Browser visual QA remains pending because Chromium is unavailable in this runtime. The supplied screenshot was inspected to identify the label-wrapping cause, but no new screenshot review is claimed. Check calculator alignment on desktop and phone in light/dark; inspect list counts, filters, paging and older demo selection. Local tests use fixtures and no live mail, research credits, payments, account changes or deployments.
+
+No providers, dependencies, prices, environment variables or migrations added. Existing exact logo/mascot assets retained. Always provide both install/test and commit/push commands with this update.

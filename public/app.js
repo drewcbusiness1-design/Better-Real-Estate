@@ -3011,7 +3011,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 86;
+const TUTORIAL_VERSION = 87;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3032,7 +3032,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:75,title:'A shorter introduction',copy:'The main tutorial now takes 10 steps. Open Full platform walkthrough in the dog menu or Settings for all existing feature guidance. Both tutorials can be skipped.'},
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
  {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
- {view:'admin',selector:'.admin-section-controls',min:0,release:86,title:'Organized administration',copy:'Open sections and member entries to view profiles, manage grants, send confirmation reminders or choose message/email from the mail icon. Broadcast history expands to show saved content. Section choices are remembered on this device.'},
+ {view:'admin',selector:'.admin-section-controls',min:0,release:87,title:'Organized administration',copy:'User Inspector defaults to all account types, including affiliates. Search, filter or page through the counted list. Open member entries to edit profiles, manage grants or choose reminder/message/email actions. Broadcast history expands to show saved content. Section choices are remembered on this device.'},
  {view:'manageproperties',selector:'.manage-properties',min:0,release:84,title:'Manage your property posts',copy:'Open Manage my properties from Profile or Quick Options. Edit, mark sold or delete your own posts; deletion asks for confirmation.'},
  {view:'feedback',selector:'.feedback-page',min:0,release:83,title:'Private reports and feedback',copy:'Use the Better dog to report issues, suggest features and review admin replies. Screenshot attachments stay private to your report.'},
  {view:'admin',selector:'.advanced-charts',min:0,release:83,title:'Compare and style growth charts',copy:'Choose dates with optional times, compare months and switch line, bar or area charts. Current-month comparison defaults to matched elapsed days.'},
@@ -5285,7 +5285,7 @@ async function renderAdmin() {
   const dPlan=el('select',{},[['free','Free'],['pro','Better Plus'],['platinum','Platinum'],['wholesale','Wholesale Teams']].map(([v,l])=>el('option',{value:v},l)));
   const dStatus=el('div',{class:'demo-feedback','aria-live':'polite'});
   const createDemo=el('button',{class:'btn-primary demo-primary-action'},'Create Demo Account');
-  const refreshDemoChoices=async()=>{const r=await api('GET','/api/admin/user-inspector?q=');pvUser.innerHTML='';const demos=r.users.filter(u=>u.demo);pvUser.appendChild(el('option',{value:''},demos.length?'Select a demo account':'No demo accounts yet'));demos.forEach(u=>pvUser.appendChild(el('option',{value:u.id},`${u.name} · ${adminPlanLabel(u.demoPlan||'free')}`)));updatePreviewControls();};
+  const refreshDemoChoices=async()=>{const demos=[];let page=1;while(true){const r=await api('GET','/api/admin/user-inspector?accountType=demo&pageSize=100&page='+page);demos.push(...r.users.filter(u=>u.demo));if(!r.pagination?.hasNext)break;page++;}pvUser.innerHTML='';pvUser.appendChild(el('option',{value:''},demos.length?'Select a demo account':'No demo accounts yet'));demos.forEach(u=>pvUser.appendChild(el('option',{value:u.id},`${u.name} · ${adminPlanLabel(u.demoPlan||'free')}`)));updatePreviewControls();};
   createDemo.onclick=async()=>{dStatus.textContent='';createDemo.disabled=true;try{const r=await api('POST','/api/admin/demo-accounts',{name:dName.value.trim(),email:dEmail.value.trim(),password:dPass.value,role:dRole.value,demoPlan:dPlan.value});dName.value=dEmail.value=dPass.value='';dStatus.textContent=`Created ${r.user.name}. Choose it below to start a preview.`;dStatus.className='demo-feedback success';toast('Demo account created','ok');await loadInspector();await refreshDemoChoices();pvUser.value=r.user.id;updatePreviewControls();}catch(e){dStatus.textContent=e.message;dStatus.className='demo-feedback error';}finally{createDemo.disabled=false;}};
   demoGrid.append(field('Display name',dName),field('Demo email',dEmail),field('Password',dPass),field('Role',dRole),field('Simulated membership',dPlan));
   demoCard.append(demoHead,demoGrid,el('div',{class:'demo-action-row'},[createDemo]),dStatus);wrap.appendChild(demoCard);
@@ -5302,14 +5302,16 @@ async function renderAdmin() {
   previewGrid.append(field('Demo account',pvUser,'Only controlled Demo accounts appear here.'),field('Experience',pvType),field('Founder position',pvPosition,'Used only for the Founder welcome.'));
   previewCard.append(previewHead,previewGrid,el('div',{class:'demo-action-row preview-actions'},[pvRun,pvEnter,pvClear]),pvStatus);wrap.appendChild(previewCard);refreshDemoChoices().catch(e=>{pvStatus.textContent=e.message;pvStatus.append(serviceAction('Retry demo list',refreshDemoChoices));});
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
-  const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;
+  const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username, email or account ID…','aria-label':'Search all user accounts'}),ih=el('div'),filter=el('select',{'aria-label':'User Inspector account type'},[['all','All accounts'],['affiliate','Affiliate accounts'],['services','Service providers'],['members','Regular members'],['admin','Admins'],['demo','Demo accounts'],['unconfirmed','Unconfirmed email']].map(([value,label])=>el('option',{value},label))),count=el('p',{class:'hint',role:'status','aria-live':'polite'}),pager=el('div',{class:'inspector-pagination'});filter.value='all';let inspectorPage=1;
+  const previous=serviceAction('Previous page',async()=>{inspectorPage=Math.max(1,inspectorPage-1);await loadInspector();}),next=serviceAction('Next page',async()=>{inspectorPage++;await loadInspector();}),pageLabel=el('span',{class:'hint'});previous.disabled=next.disabled=true;pager.append(previous,pageLabel,next);inspector.append(el('div',{class:'inspector-filters'},[iq,filter]),count,ih,pager);wrap.appendChild(inspector);let it;
   let inspectorRequest=0;const inspectorOpen=new Set();
   const loadInspector=async()=>{
-    const request=++inspectorRequest;
+    const request=++inspectorRequest;previous.disabled=next.disabled=true;count.textContent='Loading accounts…';
     try {
-    const r=await api('GET','/api/admin/user-inspector?q='+encodeURIComponent(iq.value));if(request!==inspectorRequest)return;ih.innerHTML='';
+    const r=await api('GET','/api/admin/user-inspector?'+new URLSearchParams({q:iq.value,accountType:filter.value,page:String(inspectorPage),pageSize:'25'}));if(request!==inspectorRequest)return;ih.innerHTML='';
+    const pagination=r.pagination||{page:1,pageSize:r.users.length,total:r.users.length,totalPages:1,hasNext:false,hasPrevious:false};inspectorPage=pagination.page;previous.disabled=!pagination.hasPrevious;next.disabled=!pagination.hasNext;pageLabel.textContent='Page '+pagination.page+' of '+pagination.totalPages;count.textContent=pagination.total?'Showing '+((pagination.page-1)*pagination.pageSize+1)+'–'+Math.min(pagination.page*pagination.pageSize,pagination.total)+' of '+pagination.total+' matching accounts · '+(r.totalUsers??pagination.total)+' total accounts':'No matching accounts · '+(r.totalUsers??0)+' total accounts';
     if(!r.users.length)ih.appendChild(el('p',{class:'hint'},'No matching members.'));
-    r.users.slice(0,20).forEach(u=>{
+    r.users.forEach(u=>{
       const badges=el('div',{class:'inspector-badges'});
       if(u.demo)badges.appendChild(el('span',{class:'demo-admin-badge'},'DEMO'));
       if(u.verified)badges.appendChild(el('span',{class:'vbadge'},'✓ Verified'));
@@ -5335,9 +5337,9 @@ async function renderAdmin() {
       let loaded=false,inFlight=false;const loadProfile=async()=>{if(inFlight)return;inFlight=true;profileHost.replaceChildren(el('p',{class:'hint'},'Loading profile…'));try{profileHost.replaceChildren(await inspectorProfilePanel(u,loadInspector));loaded=true;}catch(e){profileHost.replaceChildren(el('p',{class:'errmsg'},e.message),serviceAction('Retry profile',loadProfile));}finally{inFlight=false;}};
       member.ontoggle=()=>{if(member.open){inspectorOpen.add(u.id);if(!loaded)loadProfile();}else inspectorOpen.delete(u.id);};member.open=inspectorOpen.has(u.id);if(member.open)loadProfile();ih.appendChild(member);
     });
-    }catch(e){if(request!==inspectorRequest)return;ih.replaceChildren(el('p',{class:'errmsg'},e.message),serviceAction('Retry user inspector',loadInspector));}
+    }catch(e){if(request!==inspectorRequest)return;count.textContent='Accounts could not be loaded.';ih.replaceChildren(el('p',{class:'errmsg'},e.message),serviceAction('Retry user inspector',loadInspector));}
   };
-  iq.oninput=()=>{clearTimeout(it);it=setTimeout(loadInspector,200)};loadInspector();
+  iq.oninput=()=>{inspectorPage=1;inspectorRequest++;clearTimeout(it);it=setTimeout(loadInspector,200)};filter.onchange=()=>{inspectorPage=1;clearTimeout(it);loadInspector();};loadInspector();
 
   let pending=[];try{pending=(await api('GET','/api/admin/pending')).pending;}catch(e){wrap.appendChild(el('p',{class:'errmsg'},'Closed-deal queue unavailable: '+e.message));}
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Verify closed deals'));

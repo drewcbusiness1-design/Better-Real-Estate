@@ -20,7 +20,7 @@ assert(css.includes('.profile-row-badge')&&css.includes('.tab-msgbadge'),'notifi
 // Founder deletion/rank reconciliation.
 assert(server.includes('voidedAt')&&server.includes('voidedEmailLower')&&server.includes('formerUserId'),'Founder deletion tombstone missing');
 assert(server.includes('activeAwards.sort')&&server.includes('user.founderLaunchPosition = position'),'Founder ranks must compact after deleted accounts');
-assert(server.includes(".sort((a,b)=>{const ta=new Date(a.createdAt||0).getTime(),tb=new Date(b.createdAt||0).getTime();return tb-ta"),'User Inspector must default newest-first');
+assert(server.includes(".sort((a,b)=>{const ta=Date.parse(a.createdAt)||0,tb=Date.parse(b.createdAt)||0;return tb-ta"),'User Inspector must default newest-first');
 
 // Requested UX cleanup.
 assert(!app.includes('function downloadProfileCard')&&!app.toLowerCase().includes('shareable profile card'),'Shareable Profile Card feature must be removed');
