@@ -1584,3 +1584,39 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .growth-disclosure[open]>summary{border-bottom:1px solid var(--line)}
 .land-research-facts{display:grid;gap:8px;border-bottom:1px solid var(--line);padding-bottom:16px}
 @media(max-width:600px){.manage-properties{padding:16px}.growth-disclosure>summary{padding:16px}}
+
+.admin-section{margin:12px 0;overflow:hidden;padding:0}
+.admin-section>summary{padding:18px 20px;cursor:pointer;min-height:48px;color:var(--ink)}
+.admin-section-title{font-weight:700;font-size:16px}
+.admin-section>summary small{display:block;margin:5px 0 0 20px;color:var(--ink-soft);font-size:12px;line-height:1.5}
+.admin-section[open]>summary{border-bottom:1px solid var(--line)}
+.admin-section-body{padding:16px;display:grid;gap:16px;min-width:0}
+.admin-section-body>.sectiontitle{margin:0}
+.admin-section-controls{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.admin-section>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-4px}
+.guide-support-footer{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:18px;margin-top:20px;width:100%}
+.guide-support-footer button{width:100%;min-height:44px;white-space:normal;text-align:center}
+.land-metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.land-metric-grid>*{min-width:0;overflow-wrap:anywhere}
+.land-value-range{font-size:24px;font-weight:700;color:var(--ink)}
+.land-fact{padding:10px 0;border-bottom:1px solid var(--line)}
+.land-fact summary{cursor:pointer;line-height:1.6;overflow-wrap:anywhere}
+.land-analysis a{overflow-wrap:anywhere}
+@media(max-width:600px){.admin-section>summary{padding:16px}.admin-section-body{padding:12px}.land-metric-grid{grid-template-columns:minmax(0,1fr)}}
+
+.inspector-member{border-bottom:1px solid var(--line);min-width:0}
+.inspector-member>summary{padding:16px;cursor:pointer;color:var(--ink);overflow-wrap:anywhere}
+.inspector-member-name{font-weight:700;margin-right:10px}
+.inspector-member>summary>.hint{display:block;margin:5px 0}
+.inspector-member>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+.inspector-member-body{padding:0 16px 18px;min-width:0;overflow-wrap:anywhere}
+.inspector-account{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);gap:8px;font-size:13px}
+.inspector-account dt{color:var(--ink-soft)}.inspector-account dd{margin:0;overflow-wrap:anywhere}
+.inspector-avatar{width:72px;height:72px;border-radius:50%;object-fit:cover}
+.inspector-edit>summary{cursor:pointer;font-weight:600;padding:12px 0}
+@media(max-width:600px){.inspector-member-body{padding:0 10px 14px}.inspector-profile{padding:12px}.inspector-account{grid-template-columns:minmax(0,1fr)}}
+
+.admin-access-inline{width:100%;max-width:none;max-height:none;overflow:visible;box-shadow:none;padding:12px 0}
+.inspector-member .admin-access-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+.inspector-member .admin-access-form{grid-template-columns:minmax(0,1fr)}
+@media(max-width:600px){.inspector-member .admin-access-summary{grid-template-columns:minmax(0,1fr)}}

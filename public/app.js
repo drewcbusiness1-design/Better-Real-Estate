@@ -2966,7 +2966,7 @@ function openBetterGuide(){
     el('button',{onclick:()=>navigateFromGuide('faq')},[el('b',{},'Help center'),el('span',{},'Browse common questions')]),
     el('button',{onclick:()=>navigateFromGuide('support')},[el('b',{},'Chat with Better'),el('span',{},'AI help or request a person')])
   );
-  panel.appendChild(quick);panel.appendChild(platformHelpPanel());
+  panel.appendChild(quick);panel.appendChild(platformHelpPanel(false));
   panel.appendChild(el('div',{class:'guide-section-label'},'SEARCH BETTER HELP'));
   const input=el('input',{class:'guide-search',placeholder:affiliateGuideOnly()?'Try “scripts”, “prospects”, or “earnings”':'Try “ARV”, “post a property”, or “affiliate”','aria-label':'Search Better Help'}),results=el('div',{class:'guide-search-results'});
   const drawResults=()=>{const q=input.value.trim().toLowerCase();results.innerHTML='';const rows=(q?guideHelpCatalog().filter(x=>(x.terms+' '+x.title+' '+x.copy).toLowerCase().includes(q)):guideHelpCatalog().slice(0,4)).slice(0,6);if(!rows.length){results.appendChild(el('div',{class:'guide-empty'},'No exact help topic found. Try a shorter search or contact support.'));return;}rows.forEach(x=>results.appendChild(el('button',{onclick:()=>navigateFromGuide(x.view)},[el('b',{},x.title),el('span',{},x.copy)])));};
@@ -2977,6 +2977,7 @@ function openBetterGuide(){
   if(affiliateGuideOnly())panel.appendChild(el('div',{class:'guide-premium-card unlocked'},[el('b',{},'Help with your affiliate work'),el('div',{class:'hint'},'Use your approved tracked link, keep prospect notes private, and review the current terms for eligible earnings.'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('affiliate')},'Open affiliate center')]));
   else if(betterGuidePremium()){const insight=guidePremiumInsight();panel.appendChild(el('div',{class:'guide-premium-card unlocked'},[el('b',{},insight.title),el('div',{class:'hint'},insight.copy),el('div',{class:'guide-premium-actions'},[el('button',{class:'btn-primary',onclick:()=>navigateFromGuide(insight.view,insight.module)},'Open guided workflow'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||'foundations')},'Continue learning')]) ]));}
   else panel.appendChild(el('div',{class:'guide-premium-card'},[el('b',{},'Free help stays useful'),el('div',{class:'hint'},'The course, product help and basic contextual guidance are free. Paid memberships add deeper personalized workflow guidance without locking the fundamentals away.'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('upgrade')},'See membership options')]));
+  panel.appendChild(guideSupportFooter());
   shade.appendChild(panel);document.body.appendChild(shade);document.querySelector('.better-guide-trigger')?.classList.add('is-open');requestAnimationFrame(()=>{reactBetterMascot('wave');input.focus({preventScroll:true});});
 }
 
@@ -3010,7 +3011,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 84;
+const TUTORIAL_VERSION = 85;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3031,6 +3032,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:75,title:'A shorter introduction',copy:'The main tutorial now takes 10 steps. Open Full platform walkthrough in the dog menu or Settings for all existing feature guidance. Both tutorials can be skipped.'},
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
  {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
+ {view:'admin',selector:'.admin-section-controls',min:0,release:85,title:'Organized administration',copy:'Open each section to access its tools. Expand all and Collapse all control the full page; section choices are remembered on this device.'},
  {view:'manageproperties',selector:'.manage-properties',min:0,release:84,title:'Manage your property posts',copy:'Open Manage my properties from Profile or Quick Options. Edit, mark sold or delete your own posts; deletion asks for confirmation.'},
  {view:'feedback',selector:'.feedback-page',min:0,release:83,title:'Private reports and feedback',copy:'Use the Better dog to report issues, suggest features and review admin replies. Screenshot attachments stay private to your report.'},
  {view:'admin',selector:'.advanced-charts',min:0,release:83,title:'Compare and style growth charts',copy:'Choose dates with optional times, compare months and switch line, bar or area charts. Current-month comparison defaults to matched elapsed days.'},
@@ -3281,7 +3283,7 @@ async function renderDealBuilder(){
       status.textContent='Research complete · assembling the cross-source investor analysis…';
       const r=await api('POST','/api/deal-builder/address',{address:address.value.trim(),propertyKind:propertyKind.value});paintUsage(r.usage);
       const a=r.analysis,ev=r.evidence||ev0,live=ev.subject||{},p={...(a.subject||{})},aiDraft=r.aiDraft||null;
-      if(a.landMode){status.textContent='Land research complete · Automated land valuation withheld; review researched facts and parcel evidence.';results.appendChild(renderLandAnalysis(a,ev,address.value));return;}
+      if(a.landMode){status.textContent=a.landReport?.range?'Land research complete · Comparable range available; review its evidence and limitations.':'Land research complete · Review parcel facts, financial context and closed-sale evidence. Unsupported value remains withheld.';results.appendChild(renderLandAnalysis(a,ev,address.value));results.appendChild(serviceAction('Refresh land research',async()=>analyze(true)));return;}
       const cacheText=ev.cache?.retrievedAt?` · Research ${ev.cache.hit?'reused':'updated'} ${new Date(ev.cache.retrievedAt).toLocaleString()}`:''; const synthText=r.synthesisReused?' · AI synthesis reused — no new AI call':r.synthesisDeferred?' · AI synthesis unavailable — verified evidence/comp result preserved without consuming an analysis use':'';
       status.textContent=`Analysis generated ${new Date(a.generatedAt).toLocaleString()} · ${a.provider}. Confidence: ${a.confidence||'Low'}. ${a.arvMethod||'Analysis'}${cacheText}${synthText} · Verified facts are source-backed; repair scenarios remain estimates.`;
       const selected=new Set((a.comparables||[]).map((_,i)=>i));let workingArv=a.arv?.precision==='withheld'?0:Number(a.arv?.estimate)||0;
@@ -3960,17 +3962,18 @@ function showFounderWelcome(force=false){
 }
 
 function adminPlanLabel(plan){return plan==='wholesale'?'Wholesale Teams':plan==='platinum'?'Platinum':plan==='pro'?'Plus':plan==='admin'?'Admin':plan==='trial'?'Trial':'Free';}
-function openAdminAccessModal(u,onDone=()=>{}){
+function openAdminAccessModal(u,onDone=()=>{},inlineHost=null){
   if(!u||u.role==='admin')return;
   const shade=el('div',{class:'quick-shade admin-access-shade',onclick:e=>{if(e.target===shade)shade.remove();}}),card=el('div',{class:'quick-card admin-access-card'});
-  const close=()=>shade.remove();
+  const close=()=>{if(!inlineHost)shade.remove();};
+  if(inlineHost)card.className='admin-access-card admin-access-inline';
   const paidActive=u.paidPlan&&u.paidPlan!=='free'&&u.paidPlanUntil&&new Date(u.paidPlanUntil)>new Date();
   const founderUntil=u.access?.founderPlatinumUntil||u.founderAward?.platinumUntil||null;
   const founderActive=founderUntil&&new Date(founderUntil)>new Date();
   const grantActive=!!u.grant?.active;
   card.appendChild(el('div',{class:'quick-head admin-access-head'},[
     el('div',{},[el('div',{class:'eyebrow'},'ADMIN · MEMBERSHIP ACCESS'),el('h3',{},u.name),el('div',{class:'sub'},[u.username?'@'+u.username:null,u.email,accountAgeLabel(u.createdAt)].filter(Boolean).join(' · '))]),
-    el('button',{class:'iconbtn',onclick:close,'aria-label':'Close'},'×')
+    inlineHost?null:el('button',{class:'iconbtn',onclick:close,'aria-label':'Close'},'×')
   ]));
   card.appendChild(el('div',{class:'admin-access-summary'},[
     el('div',{class:'admin-access-stat'},[el('small',{},'PAID PLAN'),el('b',{},paidActive?adminPlanLabel(u.paidPlan):'None'),el('span',{},paidActive&&u.paidPlanUntil?`Through ${new Date(u.paidPlanUntil).toLocaleDateString()}`:'Paid billing stays separate')]),
@@ -3999,7 +4002,7 @@ function openAdminAccessModal(u,onDone=()=>{}){
       el('button',{class:'dangerbtn',onclick:async()=>{if(!confirm(`Revoke ${u.name}’s complimentary access? Paid access and the First 50 bonus stay untouched.`))return;try{await api('POST','/api/admin/memberships/revoke',{userId:u.id});toast('Complimentary membership revoked','ok');close();await onDone();}catch(e){status.textContent=e.message;}}},'Revoke grant')
     );
   }else actions.append(el('button',{class:'btn-primary',onclick:()=>act('replace')},'Grant access'));
-  card.appendChild(actions);shade.appendChild(card);document.body.appendChild(shade);
+  card.appendChild(actions);if(inlineHost){inlineHost.appendChild(card);return card;}shade.appendChild(card);document.body.appendChild(shade);
 }
 
 /* ================= PROFILES ================= */
@@ -5301,7 +5304,7 @@ async function renderAdmin() {
   previewCard.append(previewHead,previewGrid,el('div',{class:'demo-action-row preview-actions'},[pvRun,pvEnter,pvClear]),pvStatus);wrap.appendChild(previewCard);refreshDemoChoices().catch(e=>{pvStatus.textContent=e.message;pvStatus.append(serviceAction('Retry demo list',refreshDemoChoices));});
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
   const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username or email…'}),ih=el('div');inspector.append(iq,ih);wrap.appendChild(inspector);let it;
-  let inspectorRequest=0;
+  let inspectorRequest=0;const inspectorOpen=new Set();
   const loadInspector=async()=>{
     const request=++inspectorRequest;
     try {
@@ -5317,7 +5320,7 @@ async function renderAdmin() {
       if(u.grant?.active)details.push(`Grant: ${adminPlanLabel(u.grant.grantPlan)} · ${u.grant.remainingDays}d left`);
       if(u.founderAward)details.push(`First 50 · #${u.founderAward.position}`);
       const actions=el('div',{class:'inspector-actions'});
-      if(u.role!=='admin')actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:()=>openAdminAccessModal(u,loadInspector)},'Manage access'));
+      if(u.role!=='admin')actions.appendChild(serviceAction(u.verified?'Remove verification':'Grant verification',async()=>{if(!confirm((u.verified?'Remove':'Grant')+' verification for '+u.name+'?'))return;await api('POST','/api/admin/set-user-verification',{userId:u.id,verified:!u.verified});toast('Verification updated','ok');await loadInspector();}));
       if(u.role!=='admin' && !u.demo)actions.appendChild(el('button',{class:'dangerbtn compactbtn',onclick:async()=>{const typed=prompt(`Permanently delete ${u.name} (${u.email})? This is intended for spam/abusive accounts. Type DELETE USER to confirm.`);if(typed!=='DELETE USER')return;try{await api('DELETE',`/api/admin/users/${u.id}`,{confirmation:'DELETE USER'});toast('Account permanently deleted','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Delete account'));
       if(u.demo){
         actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{try{const r=await api('POST',`/api/admin/demo-accounts/${u.id}/enter`);state.user=r.user;state.access=r.access;state.demoAdminSession=true;go('feed',{}, {replace:true});}catch(e){toast(e.message,'err')}}},'Enter demo'));
@@ -5327,7 +5330,11 @@ async function renderAdmin() {
         actions.appendChild(el('button',{class:'dangerbtn compactbtn',onclick:async()=>{const typed=prompt(`Permanently delete demo account ${u.name}? Type DELETE DEMO to confirm.`);if(typed!=='DELETE DEMO')return;try{await api('DELETE',`/api/admin/demo-accounts/${u.id}`,{confirmation:'DELETE DEMO'});toast('Demo account deleted','ok');await loadInspector();await refreshDemoChoices();}catch(e){toast(e.message,'err')}}},'Delete demo'));
       }
       if (!hasRole(u,'affiliate')) actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{const next=!u.foundingMember;if(!confirm(`${next?'Grant':'Remove'} Founding Member status for ${u.name}?`))return;try{await api('POST','/api/admin/set-founding-member',{userId:u.id,foundingMember:next});toast(next?'Founding Member granted':'Founding Member removed','ok');await loadInspector();}catch(e){toast(e.message,'err')} }},u.foundingMember?'Remove founding':'Grant founding'));
-      ih.appendChild(el('div',{class:'inspector-row'},[el('div',{class:'grow'},[el('b',{},u.name),el('span',{},[u.username?'@'+u.username:null,u.email,u.phone,accessText].filter(Boolean).join(' · ')),el('small',{},details.join(' · '))]),badges,actions]));
+      const member=el('details',{class:'inspector-member'}),body=el('div',{class:'inspector-member-body'}),profileHost=el('div');
+      member.append(el('summary',{},[el('span',{class:'inspector-member-name'},u.name),el('span',{class:'hint'},[u.username?'@'+u.username:null,roleLabel(u),accessText].filter(Boolean).join(' · ')),badges]),body);
+      body.append(el('p',{},[u.email,u.phone].filter(Boolean).join(' · ')),el('p',{class:'hint'},details.join(' · ')),profileHost,actions);
+      let loaded=false,inFlight=false;const loadProfile=async()=>{if(inFlight)return;inFlight=true;profileHost.replaceChildren(el('p',{class:'hint'},'Loading profile…'));try{profileHost.replaceChildren(await inspectorProfilePanel(u,loadInspector));loaded=true;}catch(e){profileHost.replaceChildren(el('p',{class:'errmsg'},e.message),serviceAction('Retry profile',loadProfile));}finally{inFlight=false;}};
+      member.ontoggle=()=>{if(member.open){inspectorOpen.add(u.id);if(!loaded)loadProfile();}else inspectorOpen.delete(u.id);};member.open=inspectorOpen.has(u.id);if(member.open)loadProfile();ih.appendChild(member);
     });
     }catch(e){if(request!==inspectorRequest)return;ih.replaceChildren(el('p',{class:'errmsg'},e.message),serviceAction('Retry user inspector',loadInspector));}
   };
@@ -5375,7 +5382,7 @@ async function renderAdmin() {
   };
   let verifyTimer; verifySearch.oninput=()=>{clearTimeout(verifyTimer);verifyTimer=setTimeout(loadVerifyUsers,220)};
   verifyAdmin.append(verifySearch,verifyResults); wrap.appendChild(verifyAdmin); await loadVerifyUsers();
-  return wrap;
+  return organizeAdminSections(wrap);
 }
 
 boot();
