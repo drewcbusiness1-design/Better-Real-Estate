@@ -326,7 +326,7 @@ function startViewPolling(fn, ms = 5000) {
     Promise.resolve().then(fn).catch(() => {});
   }, ms);
 }
-function go(view, extra = {}, options = {}) { if(['services','servicesdirectory'].includes(view))state.navigationWorkspace='services';else if(view==='feed')state.navigationWorkspace='main'; if(view==='feedback')state.feedbackPage=state.view==='feedback'?(state.feedbackPage||'home'):state.view; if(view==='chat'&&!Object.prototype.hasOwnProperty.call(extra,'chatListingId'))state.chatListingId=null; if(view==='compose'&&!Object.prototype.hasOwnProperty.call(extra,'composeEditId')){state.composeEditId=null;state.composePhotos=[];if(!Object.prototype.hasOwnProperty.call(extra,'dealBuilderDraft'))state.dealBuilderDraft=null;} Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
+function go(view, extra = {}, options = {}) { if(view!=='emailcenter'&&state.view==='emailcenter')state.emailRecipient=null; if(['services','servicesdirectory'].includes(view))state.navigationWorkspace='services';else if(view==='feed')state.navigationWorkspace='main'; if(view==='feedback')state.feedbackPage=state.view==='feedback'?(state.feedbackPage||'home'):state.view; if(view==='chat'&&!Object.prototype.hasOwnProperty.call(extra,'chatListingId'))state.chatListingId=null; if(view==='compose'&&!Object.prototype.hasOwnProperty.call(extra,'composeEditId')){state.composeEditId=null;state.composePhotos=[];if(!Object.prototype.hasOwnProperty.call(extra,'dealBuilderDraft'))state.dealBuilderDraft=null;} Object.assign(state, { view }, extra); writeRoute(options.replace ? 'replace' : 'push'); window.scrollTo(0, 0); render(); }
 function openListingDetail(listingOrId, photoIdx = 0) {
   const preview = listingOrId && typeof listingOrId === 'object' ? listingOrId : null;
   const id = String(preview?.id || listingOrId || '').trim();
@@ -3011,7 +3011,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 85;
+const TUTORIAL_VERSION = 86;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3032,7 +3032,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'feed',selector:'.better-guide-trigger',min:0,release:75,title:'A shorter introduction',copy:'The main tutorial now takes 10 steps. Open Full platform walkthrough in the dog menu or Settings for all existing feature guidance. Both tutorials can be skipped.'},
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
  {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
- {view:'admin',selector:'.admin-section-controls',min:0,release:85,title:'Organized administration',copy:'Open each section to access its tools. Expand all and Collapse all control the full page; section choices are remembered on this device.'},
+ {view:'admin',selector:'.admin-section-controls',min:0,release:86,title:'Organized administration',copy:'Open sections and member entries to view profiles, manage grants, send confirmation reminders or choose message/email from the mail icon. Broadcast history expands to show saved content. Section choices are remembered on this device.'},
  {view:'manageproperties',selector:'.manage-properties',min:0,release:84,title:'Manage your property posts',copy:'Open Manage my properties from Profile or Quick Options. Edit, mark sold or delete your own posts; deletion asks for confirmation.'},
  {view:'feedback',selector:'.feedback-page',min:0,release:83,title:'Private reports and feedback',copy:'Use the Better dog to report issues, suggest features and review admin replies. Screenshot attachments stay private to your report.'},
  {view:'admin',selector:'.advanced-charts',min:0,release:83,title:'Compare and style growth charts',copy:'Choose dates with optional times, compare months and switch line, bar or area charts. Current-month comparison defaults to matched elapsed days.'},
@@ -4798,6 +4798,7 @@ async function renderEmailCenter() {
 
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Compose broadcast'));
   const box = el('div', { class: 'card', style: 'padding:16px' });
+  const inspectorRecipient=state.emailRecipient||null;
   const audience = el('select', {'aria-label':'Email audience'}, [
     ['all','All opted-in users'],['selected','Select individual people'],['buyers','Buyers'],['sellers','Sellers / wholesalers'],['teams','Wholesale Team members']
   ].map(([v,l]) => el('option', { value:v }, l)));
@@ -4815,6 +4816,7 @@ async function renderEmailCenter() {
   const searchRecipients=async()=>{const token=++searchRequest;recipientRows.textContent='Loading people…';try{const r=await api('GET','/api/admin/email-center/recipients?q='+encodeURIComponent(recipientSearch.value.trim()));if(token!==searchRequest||!recipientPicker.isConnected)return;recipientRows.innerHTML='';(r.users||[]).forEach(person=>{const check=el('input',{type:'checkbox','aria-label':`Select ${person.email}`,disabled:person.eligible?null:'disabled'});check.checked=selectedPeople.has(person.id);check.onchange=()=>{if(check.checked){if(selectedPeople.size>=200){check.checked=false;audienceSt.textContent='Select up to 200 people per email.';return;}selectedPeople.set(person.id,person);}else selectedPeople.delete(person.id);drawSelected();previewAudience();};recipientRows.appendChild(el('label',{class:'email-recipient-row'},[check,el('span',{},[el('b',{},person.name||person.username||'Member'),el('small',{},person.email),!person.eligible?el('small',{class:'hint'},person.reason):null].filter(Boolean))]));});if(!(r.users||[]).length)recipientRows.appendChild(el('div',{class:'hint'},'No matching people.'));if(r.hasMore)recipientRows.appendChild(el('div',{class:'hint'},'Showing the first 50 matches. Refine your search to find someone.'));}catch(e){if(token===searchRequest)recipientRows.textContent=e.message;}};
   recipientSearch.oninput=()=>{clearTimeout(searchTimer);searchRequest++;searchTimer=setTimeout(()=>{if(recipientPicker.isConnected&&audience.value==='selected')searchRecipients();},300);};
   audience.onchange=()=>{recipientPicker.hidden=audience.value!=='selected';market.disabled=audience.value==='selected';searchRequest++;if(audience.value==='selected'){drawSelected();searchRecipients();}previewAudience();};market.onchange=previewAudience;
+  if(inspectorRecipient){audience.value='selected';recipientPicker.hidden=false;market.disabled=true;selectedPeople.set(inspectorRecipient.id,inspectorRecipient);drawSelected();previewAudience();}
   const subject = el('input', { placeholder: 'Subject line' });
   const headline = el('input', { placeholder: 'Email headline' });
   const body = el('textarea', { placeholder: 'Write the announcement…', style:'min-height:180px' });
@@ -4859,10 +4861,7 @@ async function renderEmailCenter() {
   wrap.appendChild(el('div', { class:'sectiontitle' }, 'Broadcast history'));
   const hist = el('div', { class:'card' });
   if (!(data.broadcasts || []).length) hist.appendChild(el('div',{class:'listrow'},el('div',{class:'s'},'No broadcasts yet.')));
-  (data.broadcasts || []).forEach(b => hist.appendChild(el('div',{class:'listrow'},[
-    el('div',{class:'grow'},[el('div',{class:'t'},b.subject),el('div',{class:'s'},`${b.status} · ${b.sentCount} sent${b.failedCount ? ' · ' + b.failedCount + ' failed' : ''} · ${new Date(b.scheduledAt).toLocaleString()}`), b.audience?.market ? el('div',{class:'hint'},`${b.sender === 'partners' ? 'partners@betterrealestate.org' : 'notifications@betterrealestate.org'} · ${b.audience.kind} · ${b.audience.market}`) : el('div',{class:'hint'},`${b.sender === 'partners' ? 'partners@betterrealestate.org' : 'notifications@betterrealestate.org'} · ${b.audience?.kind || 'all'}`)]),
-    el('span',{class:'pill ' + (b.status === 'sent' ? 'good' : '')},b.status)
-  ])));
+  (data.broadcasts || []).forEach(b => hist.appendChild(broadcastHistoryCard(b)));
   wrap.appendChild(hist);
   return wrap;
 }

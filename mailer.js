@@ -97,13 +97,13 @@ async function send(to, subject, html, text, extra = {}) {
   return res.json();
 }
 
-exports.sendVerification = (to, name, token) => {
+exports.sendVerification = (to, name, token, options = {}) => {
   const url = `${APP_URL}/?verify=${token}`;
   return send(to, `Confirm your ${APP_NAME} account`,
     shell('Confirm your email',
       `<p>Hi ${name}, thanks for joining ${APP_NAME}. Confirm your email so you can post listings, make offers and reset your password if you ever need to.</p>${button(url, 'Confirm email')}
        <p style="font-size:12.5px;color:#40474F">If you didn't create this account, ignore this email.</p>`),
-    `Confirm your email: ${url}`);
+    `Confirm your email: ${url}`, { idempotencyKey: options.idempotencyKey });
 };
 
 exports.sendPasswordReset = (to, name, token) => {
