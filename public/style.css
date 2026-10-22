@@ -1647,3 +1647,11 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .affiliate-calculator-field>span{min-height:2.6em;line-height:1.3;display:flex;align-items:flex-end}
 .affiliate-calculator-field>input,.affiliate-calculator-field>select{height:44px;min-height:44px;margin:0}
 @media(max-width:700px){.affiliate-calculator-field>span{min-height:0}}
+.campaign-panel,.campaign-card,.campaign-panel details{min-width:0;max-width:100%;box-sizing:border-box}
+.campaign-panel summary,.campaign-panel p,.campaign-panel label{overflow-wrap:anywhere}
+.campaign-panel summary{cursor:pointer;padding:12px;line-height:1.5}
+.campaign-panel .service-form{padding:14px}
+.campaign-panel .service-check{align-items:flex-start;line-height:1.5}
+.campaign-panel .service-check input{margin-top:2px}
+.campaign-panel .service-actions>button{flex:1 1 150px}
+@media(max-width:480px){.campaign-panel .service-form{padding:10px}.campaign-panel .service-actions{margin:8px 0}}

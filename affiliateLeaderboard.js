@@ -79,7 +79,7 @@ function plan(db,event,resetId){
   const affiliate=(db.users||[]).find(u=>u.id===app?.userId);
   const valid=event.billingReason==='subscription_create'&&Number.isSafeInteger(event.amountCents)&&event.amountCents>0&&typeof event.sourceId==='string'&&event.sourceId.length>0;
   const duplicate=(db.affiliateCommissions||[]).some(c=>c.sourceId===event.sourceId||(c.customerUserId===user?.id&&c.kind==='membership_acquisition'));
-  if(valid&&realUser(user)&&realUser(affiliate)&&app?.userId!==user.id&&app?.termsAcceptedAt&&app.termsVersion===TERMS_VERSION&&Number(app.rateBps)===BASE_BPS&&!duplicate){
+  if(valid&&!user?.campaignId&&realUser(user)&&realUser(affiliate)&&app?.userId!==user.id&&app?.termsAcceptedAt&&app.termsVersion===TERMS_VERSION&&Number(app.rateBps)===BASE_BPS&&!duplicate){
    const now=new Date(),id='affiliate_acquisition:'+user.id;
    row={id,acquisitionId:id,affiliateUserId:app.userId,customerUserId:user.id,sourceId:event.sourceId,rootSourceId:event.sourceId,paymentIntentId:typeof event.paymentIntentId==='string'?event.paymentIntentId:null,tier:event.tier||user.plan||'pro',grossCents:event.amountCents,rateBps:BASE_BPS,amountCents:0,status:'pending',createdAt:now.toISOString(),availableAt:new Date(now.getTime()+HOLD_DAYS*86400000).toISOString(),termsVersion:TERMS_VERSION,kind:'membership_acquisition',oneTime:true,leaderboardPolicyVersion:'v29.47'};
    const withSale={...db,affiliateCommissions:[...(db.affiliateCommissions||[]),row],affiliateLeaderboardState:[state]};

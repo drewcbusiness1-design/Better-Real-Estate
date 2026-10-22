@@ -236,6 +236,7 @@ function writeRoute(mode = 'push') {
 
 async function boot() {
   const params = new URLSearchParams(location.search);
+  state.pendingCampaign=readCampaignAttribution(params);
   const incomingRef = String(params.get('ref') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
   const incomingAff = String(params.get('aff') || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0,24);
   if(incomingAff){ state.pendingAffiliate=incomingAff; try{localStorage.setItem('bre_affiliate_code',incomingAff);}catch{} api('GET','/api/affiliate/track/'+encodeURIComponent(incomingAff)).catch(()=>{}); } else { try{state.pendingAffiliate=localStorage.getItem('bre_affiliate_code')||null;}catch{} }
@@ -880,6 +881,7 @@ function renderAuth() {
   const signupPhone = el('input', {type:'tel',name:'phone',autocomplete:'tel',inputmode:'tel',maxlength:'40',placeholder:'+1 555 123 4567','aria-label':'Phone number (optional)'});
   const ref = el('input', { placeholder: 'Optional', value: state.pendingReferral || '' });
   const err = el('div', { class: 'errmsg' });
+  if(isSignup&&state.pendingCampaign){const notice=el('div',{class:'hint'},'This signup is attributed to an outreach campaign. ');notice.append(el('button',{type:'button',class:'btn-ghost',onclick:()=>{state.pendingCampaign=null;try{localStorage.removeItem('bre_campaign');}catch{}notice.remove();}},'Remove campaign attribution'));wrap.appendChild(notice);}
 
   if (isSignup) {
     wrap.appendChild(el('label', {}, "How do you work in real estate?"));
@@ -904,7 +906,7 @@ function renderAuth() {
       await withButtonBusy(submit, async () => {
       if (isSignup && !roles.length) throw new Error('Choose at least one role.');
       const payload = isSignup
-        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role: roles[0], roles, serviceCategories:roles.includes('service')?[signupServices.value]:[], referralCode: ref.value.trim(), affiliateCode: state.pendingAffiliate || '', phone: signupPhone.value.trim(), marketingOptIn: true }
+        ? { name: name.value.trim(), email: email.value.trim(), password: pass.value, role: roles[0], roles, serviceCategories:roles.includes('service')?[signupServices.value]:[], referralCode: ref.value.trim(), affiliateCode: state.pendingAffiliate || '', campaignCode:state.pendingCampaign||'', phone: signupPhone.value.trim(), marketingOptIn: true }
         : { email: email.value.trim(), password: pass.value };
       const d = await api('POST', isSignup ? '/api/signup' : '/api/login', payload);
       state.user = d.user; if (d.pricing) state.pricing = d.pricing;
@@ -912,6 +914,7 @@ function renderAuth() {
         state.pendingReferral = null;
         state.launchTutorialAfterNav = true;
         try { localStorage.removeItem('bre_referral_code'); localStorage.removeItem('bre_affiliate_code'); } catch {}
+        state.pendingCampaign=null;try{localStorage.removeItem('bre_campaign');}catch{}
       }
       await refreshMe();
       applyTheme(state.user.settings?.theme || 'light');
@@ -3011,7 +3014,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 87;
+const TUTORIAL_VERSION = 88;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3021,6 +3024,7 @@ const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:1,admin:4};
 function tutorialStepsFor(tier=tutorialTier()){
  const rank=TUTORIAL_RANK[tier]??0;
  return [
+ {view:'admin',selector:'.campaign-panel',min:4,release:88,title:'Freelancer acquisition campaigns',copy:'Create a separate tracking link for each freelancer. Review qualified signups, see first-payment commissions and record payments made through Fiverr or Upwork. Campaign earnings stay outside the affiliate wallet and bonus program.'},
  {view:'dealbuilder',selector:'.dealbuilderpage',min:0,release:77,title:'Review property evidence',copy:'AI Deal Analysis shows permitted photos from matching Better records when available. Listing details reuse fresh supported sold comps, keep seller ARV separate and flag large differences without blocking a post. Missing, stale or conflicting evidence cannot validate an estimate; open AI Deal Analysis deliberately to refresh research under your existing allowance.'},
  {view:'pipeline',selector:'.connected-section',min:0,release:77,title:'Private opportunities and comparisons',copy:'Add outside opportunities privately in Deal pipeline, upload permitted documents and compare up to three scenarios. Prepare a public listing only when you choose to publish. Property introductions require acceptance before a seller message is created.'},
  {view:'markethubs',selector:'.connected-section',min:0,release:77,title:'Find title company contacts',copy:'Market Hubs includes an independent title-company directory. Matching service states also appear on property details. Confirm licensing, fees and suitability directly; this is not an expedited title service.'},
@@ -5257,6 +5261,7 @@ async function renderAdmin() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('me') }, '← Back'));
   wrap.appendChild(el('h2', {}, 'Admin'));
+  if(typeof campaignAdminPanel==='function')wrap.appendChild(campaignAdminPanel());
   wrap.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('titledirectory')},'Manage title companies'));
   try {
     const rev = await api('GET', '/api/admin/revenue');
@@ -5304,6 +5309,7 @@ async function renderAdmin() {
   wrap.appendChild(el('div',{class:'sectiontitle'},'User inspector'));
   const inspector=el('div',{class:'card user-inspector'}),iq=el('input',{placeholder:'Search name, username, email or account ID…','aria-label':'Search all user accounts'}),ih=el('div'),filter=el('select',{'aria-label':'User Inspector account type'},[['all','All accounts'],['affiliate','Affiliate accounts'],['services','Service providers'],['members','Regular members'],['admin','Admins'],['demo','Demo accounts'],['unconfirmed','Unconfirmed email']].map(([value,label])=>el('option',{value},label))),count=el('p',{class:'hint',role:'status','aria-live':'polite'}),pager=el('div',{class:'inspector-pagination'});filter.value='all';let inspectorPage=1;
   const previous=serviceAction('Previous page',async()=>{inspectorPage=Math.max(1,inspectorPage-1);await loadInspector();}),next=serviceAction('Next page',async()=>{inspectorPage++;await loadInspector();}),pageLabel=el('span',{class:'hint'});previous.disabled=next.disabled=true;pager.append(previous,pageLabel,next);inspector.append(el('div',{class:'inspector-filters'},[iq,filter]),count,ih,pager);wrap.appendChild(inspector);let it;
+  if(state.inspectorQuery){iq.value=state.inspectorQuery;state.inspectorQuery=null;}
   let inspectorRequest=0;const inspectorOpen=new Set();
   const loadInspector=async()=>{
     const request=++inspectorRequest;previous.disabled=next.disabled=true;count.textContent='Loading accounts…';

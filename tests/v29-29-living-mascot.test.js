@@ -1,12 +1,12 @@
 const fs=require('fs'),assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),pkg=require('../package.json');
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.51','2.9.53','2.9.54','2.9.55','2.9.57','2.9.58','2.9.59','2.9.60','2.9.61','2.9.62','2.9.63','2.9.64','2.9.65','2.9.66','2.9.67','2.9.68','2.9.69'].includes(pkg.version),'package version must be at least v29.29');
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.51','2.9.53','2.9.54','2.9.55','2.9.57','2.9.58','2.9.59','2.9.60','2.9.61','2.9.62','2.9.63','2.9.64','2.9.65','2.9.66','2.9.67','2.9.68','2.9.69','2.9.70'].includes(pkg.version),'package version must be at least v29.29');
 assert(app.includes('function createBetterMascotRig'),'mascot rig factory missing');
 assert(app.includes('function wireBetterMascotRig'),'mascot interaction wiring missing');
 assert(app.includes('function aimBetterMascotAt'),'tutorial target awareness missing');
 assert(app.includes('<svg class=\"mascot-svg\"')||app.includes('/mascot-rig/body.webp'),'mascot body visual missing');
 for(const c of ['.mascot-head','.mascot-ear-left','.mascot-ear-right','.mascot-tail'])assert(css.includes(c),c);
-assert(app.includes('const TUTORIAL_VERSION = 87;')||app.includes('const TUTORIAL_VERSION = 87;'),'tutorial version must preserve mascot onboarding');
+assert(app.includes('const TUTORIAL_VERSION = 88;')||app.includes('const TUTORIAL_VERSION = 88;'),'tutorial version must preserve mascot onboarding');
 assert(app.includes("release:54,title:'A mascot that actually feels alive'"),'v54 What’s New step missing');
 assert(css.includes('.better-guide-trigger .better-mascot-stage'),'mascot header stage missing');
 assert(css.includes('@media(prefers-reduced-motion:reduce)'),'reduced motion handling required');

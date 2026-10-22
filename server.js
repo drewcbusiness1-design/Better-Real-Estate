@@ -14,6 +14,8 @@ const saveAffiliateContent=affiliateContent.writer(require('./store'));
 const {growth:activityGrowth}=require('./activityGrowth');
 const affiliateLeaderboard=require('./affiliateLeaderboard');
 const affiliateRecorder=affiliateLeaderboard.createRecorder(require('./store'));
+const campaignTracking=require('./campaignTracking');
+const campaignService=campaignTracking.createService(require('./store'));
 const { writeImage, readImage, writeDocument, readDocument } = require('./storage');
 const dropship = require('./dropship');
 const cjAdapter = require('./cj-adapter');
@@ -174,6 +176,7 @@ const requireAdmin = (req, res, next) =>
   (req.user.role === 'admin' && policy.isAdminEmail(req.user.email))
     ? next()
     : res.status(403).json({ error: 'Admin only' });
+campaignTracking.install(app,{store:require('./store'),requireAuth,requireAdmin,baseUrl:appBaseUrl,service:campaignService});
 
 require('./releaseRoutes').register(app,{requireAuth,requireAdmin,saveDB,isAdminUser,isDemoUser});
 
@@ -578,6 +581,7 @@ app.post('/api/signup', async (req, res) => {
   const db = await loadDB();
   const cleanEmail = email.trim().toLowerCase();
   if (db.users.find(u => u.email === cleanEmail)) return res.status(409).json({ error: 'An account with that email already exists.' });
+  const campaign=campaignTracking.signupCampaign(db,req.body?.campaignCode);
 
   const referrer = referralCode ? db.users.find(u => u.referralCode === String(referralCode).trim().toUpperCase()) : null;
   const trialUntil = new Date(Date.now() + PRICING.signupTrialDays * 86400000).toISOString();
@@ -604,11 +608,12 @@ app.post('/api/signup', async (req, res) => {
   };
   if(selectedRoles.includes('service')){user.settings.serviceProvider=false;user.settings.defaultDashboard='services';user.settings.serviceTypes=Array.isArray(req.body.serviceCategories)?req.body.serviceCategories.filter(c=>require('./serviceProviders').CATEGORIES.includes(c)).slice(0,12):[];}
   ensureUsername(db, user);
+  if(campaign){user.campaignId=campaign.id;user.campaignAt=campaign.at;user.referredBy=null;}
   db.users.push(user);
   ensureFirst100FounderProgram(db);
   const vtok = crypto.randomBytes(24).toString('hex');
   db.tokens.push({ token: vtok, userId: user.id, kind: 'verify', expires: Date.now() + 7 * 86400000 });
-  const affCode=String(req.body?.affiliateCode||'').trim().toUpperCase(); const aff=(db.affiliateApplications||[]).find(a=>a.code===affCode&&a.status==='approved'); if(aff&&aff.userId!==user.id) user.affiliateReferrerId=aff.userId;
+  const affCode=String(req.body?.affiliateCode||'').trim().toUpperCase(); const aff=(db.affiliateApplications||[]).find(a=>a.code===affCode&&a.status==='approved'); if(!campaign&&aff&&aff.userId!==user.id) user.affiliateReferrerId=aff.userId;
     await saveDB(db);
   let verificationEmailSent = false;
   try {
@@ -4137,6 +4142,7 @@ app.post('/api/payments/webhook',
           if(!db.ledger.some(l=>l.meta?.invoiceId===inv.id))ledgerAdd(db, user.id, 'purchase', 0, isRenewal ? `${planLabel} — renewed automatically` : `${planLabel} — subscribed`, { invoiceId: inv.id, charged: inv.amount_paid });
           await saveDB(db);
           await affiliateRecorder.recordMembership({userId:user.id,amountCents:Number(inv.amount_paid||0),sourceId:inv.id,tier:user.plan,billingReason:inv.billing_reason,paymentIntentId:typeof inv.payment_intent==='string'?inv.payment_intent:inv.payment_intent?.id});
+          await campaignService.record({userId:user.id,amountCents:campaignTracking.netInvoice(inv),sourceId:inv.id,tier:user.plan,billingReason:inv.billing_reason,currency:inv.currency,paidAt:Number(inv.status_transitions?.paid_at||inv.created)*1000,paymentIntentId:typeof inv.payment_intent==='string'?inv.payment_intent:inv.payment_intent?.id});
         }
       }
 
@@ -4155,6 +4161,7 @@ app.post('/api/payments/webhook',
         }
         const idOf=value=>typeof value==='string'?value:value?.id;
         const invoiceId=idOf(charge?.invoice),paymentIntentId=idOf(charge?.payment_intent);
+        await campaignService.reverse({invoiceId,paymentIntentId,reason:event.type==='charge.refunded'?'Refund (including partial refund): commission withheld for review':'Dispute: commission reversed'});
         const related=(db.affiliateCommissions||[]).filter(c=>
           (invoiceId&&(c.rootSourceId||String(c.sourceId||'').split(':partial:')[0])===invoiceId)||
           (paymentIntentId&&c.paymentIntentId===paymentIntentId));

@@ -28,6 +28,7 @@ try { ({ Pool } = require('pg')); } catch {}
 const affiliateAccounts = require('./affiliateAccounts');
 const policy = require('./policy');
 const COLLECTIONS = [
+  'acquisitionCampaigns',
   'feedbackReports','serviceJobs','matchDeliveries','titleCompanies','buyerResponses','privateDeals','dealIntroductions','supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
   'users','companies','companyInvites','listings','saves','follows','friendRequests','friendships','messages','ledger','unlocks',
   'shopItems','orders','offers','reviews','views','promotions','payouts',
@@ -191,6 +192,7 @@ async function saveDB(db) {
     if (!db.__writeSupportThreads && fsMod.existsSync(FILE_PATH)) out.supportThreads = JSON.parse(fsMod.readFileSync(FILE_PATH, 'utf8')).supportThreads || [];
     if(fsMod.existsSync(FILE_PATH)){
       const latest=JSON.parse(fsMod.readFileSync(FILE_PATH,'utf8'));
+      if(!db.__writeCampaigns)out.acquisitionCampaigns=latest.acquisitionCampaigns||[];
       if(!db.__writeMatchDeliveries)out.matchDeliveries=(out.matchDeliveries||[]).map(row=>({...row,...(latest.matchDeliveries||[]).find(x=>x.id===row.id)}));
       for(const row of latest.matchDeliveries||[])if(!out.matchDeliveries.some(x=>x.id===row.id)&&!(db.__matchDeliveryIds||[]).includes(row.id))out.matchDeliveries.push(row);
       out.users=out.users.map(row=>{const current=latest.users?.find(u=>u.id===row.id);if(!current)return row;const before=db.__creditSnapshot?.[row.id];const delta=before===undefined?0:Number(row.betterCreditCents||0)-before;const merged={...row,betterCreditCents:Math.max(0,Number(current.betterCreditCents||0)+delta)};if(!db.__writeMembershipCredits)merged.membershipCreditState=current.membershipCreditState;return merged;});
@@ -254,6 +256,7 @@ async function appendRecord(collection, row) {
   if (!COLLECTIONS.includes(collection)) throw new Error('Unknown collection.');
   if (FILE_MODE) {
     const db = await loadDB();
+    if(collection==='acquisitionCampaigns')db.__writeCampaigns=true;
     const existing=collection==='promoDeliveries'?db[collection].findIndex(x=>x.id===row.id):-1;
     if(existing>=0)db[collection][existing]=row;else db[collection].push(row);
     await saveDB(db);
