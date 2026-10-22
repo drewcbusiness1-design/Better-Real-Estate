@@ -1,0 +1,33 @@
+'use strict';
+const assert=require('assert'),{app,cookie,getDB}=require('./connected-fixture'),tracking=require('../campaignTracking');
+const server=app.listen(0,'127.0.0.1');
+(async()=>{
+ await new Promise(r=>server.on('listening',r));const base='http://127.0.0.1:'+server.address().port;
+ async function req(path,method='GET',body,user='admin'){const r=await fetch(base+path,{method,headers:{'content-type':'application/json',...(user?{cookie:cookie(user)}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()};}
+ const db=getDB(),now=new Date().toISOString();for(const id of ['partner1','partner2','unconfirmed'])db.users.push({id,username:id,name:id,email:id+'@example.invalid',emailVerified:id!=='unconfirmed',role:'affiliate',roles:['affiliate'],founderProgramExcluded:true,settings:{},createdAt:now});
+ const root='/api/admin/campaigns';const c=(await req(root,'POST',{name:'New generic campaign',platform:'Fiverr',target:35})).data.campaign,id=c.id;
+ assert.equal((await req('/api/campaigns/me','GET',null,null)).status,401);assert.equal((await req('/api/campaigns/me','GET',null,'buyer')).status,403);assert.equal((await req('/api/campaigns/me','GET',null,'unconfirmed')).status,403);
+ assert.equal((await req(root+'/'+id+'/partner','POST',{username:'partner1'},'partner2')).status,403);assert.equal((await req(root+'/'+id+'/partner','POST',{username:'unconfirmed'})).status,400);assert.equal((await req(root+'/'+id+'/partner','POST',{username:'buyer'})).status,400);assert.equal((await req(root+'/'+id+'/partner','POST',{username:'missing'})).status,404);
+ assert.equal((await req(root+'/'+id+'/partner','POST',{username:'@partner1'})).status,200);
+ let mine=await req('/api/campaigns/me','GET',null,'partner1');assert.equal(mine.data.campaigns.length,1);assert.equal(mine.data.campaigns[0].url,(await req(root)).data.campaigns[0].url);assert.equal((await req('/api/campaigns/me','GET',null,'partner2')).data.campaigns.length,0);
+ let d=getDB();const u=d.users.find(u=>u.id==='buyer');Object.assign(u,{campaignId:id,campaignAt:'2026-10-01T00:00:00Z',createdAt:'2026-10-01T00:00:00Z',location:'NJ',passwordHash:'do-not-expose',phone:'private-phone',stripeCustomerId:'private-stripe'});d.activityEvents.push({id:'return-p',userId:'buyer',at:'2026-10-02T01:00:00Z'});
+ assert.equal((await req('/api/campaigns/'+id+'/evidence','POST',{userId:'buyer',evidence:'https://example.invalid/business'},'partner2')).status,404);
+ assert.equal((await req('/api/campaigns/'+id+'/evidence','POST',{userId:'outsider',evidence:'https://example.invalid/business'},'partner1')).status,404);
+ assert.equal((await req('/api/campaigns/'+id+'/evidence','POST',{userId:'buyer',evidence:'https://example.invalid/business',status:'approved',amountCents:100000},'partner1')).status,200);
+ assert.equal((await req(root+'/'+id+'/review','POST',{userId:'buyer',status:'approved',evidence:'internal note never shared',partnerReason:'Verified real estate activity',realEstateVerified:true,meaningfulActionVerified:true})).status,200);
+ const recorder=tracking.createService(require('../store'));await recorder.record({userId:'buyer',sourceId:'private-invoice',paymentIntentId:'private-payment-intent',amountCents:5000,tier:'platinum',currency:'usd',billingReason:'subscription_create',paidAt:Date.parse('2026-10-02')});
+ mine=(await req('/api/campaigns/me','GET',null,'partner1')).data.campaigns[0];assert.equal(mine.conversion.signups,1);assert.equal(mine.conversion.paying,1);assert.equal(mine.conversion.notPaying,0);assert.equal(mine.conversion.percent,100);assert.equal(mine.members[0].review.reason,'Verified real estate activity');assert.equal(mine.members[0].submission.evidence,'https://example.invalid/business');
+ const serialized=JSON.stringify(mine);for(const secret of ['do-not-expose','private-phone','private-stripe','private-invoice','private-payment-intent','internal note never shared','createdBy','history','passwordHash'])assert(!serialized.includes(secret),secret);
+ assert.equal(mine.totals.signupsEarnedCents,100);assert.equal(mine.sales[0].commissionCents,1500);assert.equal(getDB().affiliateCommissions.length,0);
+ const originalCode=(await req(root)).data.campaigns[0].code;assert.equal((await req(root+'/'+id+'/status','POST',{status:'archived'})).status,200);
+ const archived=(await req(root)).data.campaigns[0];assert.equal(archived.sales.length,1);assert.equal(archived.reviews.buyer.status,'approved');assert.equal(archived.code,originalCode);assert(archived.archivedAt);assert.throws(()=>tracking.signupCampaign(getDB(),originalCode));
+ assert.equal((await req('/api/campaigns/'+id+'/evidence','POST',{userId:'buyer',evidence:'later evidence'},'partner1')).status,409);assert.equal((await req(root+'/'+id+'/status','POST',{status:'active'})).status,409);
+ assert.equal((await req('/api/campaigns/me','GET',null,'partner1')).data.campaigns[0].status,'archived');assert.equal((await req(root+'/'+id+'/status','POST',{status:'paused',restore:true})).status,200);
+ await recorder.reverse({invoiceId:'private-invoice',reason:'Refund'});assert.equal((await req('/api/campaigns/me','GET',null,'partner1')).data.campaigns[0].conversion.paying,0);
+ const afterWindow={...getDB().users.find(u=>u.id==='seller'),campaignId:id,campaignAt:'2026-07-01T00:00:00Z'};getDB().users.find(u=>u.id==='seller').campaignId=id;getDB().users.find(u=>u.id==='seller').campaignAt=afterWindow.campaignAt;
+ await recorder.record({userId:'seller',sourceId:'late-membership',amountCents:3000,tier:'pro',currency:'usd',billingReason:'subscription_create',paidAt:Date.parse('2026-10-01')});
+ const withLate=(await req('/api/campaigns/me','GET',null,'partner1')).data.campaigns[0];assert.equal(withLate.conversion.paying,1);assert.equal(withLate.sales.length,1,'late conversion adds purchase history without another commission');assert.equal(withLate.purchases.length,2);
+ assert.equal((await req(root+'/'+id+'/partner','POST',{username:'partner2'})).status,200);assert.equal((await req('/api/campaigns/me','GET',null,'partner1')).data.campaigns.length,0);assert.equal((await req('/api/campaigns/me','GET',null,'partner2')).data.campaigns[0].members.length,2);
+ assert.equal((await req(root+'/'+id+'/partner','POST',{username:''})).status,200);assert.equal((await req('/api/campaigns/me','GET',null,'partner2')).data.campaigns.length,0);
+ console.log('PASS partner authorization and isolation, verified account linking/reassignment/unlink, preserved existing attribution, evidence submission without approval, safe data projection, paid conversion counts, archive/restore and refund updates');
+})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>server.close());

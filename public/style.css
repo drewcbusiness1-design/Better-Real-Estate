@@ -1650,6 +1650,14 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .campaign-panel,.campaign-card,.campaign-panel details{min-width:0;max-width:100%;box-sizing:border-box}
 .campaign-panel summary,.campaign-panel p,.campaign-panel label{overflow-wrap:anywhere}
 .campaign-panel summary{cursor:pointer;padding:12px;line-height:1.5}
+.campaign-conversion{display:flex;align-items:center;gap:24px;flex-wrap:wrap;margin:12px 0;min-width:0}
+.campaign-donut{width:180px;height:180px;border-radius:50%;display:grid;place-items:center;flex:0 0 180px}
+.campaign-donut-center{background:var(--surface);width:125px;height:125px;border-radius:50%;display:flex;flex-direction:column;justify-content:center;align-items:center;color:var(--ink)}
+.campaign-donut-center strong{font-size:26px}.campaign-donut-center span{font-size:12px}
+.campaign-conversion figcaption{flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
+.campaign-payment-banner{padding:12px;background:var(--accent-soft);color:var(--ink);border:1px solid var(--line-strong);border-radius:10px;font-weight:600}
+.campaign-partner-area{min-width:0}.campaign-partner-area details{max-width:100%;overflow-wrap:anywhere}
+@media(max-width:480px){.campaign-conversion{justify-content:center;gap:12px}.campaign-conversion figcaption{flex-basis:100%}.campaign-partner-area{padding:10px}}
 .campaign-panel .service-form{padding:14px}
 .campaign-panel .service-check{align-items:flex-start;line-height:1.5}
 .campaign-panel .service-check input{margin-top:2px}

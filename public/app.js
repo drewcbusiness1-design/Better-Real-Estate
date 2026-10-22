@@ -3014,7 +3014,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 88;
+const TUTORIAL_VERSION = 89;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3024,6 +3024,7 @@ const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:1,admin:4};
 function tutorialStepsFor(tier=tutorialTier()){
  const rank=TUTORIAL_RANK[tier]??0;
  return [
+ {view:'affiliate',selector:'.campaign-partner-area',min:0,release:89,title:'Campaign partnerships',copy:'Use your linked campaign dashboard to copy your link, review signups and paid conversions, submit qualification evidence and see external-payment records. Payments are handled through your freelance platform, separate from the standard affiliate wallet.'},
  {view:'admin',selector:'.campaign-panel',min:4,release:88,title:'Freelancer acquisition campaigns',copy:'Create a separate tracking link for each freelancer. Review qualified signups, see first-payment commissions and record payments made through Fiverr or Upwork. Campaign earnings stay outside the affiliate wallet and bonus program.'},
  {view:'dealbuilder',selector:'.dealbuilderpage',min:0,release:77,title:'Review property evidence',copy:'AI Deal Analysis shows permitted photos from matching Better records when available. Listing details reuse fresh supported sold comps, keep seller ARV separate and flag large differences without blocking a post. Missing, stale or conflicting evidence cannot validate an estimate; open AI Deal Analysis deliberately to refresh research under your existing allowance.'},
  {view:'pipeline',selector:'.connected-section',min:0,release:77,title:'Private opportunities and comparisons',copy:'Add outside opportunities privately in Deal pipeline, upload permitted documents and compare up to three scenarios. Prepare a public listing only when you choose to publish. Property introductions require acceptance before a seller message is created.'},
@@ -5146,6 +5147,7 @@ async function renderAffiliateCenter(){
   return wrap;
  }
  if(state.access?.adminUnlimited)return await renderAdminAffiliateCenter(wrap);
+ if(hasRole(state.user,'affiliate')&&typeof campaignPartnerArea==='function'){const area=await campaignPartnerArea();wrap.appendChild(area.navigation);if(area.panel)wrap.appendChild(area.panel);if(!area.showStandard)return wrap;}
  const d=await api('GET','/api/affiliate/me');if(hasRole(state.user,'affiliate'))wrap.appendChild(el('div',{class:'card affiliate-account-note'},[el('b',{},'Marketing / Affiliate-only account'),el('p',{},'Your account is separate from the real estate Network. Manage your application, tracked link and earnings here. Memberships and account history stay intact.')]));wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'BETTER AFFILIATES'),el('h2',{},'Affiliate center'),el('div',{class:'sub'},'Your effective rate applies once to each qualifying customer’s first eligible paid membership. Review individual agreements below.')]),el('div',{class:'affiliate-rate'},[el('strong',{},(d.leaderboard?.own?.currentRatePct??30)+'%'),el('span',{},'one-time commission')]) ]));
  if(d.application?.commissionProposal){const a=d.application,p=a.commissionProposal;const error=el('p',{class:'errmsg','aria-live':'polite'}),accept=el('button',{class:'btn-primary'},'Accept commission agreement');accept.onclick=()=>withButtonBusy(accept,async()=>{try{await api('POST','/api/affiliate/accept-commission',{revision:Number(a.commissionRevision||0)});toast('Commission agreement activated','ok');render();}catch(e){error.textContent=e.message;}});wrap.appendChild(el('section',{class:'terms-card affiliate-custom-agreement'},[el('h3',{},'Review your commission agreement'),el('p',{},p.rateBps===null?'Return to automatic 30–40% leaderboard rates for future eligible first paid memberships.':'Your proposed custom rate is '+p.rateBps/100+'% on each referred customer’s first eligible paid membership. It replaces automatic leaderboard rates; it is not recurring.'),el('p',{class:'hint'},p.reason),el('p',{class:'hint'},'The existing rate stays active until you accept. Previously earned commissions, hold periods, refund rules and payout terms remain unchanged.'),accept,error]));}
  if(d.leaderboard)wrap.appendChild(renderAffiliateLeaderboard(d.leaderboard));
@@ -5261,7 +5263,8 @@ async function renderAdmin() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('me') }, '← Back'));
   wrap.appendChild(el('h2', {}, 'Admin'));
-  if(typeof campaignAdminPanel==='function')wrap.appendChild(campaignAdminPanel());
+  if(typeof campaignAdminPanel==='function'){wrap.appendChild(el('div',{class:'sectiontitle'},'Acquisition campaigns'));wrap.appendChild(campaignAdminPanel(true));}
+  wrap.appendChild(el('div',{class:'sectiontitle'},'Manage title companies'));
   wrap.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('titledirectory')},'Manage title companies'));
   try {
     const rev = await api('GET', '/api/admin/revenue');
