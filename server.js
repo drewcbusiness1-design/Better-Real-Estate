@@ -273,7 +273,7 @@ function isAdminUser(user) {
 }
 function isCompanyEntitled(user) { return !!(user?.companyPlanUntil && new Date(user.companyPlanUntil) > new Date()); }
 function activeFounderPlatinum(user) {
-  if (!user?.founderPlatinumUntil) return null;
+  if (!user?.emailVerified || !user?.founderPlatinumUntil) return null;
   const until = new Date(user.founderPlatinumUntil);
   if (!Number.isFinite(until.getTime()) || until <= new Date()) return null;
   return { until: until.toISOString(), startedAt: user.founderPlatinumStartedAt || null, position: Number(user.founderLaunchPosition || 0) || null };
@@ -375,7 +375,7 @@ function membershipGrantSummary(user) {
 }
 
 function founderProgramEligible(user) {
-  return !!user && !isAdminUser(user) && user.role !== 'admin' && !isAffiliateOnlyUser(user) && user.demo !== true && user.founderProgramExcluded !== true;
+  return !!user && user.emailVerified === true && !isAdminUser(user) && user.role !== 'admin' && !isAffiliateOnlyUser(user) && user.demo !== true && user.founderProgramExcluded !== true;
 }
 function isDemoUser(user) { return !!user && user.demo === true; }
 function demoPlanAccess(user) {
@@ -402,11 +402,11 @@ function ensureFirst100FounderProgram(db) {
       changed = true;
     }
   }
-  // Affiliate-only accounts never consume recognition, bonus dates or First 50 slots.
+  // Unconfirmed and Affiliate-only accounts cannot hold Founder recognition or bonuses.
   for (const user of db.users || []) {
-    if (!isAffiliateOnlyUser(user)) continue;
+    if (!isAffiliateOnlyUser(user) && user.emailVerified === true) continue;
     for (const award of awards.filter(a => a.userId === user.id && !a.voidedAt && !a.limitExcludedAt)) {
-      award.limitExcludedAt = now.toISOString(); award.limitExclusionReason = 'affiliate-only-account'; changed = true;
+      award.limitExcludedAt = now.toISOString(); award.limitExclusionReason = isAffiliateOnlyUser(user) ? 'affiliate-only-account' : 'email-unconfirmed'; changed = true;
     }
     for (const key of ['foundingMemberAt','foundingMemberSource','founderLaunchPosition','founderPlatinumStartedAt','founderPlatinumUntil','founderLaunchNoticeSeenAt']) {
       if (user[key] != null) { user[key] = null; changed = true; }
@@ -415,7 +415,9 @@ function ensureFirst100FounderProgram(db) {
   }
   const blockedEmails = new Set(awards.filter(a => a.voidedAt).map(a => String(a.voidedEmailLower || a.userEmail || '').trim().toLowerCase()).filter(Boolean));
   const ordered = (db.users || []).filter(u => founderProgramEligible(u) && !blockedEmails.has(String(u.email || '').trim().toLowerCase())).slice().sort((a,b) => {
-    const ta = a.createdAt ? new Date(a.createdAt).getTime() : Number.MAX_SAFE_INTEGER, tb = b.createdAt ? new Date(b.createdAt).getTime() : Number.MAX_SAFE_INTEGER;
+    const active=id=>awards.some(x=>x.userId===id&&!x.voidedAt&&!x.limitExcludedAt);
+    if(active(a.id)!==active(b.id))return active(a.id)?-1:1;
+    const ta = Date.parse(a.emailVerifiedAt||a.createdAt)||Number.MAX_SAFE_INTEGER, tb = Date.parse(b.emailVerifiedAt||b.createdAt)||Number.MAX_SAFE_INTEGER;
     return ta - tb || String(a.id).localeCompare(String(b.id));
   });
   const eligibleRankIds = new Set(ordered.slice(0, FOUNDER_PROGRAM_LIMIT).map(u => u.id));
@@ -433,8 +435,8 @@ function ensureFirst100FounderProgram(db) {
   const awardedIds = new Set(activeAwards.map(a => a.userId));
 
 
-  // Fill any spots returned by deleted/spam accounts using original qualifying
-  // signup order. Deleted accounts do not consume one of the current 50 spots.
+  // Preserve existing claims, then fill vacancies in confirmation order.
+  // Legacy confirmed accounts without a verification date fall back to signup order.
   for (const user of ordered) {
     if (activeAwards.length >= FOUNDER_PROGRAM_LIMIT) break;
     if (awardedIds.has(user.id)) continue;
@@ -710,6 +712,8 @@ app.post('/api/verify-email', async (req, res) => {
   const user = db.users.find(u => u.id === t.userId);
   if (!user) return res.status(404).json({ error: 'Account not found.' });
   user.emailVerified = true;
+  user.emailVerifiedAt = user.emailVerifiedAt || new Date().toISOString();
+  ensureFirst100FounderProgram(db);
   user.verificationEmailLastStatus = 'verified';
   await saveDB(db);
   mailer.sendWelcome(user.email, user.name).catch(e => console.error('[mail]', e.message));
@@ -2499,7 +2503,7 @@ const US_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI
 const cleanStates = xs => [...new Set((Array.isArray(xs)?xs:[]).map(x=>String(x||'').trim().toUpperCase()).filter(x=>US_STATES.has(x)))].slice(0,12);
 function listingState(l){ const m=String(l?.city||'').toUpperCase().match(/,\s*([A-Z]{2})(?:\s|$)/); return m?m[1]:''; }
 const activityWindowMs = { '24h':86400000, '7d':7*86400000, '30d':30*86400000 };
-function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,roles:Array.isArray(u.roles)?u.roles:[u.role].filter(Boolean),plan:actualPlanLabel(u),verified:!!u.verified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
+function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,roles:Array.isArray(u.roles)?u.roles:[u.role].filter(Boolean),plan:actualPlanLabel(u),verified:!!u.verified,emailVerified:!!u.emailVerified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
 function notificationSummaryFor(db,user){
   const messages=(db.messages||[]).filter(m=>m.toUserId===user.id&&!m.read).length;
   const network=(db.friendRequests||[]).filter(r=>r.status==='pending'&&r.toUserId===user.id&&!isAffiliateOnlyUser(db.users.find(u=>u.id===r.fromUserId))).length;
@@ -2837,6 +2841,7 @@ app.post('/api/founder-program/acknowledge', requireAuth, async (req,res)=>{
 app.post('/api/admin/set-founding-member', requireAuth, requireAdmin, async (req,res)=>{
   const u=req.db.users.find(x=>x.id===req.body?.userId && x.role!=='admin');
   if(!u)return res.status(404).json({error:'User not found.'});
+  if (!u.emailVerified && req.body?.foundingMember === true) return res.status(400).json({error:'Email confirmation is required for Founding Member recognition.'});
   if (isAffiliateOnlyUser(u) && req.body?.foundingMember === true) return res.status(400).json({error:'Affiliate-only accounts are not eligible for Founding Member recognition.'});
   u.foundingMember=req.body?.foundingMember===true;
   u.foundingMemberAt=u.foundingMember?new Date().toISOString():null;

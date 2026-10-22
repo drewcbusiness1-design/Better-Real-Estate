@@ -872,6 +872,7 @@ function renderAuth() {
   wrap.appendChild(el('h2', {}, isSignup ? 'Create your account' : 'Welcome back'));
   wrap.appendChild(el('div', { class: 'sub' }, state.companyInviteToken ? (isSignup ? 'Create your account to join your company workspace.' : 'Sign in with the email that received your company invitation.') : (isSignup ? `Free to join. No card required.${state.pricing?.signupTrialDays ? ` New accounts also get ${state.pricing.signupTrialDays} days of full access.` : ''}` : 'Sign in to continue.')));
 
+  if(isSignup)wrap.appendChild(el('p',{class:'hint'},'Verify your email to claim an available Founding Member spot among the first 50 eligible members. Signup alone does not reserve a spot. Affiliate-only accounts are excluded.'));
   let roles = isSignup && state.postAuthTarget?.view === 'affiliate' ? ['affiliate'] : [];
   const name = el('input', { placeholder: 'Jordan Alvarez' });
   const email = el('input', { type: 'text', autocomplete: 'username', placeholder: isSignup ? 'you@email.com' : 'Email or @username' });
@@ -3014,7 +3015,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 89;
+const TUTORIAL_VERSION = 90;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3110,6 +3111,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'admin',selector:'.demo-preview-card',min:4,release:38,title:'Preview experiences',copy:'Use a demo account to safely replay Founder welcome, onboarding, and What’s New experiences without consuming Founder places, issuing access, changing analytics, or creating money.'},
  {view:'admin',selector:'.user-inspector',min:4,release:39,title:'Demo account controls',copy:'Demo rows now keep every action visible: enter the demo, reset its password or state, convert it to a real account, or permanently delete it with confirmation.'},
  {view:'admin',selector:'.user-inspector',min:4,release:36,title:'Membership access controls',copy:'Open Manage access on any non-admin account to grant, replace, extend or revoke complimentary membership access without touching the user’s paid subscription.'},
+ {view:'affiliate',selector:'.campaign-partner-area',min:0,release:90,when:()=>hasRole(state.user,'affiliate'),title:'Campaign proof and review',copy:'Upload qualification proof as images or PDFs. The admin approves each referral before it counts toward your qualified signup total. Campaign payments remain on the freelance platform.'},
  {view:'me',selector:'.founder-program-card',min:0,release:36,when:()=>!!state.user?.founderLaunchPosition,title:'First 50 Founding Member',copy:'As one of the first 50 qualifying members, your profile carries Founding Member recognition and includes two weeks of complimentary Platinum access. Your referral link is ready to share with your network.'},
  {view:'feed',selector:'.topquick',min:0,release:31,title:'Quick options',copy:'Open your customizable shortcut menu from anywhere. Choose the platform actions you use most, customize up to six shortcuts, and use Back to return to your saved Quick Options without closing the menu.'},
  {view:'settings',selector:'.market-settings',min:0,release:29,title:'Investment markets',copy:'Choose the states you work in. They boost relevant properties in For You without hiding opportunities elsewhere.'},
@@ -3122,6 +3124,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'detail',selector:'.owner-ops',min:0,release:56,title:'Edit your property posts',copy:'On a property you own, use Edit property to update pricing, facts, notes, photos, video, deadline and JV availability without recreating the post.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:55,title:'A rebuilt mascot that stays home',copy:'The Better mascot now lives on a fixed header stage with separately articulated head, muzzle, ears, arms, paws, torso and tail. Gaze is damped, idle motion pauses naturally, and tutorial pointing uses the nearest paw without moving the character out of his header home.'},
  {view:'admin',selector:'.admin-activity',min:4,release:65,title:'All-time user activity',copy:'Choose All time to view all available recorded activity. Demo accounts are excluded. Older event detail may have been pruned.'},
+ {view:'affiliate',selector:'.campaign-partner-area',min:0,release:90,when:()=>hasRole(state.user,'affiliate'),title:'Campaign proof and review',copy:'Upload qualification proof as images or PDFs. The admin approves each referral before it counts toward your qualified signup total. Campaign payments remain on the freelance platform.'},
  {view:'me',selector:'.founder-program-card',min:0,release:63,when:()=>!!state.user?.founderLaunchPosition,title:'First 50 Founders',copy:'Founder recognition and two weeks of complimentary Platinum are limited to the first 50 qualifying accounts. Your signup rank and bonus dates appear here; paid memberships and separate admin grants remain independent.'},
  {view:'dealbuilder',selector:'.verified-comps-card',min:1,release:62,title:'Sold comps and working ARV',copy:'Review selected and excluded closed sales, adjusted prices and source links. A corroborated working range can support deal math when subject size and identity are established; missing distance or recorded subject details keep it separate from a precise ARV. Add or remove comps to update the calculator.'},
  {view:'dealbuilder',selector:'.dealbuildersearch',min:0,release:61,title:'Clear property evidence and deal numbers',copy:'Better preserves full and half bathroom details, labels unresolved facts and keeps withheld ARV out of the calculator. Number cards fit desktop and mobile. Research skips sold-comp expansion when the subject cannot be located; review source details before underwriting.'},
@@ -5603,7 +5606,7 @@ function verifyBanner() {
   if (!state.user || state.user.emailVerified) return null;
   const st = el('span', {});
   const b = el('div', { class: 'trialbar', style: 'border-color:var(--clay);background:var(--clay-soft);color:var(--clay-text)' }, [
-    el('div', {}, [state.user.verificationEmailLastStatus === 'failed' ? 'Your last confirmation email could not be delivered. Try Resend; if it fails again, the admin can diagnose it in Email Center. ' : 'Confirm your email to post listings. Check your inbox for the link. ', st]),
+    el('div', {}, [state.user.verificationEmailLastStatus === 'failed' ? 'Your last confirmation email could not be delivered. Try Resend; if it fails again, the admin can diagnose it in Email Center. ' : 'Confirm your email to post listings and claim an available Founding Member spot if eligible. Check your inbox for the link. ', st]),
     el('button', {
       style: 'background:var(--clay)',
       onclick: async () => {

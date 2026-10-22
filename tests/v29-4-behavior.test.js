@@ -15,8 +15,8 @@ eval(fn('grantMembership'));
 const start=Date.now()-200*86400000;
 const users=[];
 users.push({id:'admin',role:'admin',name:'Admin',email:'admin@example.test',createdAt:new Date(start).toISOString()});
-users.push({id:'demo',role:'buyer',demo:true,name:'Demo',email:'demo@example.test',createdAt:new Date(start+1).toISOString()});
-for(let i=1;i<=105;i++)users.push({id:'u'+i,role:'buyer',name:'User '+i,email:`u${i}@example.test`,createdAt:new Date(start+(i+2)*1000).toISOString(),plan:i===1?'pro':'free',planUntil:i===1?new Date(Date.now()+30*86400000).toISOString():null,grantPlan:i===2?'pro':null,grantUntil:i===2?new Date(Date.now()+20*86400000).toISOString():null,grantReason:i===2?'Existing grant':null});
+users.push({id:'demo',role:'buyer',emailVerified:true,demo:true,name:'Demo',email:'demo@example.test',createdAt:new Date(start+1).toISOString()});
+for(let i=1;i<=105;i++)users.push({id:'u'+i,role:'buyer',emailVerified:true,name:'User '+i,email:`u${i}@example.test`,createdAt:new Date(start+(i+2)*1000).toISOString(),plan:i===1?'pro':'free',planUntil:i===1?new Date(Date.now()+30*86400000).toISOString():null,grantPlan:i===2?'pro':null,grantUntil:i===2?new Date(Date.now()+20*86400000).toISOString():null,grantReason:i===2?'Existing grant':null});
 const db={users,founderAwards:[],membershipGrants:[]};
 assert.equal(ensureFirst100FounderProgram(db),true);
 assert.equal(db.founderAwards.length,50,'must award exactly first 100 qualifying accounts');
@@ -34,7 +34,7 @@ const founderDays=(new Date(first.founderPlatinumUntil)-new Date(first.founderPl
 assert(Math.abs(founderDays-14)<0.01,'Founder Platinum must last 14 days');
 // Deleting an awarded account returns the slot and compacts surviving ranks.
 db.users=db.users.filter(u=>u.id!=='u5');
-const newcomer={id:'u106',role:'buyer',name:'User 106',email:'u106@example.test',createdAt:new Date().toISOString()};db.users.push(newcomer);
+const newcomer={id:'u106',role:'buyer',emailVerified:true,name:'User 106',email:'u106@example.test',createdAt:new Date().toISOString()};db.users.push(newcomer);
 assert.equal(ensureFirst100FounderProgram(db),true);
 const activeFounderAwards=db.founderAwards.filter(a=>!a.voidedAt);
 assert.equal(activeFounderAwards.length,50,'deleted Founder slot must return to the active pool');
@@ -43,7 +43,7 @@ assert.equal(users.find(u=>u.id==='u51').founderLaunchPosition,50,'next qualifyi
 assert(!newcomer.founderLaunchPosition,'a later signup must not jump ahead of earlier qualifying users');
 assert(db.founderAwards.some(a=>a.voidedAt&&a.formerUserId==='u5'),'deleted Founder must leave a tombstone to prevent reclaiming the benefit');
 // Grant / extend / replace behavior.
-const target={id:'grant-user',role:'buyer',plan:'free'};const grantDb={membershipGrants:[],users:[target]};
+const target={id:'grant-user',role:'buyer',emailVerified:true,plan:'free'};const grantDb={membershipGrants:[],users:[target]};
 let g=grantMembership(grantDb,target,{tier:'pro',days:14,reason:'Test',grantedBy:'admin',mode:'replace'});
 const firstExpiry=new Date(g.until).getTime();assert.equal(target.grantPlan,'pro');
 g=grantMembership(grantDb,target,{tier:'platinum',days:7,reason:'Extend',grantedBy:'admin',mode:'extend'});
