@@ -2865,7 +2865,7 @@ async function saveBetterGuideSettings(patch){
 function betterGuideProgress(){const done=betterGuideCompleted().filter(x=>BETTER_GUIDE_COURSE.some(m=>m.slug===x));return {done,total:BETTER_GUIDE_COURSE.length,pct:Math.round((done.length/BETTER_GUIDE_COURSE.length)*100)};}
 function affiliateGuideOnly(){return hasRole(state.user,'affiliate');}
 function guideHelpCatalog(){return affiliateGuideOnly()?[
- {title:'Affiliate training and scripts',terms:'training tools calls Zillow Investor Base Facebook script',copy:'Learn who Better helps, find relevant business contacts and use the shared scripts.',view:'affiliate'},
+ {title:'Learn affiliate tools',terms:'training tools scripts links drafts inbox replies proof',copy:'Learn free signup, your assigned link, public lead source URLs, reviewed emails, replies and referral proof.',view:'learn'},
  {title:'Prospects and follow-ups',terms:'prospect contact follow up tracker',copy:'Keep your private prospect notes and next follow-up in Affiliate Center.',view:'affiliate'},
  {title:'Affiliate earnings and tracked link',terms:'commission rate bonus leaderboard link QR earnings payout',copy:'Review approval, terms, tracked signup link and eligible earnings.',view:'affiliate'},
  {title:'Account settings',terms:'settings password email profile',copy:'Manage your account and notification preferences.',view:'settings'},
@@ -2966,7 +2966,7 @@ function openBetterGuide(){
   quick.append(
     el('button',{onclick:()=>{closeBetterGuide();startTutorial(true);}},[el('b',{},'Guide me through Better'),el('span',{},'A focused 10-step introduction')]),
     el('button',{onclick:()=>{closeBetterGuide();startTutorial(true,false,false,true);}},[el('b',{},'Full platform walkthrough'),el('span',{},'Explore every feature available to your account')]),
-    el('button',{onclick:()=>affiliateGuideOnly()?navigateFromGuide('affiliate'):navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||next.module||'foundations')},[el('b',{},affiliateGuideOnly()?'Affiliate training & tools':'Learn Wholesaling — Free'),el('span',{},affiliateGuideOnly()?'Scripts, plans and follow-ups':`${progress.done}/${progress.total} modules complete`)]),
+    el('button',{onclick:()=>affiliateGuideOnly()?navigateFromGuide('learn'):navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||next.module||'foundations')},[el('b',{},affiliateGuideOnly()?'Affiliate training & tools':'Learn Wholesaling — Free'),el('span',{},affiliateGuideOnly()?'Scripts, plans and follow-ups':`${progress.done}/${progress.total} modules complete`)]),
     el('button',{onclick:()=>navigateFromGuide('faq')},[el('b',{},'Help center'),el('span',{},'Browse common questions')]),
     el('button',{onclick:()=>navigateFromGuide('support')},[el('b',{},'Chat with Better'),el('span',{},'AI help or request a person')])
   );
@@ -2994,6 +2994,7 @@ async function markGuideModuleComplete(slug){
 async function openGuideModule(slug){state.guideCourseModule=slug;writeRoute('push');try{await saveBetterGuideSettings({guideCourseLastModule:slug});}catch{}renderApp();window.scrollTo(0,0);}
 
 async function renderLearnWholesaling(){
+ if(affiliateGuideOnly())return renderAffiliateToolsTraining();
   const wrap=el('div',{class:'page better-learning-page'}),module=betterGuideModule(state.guideCourseModule||state.user?.settings?.guideCourseLastModule||'foundations'),progress=betterGuideProgress();
   const hero=el('section',{class:'guide-course-hero'},[
     el('div',{class:'guide-course-mascot'},[createBetterMascotRig({variant:'course',label:'Better mascot, the Better Real Estate golden retriever mascot'}),el('img',{class:'guide-course-logo',src:'/better-guide-logo.png',alt:'Better Real Estate'})]),
@@ -3015,7 +3016,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 91;
+const TUTORIAL_VERSION = 92;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3111,13 +3112,15 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'admin',selector:'.demo-preview-card',min:4,release:38,title:'Preview experiences',copy:'Use a demo account to safely replay Founder welcome, onboarding, and What’s New experiences without consuming Founder places, issuing access, changing analytics, or creating money.'},
  {view:'admin',selector:'.user-inspector',min:4,release:39,title:'Demo account controls',copy:'Demo rows now keep every action visible: enter the demo, reset its password or state, convert it to a real account, or permanently delete it with confirmation.'},
  {view:'admin',selector:'.user-inspector',min:4,release:36,title:'Membership access controls',copy:'Open Manage access on any non-admin account to grant, replace, extend or revoke complimentary membership access without touching the user’s paid subscription.'},
+ {view:'learn',when:()=>affiliateGuideOnly(),selector:'#app .page',min:0,release:92,title:'Learn affiliate tools',copy:'Learn your assigned link, free signup message, public lead sources, draft approvals, reply inbox and qualification proof. No wholesaling course is needed.'},
+ {view:'affiliate',title:'Partner tools and reply inbox',copy:'Public lead sources are website or profile links. Save drafts under your linked campaign, submit for admin review, and read only your own email replies. Campaign results now have labeled agreement, earnings and review sections. Deleting a campaign or account uses Cancel and Confirm delete buttons, with no phrase to type.',selector:'#app .page',min:0,release:92},
  {view:'affiliate',selector:'.outreach-email-panel',min:0,release:91,when:()=>hasRole(state.user,'affiliate'),title:'Company email with admin review',copy:'Choose Outreach email in Affiliate Center. Save and submit a draft; the admin reviews and sends it from partners@. Editing clears approval. Campaign payments remain on the freelance platform.'},
  {view:'affiliate',selector:'.campaign-partner-area',min:0,release:90,when:()=>hasRole(state.user,'affiliate'),title:'Campaign proof and review',copy:'Upload qualification proof as images or PDFs. The admin approves each referral before it counts toward your qualified signup total. Campaign payments remain on the freelance platform.'},
  {view:'me',selector:'.founder-program-card',min:0,release:36,when:()=>!!state.user?.founderLaunchPosition,title:'First 50 Founding Member',copy:'As one of the first 50 qualifying members, your profile carries Founding Member recognition and includes two weeks of complimentary Platinum access. Your referral link is ready to share with your network.'},
  {view:'feed',selector:'.topquick',min:0,release:31,title:'Quick options',copy:'Open your customizable shortcut menu from anywhere. Choose the platform actions you use most, customize up to six shortcuts, and use Back to return to your saved Quick Options without closing the menu.'},
  {view:'settings',selector:'.market-settings',min:0,release:29,title:'Investment markets',copy:'Choose the states you work in. They boost relevant properties in For You without hiding opportunities elsewhere.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:52,title:'Meet your Better Guide',copy:'Your Better Guide lives beside Settings. Open him anytime for platform help, contextual guidance, tutorials, support, and the free Learn Wholesaling course built around Better Real Estate.'},
- {view:'learn',selector:'.better-learning-page',min:0,release:52,title:'Learn wholesaling inside Better',copy:'The free course teaches the wholesaling workflow while showing where to do each step in Better — research a property, build your network, post a deal, manage buyers, and move the transaction forward.'},
+ {view:'learn',selector:'.better-learning-page',min:0,when:()=>!affiliateGuideOnly(),release:52,title:'Learn wholesaling inside Better',copy:'The free course teaches the wholesaling workflow while showing where to do each step in Better — research a property, build your network, post a deal, manage buyers, and move the transaction forward.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:53,title:'Meet the mascot, not another button',copy:'The Better mascot now is the control: no Guide pill, no stacked circles. He reacts to hover, taps, tutorials and course wins while keeping Settings clear and the rest of Better unchanged.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'A mascot that actually feels alive',copy:'Better Guide is now a layered interactive character instead of a moving picture. His head, ears, raised paw, body and tail move independently, he follows nearby interaction, reacts to the tutorial target and settles back into a restrained idle state.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:54,title:'The mascot now reacts continuously',copy:'The mascot now runs as one continuous character rig. He follows nearby pointer movement, leans with page motion, reacts to page actions, aims toward tutorial targets, and celebrates course progress without swapping between rendered poses.'},
@@ -3142,22 +3145,22 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'home',selector:'.homecap-panel',min:0,release:74,title:'Feature walkthroughs before signup',copy:'The four homepage workspace rows open individual How it works explanations and a relevant signup or plan action.'},
  {view:'settings',selector:'#app .page',min:0,title:'Settings & help',copy:'Control notifications, membership display, appearance and account options. You can restart the guided tour here anytime.'},
  {view:'feed',selector:null,min:0,title:'You’re ready',copy:'That covers your current access. If your membership unlocks new tools later, you’ll get a short tour of only those new features.'}
- ].filter(x=>rank>=x.min&&(!state.access?.adminUnlimited||!['.affiliate-leaderboard','.affiliate-milestones','.affiliate-status','.affiliate-link-card','.payout-card','.affiliate-hero'].includes(x.selector))&&(!x.when||x.when())&&(!hasRole(state.user,'affiliate')||['affiliate','settings','wallet','support'].includes(x.view)));
+ ].filter(x=>rank>=x.min&&(!state.access?.adminUnlimited||!['.affiliate-leaderboard','.affiliate-milestones','.affiliate-status','.affiliate-link-card','.payout-card','.affiliate-hero'].includes(x.selector))&&(!x.when||x.when())&&(!hasRole(state.user,'affiliate')||['affiliate','settings','wallet','support','learn'].includes(x.view)));
 }
 function tutorialQuickSteps(){
  const affiliate=hasRole(state.user,'affiliate');
  const step=(view,title,copy,selector='#app .page')=>({view,title,copy,selector,min:0});
  if(affiliate)return [
- step('affiliate','Welcome to Better','This 10-step introduction covers your affiliate workspace. You can skip anytime or explore the full walkthrough.'),
- step('affiliate','Understand the platform','Better helps real estate professionals post properties, connect with buyers and organize deal workflows. Start with the product guide.'),
- step('affiliate','Apply and accept terms','Affiliate participation requires approval and acceptance of the current terms before sharing your tracked link.'),
- step('affiliate','Use your tracked link','Once approved, use the personal link or QR code shown in Affiliate Center so eligible purchases can be attributed.'),
- step('affiliate','Find the right audience','Focus on people who could use Better in their real estate work. Review the sourcing and conversation guidance.'),
- step('affiliate','Organize prospects','Keep private notes, stages and follow-up dates in your prospect tracker. These stages do not count as actual sales.'),
- step('affiliate','Understand commissions','Commissions apply once to the first eligible paid membership. Check your accepted rate, leaderboard and conditional bonus rules.'),
- step('affiliate','Review earnings and payouts','Eligible earnings have a three-day hold. Withdraw available cash through verified Stripe Connect; Better Credits remain separate.'),
- step('settings','Control your account','Update your account details, appearance and email preferences. Better Guide offers support and the full tutorial.'),
- step('affiliate','Choose your first step','Read the product guide, then prepare your application or share your approved tracked link. Use Full platform walkthrough whenever you want more detail.')];
+ step('learn','Welcome to your affiliate tools','This introduction covers your links, drafts, replies and results. You do not need the wholesaling course to work as an affiliate.'),
+ step('affiliate','Connect your account','Confirm your email and give the admin your exact username to link an assigned campaign.'),
+ step('affiliate','Choose the right program','Campaign partnerships and the standard affiliate program have separate terms. A linked campaign does not require a standard affiliate application.'),
+ step('affiliate','Use your assigned link','Copy the link from your campaign or approved standard program so signup attribution is recorded.'),
+ step('affiliate','Lead with free signup','Creating an account is free. Paid memberships are optional; explain their value only when relevant.'),
+ step('affiliate','Document the right leads','Use public business or professional contacts. The lead source field is the website or profile link where you found them.'),
+ step('affiliate','Draft and request approval','In Outreach email, save a personalized draft, preview the complete email and submit it for admin review. Saving never sends.'),
+ step('affiliate','Read your replies','Open Outreach email, then Reply inbox. You see replies to emails you sent; the admin sees all. Follow-up messages also need review.'),
+ step('affiliate','Review results and earnings','Campaign cards separate the agreement, earnings and referral reviews. Campaign compensation is recorded through the named freelance platform; standard affiliate payouts follow their own terms.'),
+ step('settings','Get help when needed','Reopen Learn affiliate tools or Better Guide for links, drafting, proof and inbox guidance.')];
  return [
  step('feed','Welcome to Better','Get comfortable in 10 steps. Start with your market, post a property or find relevant people, then build from there. Skip anytime.'),
  step('settings','Set your markets','Choose the states you work in and update your profile roles. These preferences help Better surface relevant opportunities.','.market-settings'),
@@ -3235,7 +3238,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false,inDepth
    card.appendChild(el('button',{type:'button',class:'btn-ghost tutorial-dock-toggle',onclick:()=>{preferredSide=card.dataset.dock==='left'?'right':'left';reposition();card.querySelector('.tutorial-dock-toggle').textContent=preferredSide==='left'?'Move right':'Move left';}},preferredSide==='left'?'Move right':'Move left'));
    card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':inDepth?'FULL WALKTHROUGH':'QUICK START'} · ${i+1} OF ${steps.length}`));
    card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
-   if(i===0&&!onlyNew&&!releaseOnly)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{cleanup();state.guideCourseModule=state.user?.settings?.guideCourseLastModule||'foundations';go('learn');}},'I’m new to wholesaling — start the free course'));
+   if(i===0&&!onlyNew&&!releaseOnly)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{cleanup();state.guideCourseModule=state.user?.settings?.guideCourseLastModule||'foundations';go('learn');}},affiliateGuideOnly()?'Learn your affiliate tools':'I’m new to wholesaling — start the free course'));
    card.appendChild(el('div',{class:'tutorialmembership'},`Showing ${tier==='wholesale'?'Team':tier[0].toUpperCase()+tier.slice(1)} access`));
    const actions=el('div',{class:'tutorialactions'});
    actions.appendChild(el('button',{type:'button',class:'btn-ghost',disabled:i===0?'disabled':null,onclick:()=>move(-1)},'Back'));
@@ -4383,7 +4386,7 @@ function renderSettings() {
   sbox.appendChild(toggleRow('Show activity status', 'Shows Active now or Active recently on your public profile without exposing an exact timestamp.', s.showActivityStatus !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{showActivityStatus:on}); state.user.settings=settings; }));
   sbox.appendChild(toggleRow('Better Guide contextual tips', 'Lets the mascot tailor help to the Better page you are currently using. No fake activity or invented deal facts.', s.guideContextTips !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{guideContextTips:on}); state.user.settings=settings; }));
   sbox.appendChild(toggleRow('Better Guide animations', 'Keeps mascot movement subtle. Reduced-motion system settings are always respected.', s.guideAnimations !== false, async on => { const { settings } = await api('PATCH','/api/me/settings',{guideAnimations:on}); state.user.settings=settings; }));
-  const guideActions=el('div',{class:'guide-settings-actions'},[el('button',{class:'btn-ghost',onclick:()=>startTutorial(true)},'Restart platform tutorial'),el('button',{class:'btn-ghost',onclick:()=>startTutorial(true,false,false,true)},'Full platform walkthrough'),el('button',{class:'btn-ghost',onclick:()=>go('learn')},'Open free wholesaling course')]);
+  const guideActions=el('div',{class:'guide-settings-actions'},[el('button',{class:'btn-ghost',onclick:()=>startTutorial(true)},'Restart platform tutorial'),el('button',{class:'btn-ghost',onclick:()=>startTutorial(true,false,false,true)},'Full platform walkthrough'),el('button',{class:'btn-ghost',onclick:()=>go('learn')},affiliateGuideOnly()?'Learn affiliate tools':'Open free wholesaling course')]);
   sbox.appendChild(guideActions);
   wrap.appendChild(sbox);
 
@@ -4415,13 +4418,11 @@ function renderSettings() {
   const dbox = el('div', { class: 'card dangerzone', style: 'padding:16px' });
   dbox.appendChild(el('div', { class: 'dnotes' }, 'Permanently removes your public profile, listings, friendships and messages. Financial/order records that must be retained are stripped of your profile information. If you own a company workspace, deleting your account closes that workspace for the team.'));
   const delPass = el('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
-  const delConfirm = el('input', { placeholder: 'Type DELETE' });
   const delSt = el('div', { class: 'errmsg' });
-  dbox.appendChild(delPass); dbox.appendChild(delConfirm);
+  dbox.appendChild(delPass);
   dbox.appendChild(el('button', { class: 'dangerbtn', onclick: async () => {
-    if (delConfirm.value.trim().toUpperCase() !== 'DELETE') { delSt.textContent = 'Type DELETE to confirm.'; return; }
-    if (!confirm('Permanently delete this Better Real Estate account? This cannot be undone.')) return;
-    try { await api('DELETE', '/api/me', { password: delPass.value, confirmation: delConfirm.value }); state.user = null; state.access = null; state.companyId = null; state.companyInviteToken = null; go('home', {}, { replace: true }); }
+    if (!await confirmDelete('Permanently delete this Better Real Estate account? This cannot be undone.')) return;
+    try { await api('DELETE', '/api/me', { password: delPass.value, confirmation: 'DELETE' }); state.user = null; state.access = null; state.companyId = null; state.companyInviteToken = null; go('home', {}, { replace: true }); }
     catch (e) { delSt.textContent = e.message; }
   } }, 'Permanently delete account'));
   dbox.appendChild(delSt); wrap.appendChild(dbox);
@@ -5336,13 +5337,13 @@ async function renderAdmin() {
       if(u.founderAward)details.push(`First 50 · #${u.founderAward.position}`);
       const actions=el('div',{class:'inspector-actions'});
       if(u.role!=='admin')actions.appendChild(serviceAction(u.verified?'Remove verification':'Grant verification',async()=>{if(!confirm((u.verified?'Remove':'Grant')+' verification for '+u.name+'?'))return;await api('POST','/api/admin/set-user-verification',{userId:u.id,verified:!u.verified});toast('Verification updated','ok');await loadInspector();}));
-      if(u.role!=='admin' && !u.demo)actions.appendChild(el('button',{class:'dangerbtn compactbtn',onclick:async()=>{const typed=prompt(`Permanently delete ${u.name} (${u.email})? This is intended for spam/abusive accounts. Type DELETE USER to confirm.`);if(typed!=='DELETE USER')return;try{await api('DELETE',`/api/admin/users/${u.id}`,{confirmation:'DELETE USER'});toast('Account permanently deleted','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Delete account'));
+      if(u.role!=='admin' && !u.demo)actions.appendChild(el('button',{class:'dangerbtn compactbtn',onclick:async()=>{if(!await confirmDelete(`Permanently delete ${u.name} (${u.email})? This removes the account and cannot be undone.`))return;try{await api('DELETE',`/api/admin/users/${u.id}`,{confirmation:'DELETE USER'});toast('Account permanently deleted','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Delete account'));
       if(u.demo){
         actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{try{const r=await api('POST',`/api/admin/demo-accounts/${u.id}/enter`);state.user=r.user;state.access=r.access;state.demoAdminSession=true;go('feed',{}, {replace:true});}catch(e){toast(e.message,'err')}}},'Enter demo'));
         actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:()=>openFormModal('Reset demo password',[{key:'password',label:'New demo password',type:'password',placeholder:'At least 6 characters'}],'Reset password',async v=>{await api('POST',`/api/admin/demo-accounts/${u.id}/password`,{password:v.password});toast('Demo password reset','ok');})},'Reset password'));
         actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{if(!confirm(`Reset ${u.name} to a clean demo state?`))return;try{await api('POST',`/api/admin/demo-accounts/${u.id}/reset`);toast('Demo account reset','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Reset demo'));
         actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{if(!confirm(`Convert ${u.name} into a real account? This cannot restore old rewards or Founder eligibility retroactively.`))return;try{await api('POST',`/api/admin/demo-accounts/${u.id}/convert`,{confirmation:'CONVERT'});toast('Converted to real account','ok');await loadInspector();}catch(e){toast(e.message,'err')}}},'Convert to real'));
-        actions.appendChild(el('button',{class:'dangerbtn compactbtn',onclick:async()=>{const typed=prompt(`Permanently delete demo account ${u.name}? Type DELETE DEMO to confirm.`);if(typed!=='DELETE DEMO')return;try{await api('DELETE',`/api/admin/demo-accounts/${u.id}`,{confirmation:'DELETE DEMO'});toast('Demo account deleted','ok');await loadInspector();await refreshDemoChoices();}catch(e){toast(e.message,'err')}}},'Delete demo'));
+        actions.appendChild(el('button',{class:'dangerbtn compactbtn',onclick:async()=>{if(!await confirmDelete(`Permanently delete demo account ${u.name}? This cannot be undone.`))return;try{await api('DELETE',`/api/admin/demo-accounts/${u.id}`,{confirmation:'DELETE DEMO'});toast('Demo account deleted','ok');await loadInspector();await refreshDemoChoices();}catch(e){toast(e.message,'err')}}},'Delete demo'));
       }
       if (!hasRole(u,'affiliate')) actions.appendChild(el('button',{class:'btn-ghost compactbtn',onclick:async()=>{const next=!u.foundingMember;if(!confirm(`${next?'Grant':'Remove'} Founding Member status for ${u.name}?`))return;try{await api('POST','/api/admin/set-founding-member',{userId:u.id,foundingMember:next});toast(next?'Founding Member granted':'Founding Member removed','ok');await loadInspector();}catch(e){toast(e.message,'err')} }},u.foundingMember?'Remove founding':'Grant founding'));
       const member=el('details',{class:'inspector-member'}),body=el('div',{class:'inspector-member-body'}),profileHost=el('div');
@@ -6372,4 +6373,18 @@ async function promoEmailControls(){
  if(!data.history.length)host.append(el('p',{},'No recorded attempts yet. Earlier content was not archived.'));
  for(const row of data.history){const details=el('details',{class:'connected-card'},[el('summary',{},`${row.content?.subject||'Email attempt'} · ${row.status}`),el('p',{},`${row.to} · ${new Date(row.at).toLocaleString()}`),el('p',{},row.content?.body||'No saved content'),el('p',{class:'hint'},row.error||row.providerId||'')]);if(row.html)details.append(connectedAction('View saved email',()=>{const {card}=connectedModal('Saved promotional email');const frame=el('iframe',{sandbox:'',title:'Saved email',style:'width:100%;height:520px;border:0'});frame.srcdoc=row.html;card.append(frame);}));host.append(details);}
  return host;
+}
+
+function renderAffiliateToolsTraining(){
+ const page=el('div',{class:'page service-form'});page.append(el('h1',{},'Learn your affiliate tools'),el('p',{class:'sub'},'Your job is to introduce relevant people to Better. Signup is free. Paid memberships are optional.'));
+ for(const [title,copy]of [
+ ['1. Your campaign and link','Open Affiliate Center → Campaign partnerships. Confirm the agreement and copy your assigned referral link. If no campaign appears, confirm your email and give the admin your username. Campaign partners do not need the standard affiliate application.'],
+ ['2. Public leads and source links','Use relevant business websites and public professional profiles. In the lead source field, paste the clickable page link where you found the contact. Enter the contact’s email in Recipient email. The source is not your signup link.'],
+ ['3. Write and preview','Open Outreach email → Create an email draft. Choose your campaign, enter the recipient, source, subject and personalized message. Lead with free signup. Preview adds your tracked link, signature and company footer.'],
+ ['4. Admin approval before sending','Save draft sends nothing. Submit for admin review. Only the admin can approve the exact version and send it. Editing clears approval. Every follow-up needs review too.'],
+ ['5. Your reply inbox','Open Outreach email → Reply inbox or View email conversation. After receiving is configured, replies to your emails appear here and for the admin. Other affiliates cannot see your replies. Attachments are listed for admin inspection through the provider. Older messages using the company mailbox do not import automatically.'],
+ ['6. Referral proof and results','Under Campaign partnerships, open Your referred users and submit relevant public qualification evidence. Review counts show awaiting proof, pending, approved and rejected separately. Only approved signups count toward the agreed goal.'],
+ ['7. Earnings and next steps','Read Your agreement and Earnings and external payments. Campaign compensation is handled through the named freelance platform. The standard affiliate program has separate accepted terms and payout tools. Ask the admin about continuing a trial or a new commission rate.']
+ ])page.append(el('section',{class:'card'},[el('h2',{},title),el('p',{},copy)]));
+ page.append(el('button',{class:'btn-primary',onclick:()=>go('affiliate')},'Open Affiliate Center'));return page;
 }

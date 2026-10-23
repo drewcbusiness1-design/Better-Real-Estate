@@ -1,5 +1,6 @@
 'use strict';
 const assert=require('assert'),{app,cookie,getDB}=require('./connected-fixture'),mailer=require('../mailer'),tracking=require('../campaignTracking');
+process.env.OUTREACH_REPLY_DOMAIN='reply.example.invalid';process.env.RESEND_WEBHOOK_SECRET='whsec_dGVzdC1zZWNyZXQ=';
 process.env.MARKETING_POSTAL_ADDRESS='123 Test Street, Test City, NJ 00000';
 let sends=[],transportError=false;mailer.configured=()=>true;mailer.sendPartnerOutreach=async s=>{sends.push(structuredClone(s));await new Promise(r=>setTimeout(r,10));if(transportError)throw Error('Test network interruption');return {id:'provider-'+s.key};};
 const server=app.listen(0,'127.0.0.1');
@@ -16,11 +17,13 @@ const server=app.listen(0,'127.0.0.1');
  assert.equal((await req(endpoint+'/'+dId+'/send',{expectedRevision:1},'partner')).status,403);assert.equal((await req(endpoint+'/'+dId+'/send',{expectedRevision:1})).status,409);
  assert.equal((await req(endpoint+'/'+dId+'/submit',{expectedRevision:0},'partner')).status,409);assert.equal((await req(endpoint+'/'+dId+'/submit',{expectedRevision:1},'partner')).status,200);
  assert.equal((await req(endpoint+'/'+dId+'/review',{approved:true,expectedRevision:1})).status,409);
- let preview=(await req(endpoint+'/'+dId+'/preview')).data;assert(preview.preview.text.includes('campaign='+c.code));assert(preview.preview.text.includes('Paid memberships are optional'));assert(preview.preview.html.includes('&lt;script&gt;'));assert(!preview.preview.html.includes('<script>'));assert(preview.preview.from.endsWith('<partners@betterrealestate.org>'));assert.equal(preview.preview.replyTo,'partners@betterrealestate.org');
+ let preview=(await req(endpoint+'/'+dId+'/preview')).data;assert(preview.preview.text.includes('campaign='+c.code));assert(preview.preview.text.includes('Paid memberships are optional'));assert(preview.preview.html.includes('&lt;script&gt;'));assert(!preview.preview.html.includes('<script>'));assert(preview.preview.from.endsWith('<partners@betterrealestate.org>'));assert(/^r\+[a-f0-9]{32}@reply.example.invalid$/.test(preview.preview.replyTo));
  assert.equal((await req(endpoint+'/'+dId+'/review',{approved:true,expectedRevision:1,previewHash:preview.previewHash})).status,200);assert.equal(sends.length,0);
  assert.equal((await req(endpoint+'/'+dId+'/edit',{...fields,subject:'Updated free signup invitation',expectedRevision:1},'partner')).status,200);assert.equal((await req(endpoint+'/'+dId+'/send',{expectedRevision:2})).status,409);
  await req(endpoint+'/'+dId+'/submit',{expectedRevision:2},'partner');preview=(await req(endpoint+'/'+dId+'/preview')).data;await req(endpoint+'/'+dId+'/review',{approved:true,expectedRevision:2,previewHash:preview.previewHash});
- const postal=process.env.MARKETING_POSTAL_ADDRESS;process.env.MARKETING_POSTAL_ADDRESS='Changed address';assert.equal((await req(endpoint+'/'+dId+'/send',{expectedRevision:2})).status,409);assert.equal(sends.length,0);process.env.MARKETING_POSTAL_ADDRESS=postal;
+ const postal=process.env.MARKETING_POSTAL_ADDRESS;process.env.OUTREACH_REPLY_DOMAIN='reply.example.invalid';process.env.RESEND_WEBHOOK_SECRET='whsec_dGVzdC1zZWNyZXQ=';
+process.env.MARKETING_POSTAL_ADDRESS='Changed address';assert.equal((await req(endpoint+'/'+dId+'/send',{expectedRevision:2})).status,409);assert.equal(sends.length,0);process.env.OUTREACH_REPLY_DOMAIN='reply.example.invalid';process.env.RESEND_WEBHOOK_SECRET='whsec_dGVzdC1zZWNyZXQ=';
+process.env.MARKETING_POSTAL_ADDRESS=postal;
  const concurrent=await Promise.all([req(endpoint+'/'+dId+'/send',{expectedRevision:2}),req(endpoint+'/'+dId+'/send',{expectedRevision:2})]);assert(concurrent.some(x=>x.status===200));assert.equal(sends.length,1);
  assert.equal((await req(endpoint+'/'+dId+'/send',{expectedRevision:2})).status,200);assert.equal(sends.length,1);assert.equal((await req(endpoint+'/'+dId+'/edit',{...fields,expectedRevision:2},'partner')).status,409);
  async function approved(to,contextId=c.id,who='partner'){

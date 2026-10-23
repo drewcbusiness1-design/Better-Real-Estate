@@ -80,8 +80,8 @@ const FOUNDER_PLATINUM_DAYS = 14;
 
 
 app.use((req, res, next) => {
-  // Stripe signs the raw bytes, so the webhook route must not be JSON-parsed.
-  if (req.originalUrl === '/api/payments/webhook') return next();
+  // Provider webhooks sign raw bytes; preserve them until signature verification.
+  if (req.originalUrl === '/api/payments/webhook' || req.path === '/api/outreach/webhook') return next();
   express.json({ limit: '30mb' })(req, res, next);
 });
 app.use(express.static(path.join(__dirname, 'public')));

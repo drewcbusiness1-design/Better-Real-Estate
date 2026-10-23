@@ -1668,3 +1668,7 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .outreach-email-panel input,.outreach-email-panel select,.outreach-email-panel textarea{max-width:100%;min-width:0;}
 
 .outreach-email-panel,.outreach-email-panel details{min-width:0;max-width:100%;overflow-wrap:anywhere;box-sizing:border-box}.outreach-email-panel summary{cursor:pointer;padding:12px;line-height:1.5;}
+
+.campaign-metric-section{min-width:0}.campaign-metric-section h4{margin:8px 0 12px}.campaign-metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px;margin:0}.campaign-metric-grid>div{border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0;background:var(--surface)}.campaign-metric-grid dt{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere}.campaign-metric-grid dd{font-weight:700;font-size:1.25rem;margin:8px 0 0}.outreach-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
+
+.delete-confirm-dialog{box-sizing:border-box;width:min(460px,calc(100% - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--line);border-radius:16px;padding:24px;background:var(--surface);color:var(--ink);box-shadow:0 20px 60px #0004}.delete-confirm-dialog::backdrop{background:#0008}.delete-confirm-dialog h2{margin-top:0}.delete-confirm-dialog p{line-height:1.6;overflow-wrap:anywhere}.delete-confirm-dialog .service-actions{justify-content:flex-end;gap:12px;margin-top:24px}.delete-confirm-dialog button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}

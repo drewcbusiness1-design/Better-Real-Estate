@@ -261,3 +261,10 @@ exports.sendSupportRequest = (to, name, threadId) => {
 };
 
 exports.previewMarketing = (name, {headline,body,ctaLabel,ctaUrl}, links) => marketingShell(headline || 'See what is new', `<p>Hi ${esc(name || 'there')},</p><p>${esc(body || '')}</p><p style="margin:22px 0"><a href="${esc(ctaUrl || APP_URL)}" style="background:#12222D;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;display:inline-block;font-weight:600">${esc(ctaLabel || 'Open Better Real Estate')}</a></p>`, links);
+
+// Fetch only from the fixed provider API; never follow email-supplied URLs.
+exports.retrieveReceivedEmail = async id => {
+ if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id))throw Error('Invalid received email ID');
+ const r=await fetch('https://api.resend.com/emails/receiving/'+encodeURIComponent(id),{headers:{Authorization:'Bearer '+RESEND_KEY},signal:AbortSignal.timeout(12000),redirect:'error'});
+ if(!r.ok)throw Error('Received email retrieval failed');return r.json();
+};

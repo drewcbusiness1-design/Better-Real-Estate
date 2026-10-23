@@ -10,7 +10,7 @@ assert(app.includes('You can permanently delete your own account from Settings')
 assert(server.includes("app.delete('/api/admin/users/:id'"),'admin real-user delete endpoint exists');
 assert(server.includes("target.role==='admin'"),'admin deletion protected');
 assert(server.includes("balanceOf(req.db,target.id)>0"),'wallet safeguard exists');
-assert(app.includes("Type DELETE USER to confirm"),'admin UI requires typed destructive confirmation');
+assert(app.includes('await confirmDelete(`Permanently delete ${u.name} (${u.email})?')&&!app.includes('Type DELETE USER to confirm'),'admin UI requires explicit button confirmation');
 const network=app.slice(app.indexOf('async function renderNetwork()'),app.indexOf('async function renderDemandInsights()'));
 assert(network.includes('load();\n    return wrap;'),'buyer network loads after shell renders');
 assert(network.includes('role.onchange = load;\n  load();\n  return wrap;'),'discover network loads after shell renders');
