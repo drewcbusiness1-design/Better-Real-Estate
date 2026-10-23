@@ -2512,7 +2512,8 @@ function notificationSummaryFor(db,user){
   const admin=isAdminUser(user);
   const affiliate=admin?(db.affiliateApplications||[]).filter(a=>a.status==='pending').length:0;
   const reports=admin?(db.reports||[]).filter(r=>r.status==='open').length:0;
-  const destinations={messages,network,savedsearches,affiliate,reports};
+  const adminAlerts=admin?((db.campaignOutreach||[]).find(g=>g.id==='global')?.alerts||[]).filter(a=>a.userId===user.id&&!a.read).length:0;
+  const destinations={messages,network,savedsearches,affiliate,reports,admin:adminAlerts};
   const profile=Object.values(destinations).reduce((n,x)=>n+Number(x||0),0);
   return {total:profile,profile,destinations};
 }

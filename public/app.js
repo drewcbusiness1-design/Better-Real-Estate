@@ -580,6 +580,7 @@ function renderTop() {
   if(state.user && state.navigationWorkspace==='services')nav.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('feed')},'Main dashboard'));
   if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
   if (state.user?.demo && state.demoAdminSession) nav.appendChild(el('button',{class:'demo-return-btn',title:'Return to Admin',onclick:async()=>{try{await api('POST','/api/demo/return-admin');await refreshMe();go('admin',{}, {replace:true});}catch(e){toast(e.message,'err');}}},'Return to Admin'));
+  if(state.user.role==='admin'){const alerts=el('button',{class:'iconbtn outreach-alert-button',title:'Partner email submissions','aria-label':'Partner email submissions',onclick:async()=>{try{await api('POST','/api/outreach/alerts/read',{});await refreshUnread();}catch{}state.openOutreachApprovals=true;go('admin');}},iconSvg('mail',19));const count=notificationCountFor('admin');if(count)alerts.append(el('span',{class:'msgbadge'},String(count)));nav.append(alerts);}
   if(!hasRole(state.user,'affiliate')){
   const inboxBtn = el('button', { class: 'iconbtn', title: 'Messages', onclick: () => go('messages') }, iconSvg('mail',19));
   if (state.unreadCount > 0) inboxBtn.appendChild(el('span', { class: 'msgbadge' }, state.unreadCount > 99 ? '99+' : String(state.unreadCount)));
@@ -3016,7 +3017,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 92;
+const TUTORIAL_VERSION = 93;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3025,6 +3026,7 @@ function tutorialTier(){
 const TUTORIAL_RANK={free:0,pro:1,platinum:2,wholesale:3,trial:1,admin:4};
 function tutorialStepsFor(tier=tutorialTier()){
  const rank=TUTORIAL_RANK[tier]??0;
+ if(affiliateGuideOnly())return tutorialQuickSteps();
  return [
  {view:'affiliate',selector:'.campaign-partner-area',min:0,release:89,title:'Campaign partnerships',copy:'Use your linked campaign dashboard to copy your link, review signups and paid conversions, submit qualification evidence and see external-payment records. Payments are handled through your freelance platform, separate from the standard affiliate wallet.'},
  {view:'admin',selector:'.campaign-panel',min:4,release:88,title:'Freelancer acquisition campaigns',copy:'Create a separate tracking link for each freelancer. Review qualified signups, see first-payment commissions and record payments made through Fiverr or Upwork. Campaign earnings stay outside the affiliate wallet and bonus program.'},
@@ -3151,16 +3153,17 @@ function tutorialQuickSteps(){
  const affiliate=hasRole(state.user,'affiliate');
  const step=(view,title,copy,selector='#app .page')=>({view,title,copy,selector,min:0});
  if(affiliate)return [
- step('learn','Welcome to your affiliate tools','This introduction covers your links, drafts, replies and results. You do not need the wholesaling course to work as an affiliate.'),
- step('affiliate','Connect your account','Confirm your email and give the admin your exact username to link an assigned campaign.'),
- step('affiliate','Choose the right program','Campaign partnerships and the standard affiliate program have separate terms. A linked campaign does not require a standard affiliate application.'),
- step('affiliate','Use your assigned link','Copy the link from your campaign or approved standard program so signup attribution is recorded.'),
- step('affiliate','Lead with free signup','Creating an account is free. Paid memberships are optional; explain their value only when relevant.'),
- step('affiliate','Document the right leads','Use public business or professional contacts. The lead source field is the website or profile link where you found them.'),
- step('affiliate','Draft and request approval','In Outreach email, save a personalized draft, preview the complete email and submit it for admin review. Saving never sends.'),
- step('affiliate','Read your replies','Open Outreach email, then Reply inbox. You see replies to emails you sent; the admin sees all. Follow-up messages also need review.'),
- step('affiliate','Review results and earnings','Campaign cards separate the agreement, earnings and referral reviews. Campaign compensation is recorded through the named freelance platform; standard affiliate payouts follow their own terms.'),
- step('settings','Get help when needed','Reopen Learn affiliate tools or Better Guide for links, drafting, proof and inbox guidance.')];
+ {view:'learn',selector:'[data-tour="affiliate-learning-intro"]',title:'Start with free signup',copy:'Your job is to introduce relevant people to Better. Creating an account is free; paid memberships are optional.'},
+ {view:'affiliate',section:'campaigns',selector:'[data-tour="affiliate-navigation"]',title:'Your affiliate workspace',copy:'Campaign partnerships shows assigned work. Outreach email contains your drafts, submissions and replies. The standard affiliate program has separate terms.'},
+ {view:'affiliate',section:'campaigns',selector:'[data-tour="campaign-link"]',fallback:'.campaign-partner-area',title:'Copy your assigned link',copy:'Use this campaign link in your outreach so signups are attributed to your assigned campaign.',missingCopy:'A campaign link appears here after the admin links your confirmed account. Give the admin your exact Better username.'},
+ {view:'affiliate',section:'campaigns',selector:'[data-tour="campaign-agreement"]',fallback:'.campaign-partner-area',title:'Check the agreement',copy:'Review your qualified signup amount, membership commission and timing here. Campaign compensation is handled through the named freelance platform.',missingCopy:'Your agreement and results appear here after an assigned campaign is linked.'},
+ {view:'affiliate',section:'outreach',selector:'[data-tour="outreach-compose"]>summary',title:'Create an email',copy:'Open this section to write a personalized message. You can save it as a draft or submit it straight for admin approval.'},
+ {view:'affiliate',section:'outreach',selector:'[data-tour="outreach-source"]',title:'Show where you found the lead',copy:'Paste the public business website or professional profile page here. Enter the person’s email separately. Lead with free signup.'},
+ {view:'affiliate',section:'outreach',selector:'[data-tour="outreach-submit"]',title:'Save or submit',copy:'Save email draft keeps the message private to your queue and the admin. Submit for approval notifies the admin. Neither button sends to the prospect.'},
+ {view:'affiliate',section:'outreach',selector:'[data-tour="outreach-history"]>summary',title:'Track your emails',copy:'Open this log for drafts, submissions, requested changes and sent emails. The admin previews the complete message, then Approve & send dispatches it.'},
+ {view:'affiliate',section:'outreach',selector:'[data-tour="outreach-inbox"]>summary',title:'Read your replies',copy:'Open Reply inbox for responses to emails you sent. Only you and the admin can see your conversations. Follow-up messages need approval too.'},
+ {view:'learn',selector:'[data-tour="affiliate-learning-lessons"]',title:'Keep the quick guide handy',copy:'Open one short lesson at a time when you need help. Each lesson takes you to the relevant tool.'}
+ ].map(x=>({...x,min:0,release:93}));
  return [
  step('feed','Welcome to Better','Get comfortable in 10 steps. Start with your market, post a property or find relevant people, then build from there. Skip anytime.'),
  step('settings','Set your markets','Choose the states you work in and update your profile roles. These preferences help Better surface relevant opportunities.','.market-settings'),
@@ -3200,8 +3203,8 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false,inDepth
  const save=async(dismiss=false)=>{const body={tutorialCompletedVersion:TUTORIAL_VERSION,tutorialCompletedKeys:[...new Set([...seen,key])],tutorialHighestRank:Math.max(Number(state.user.settings?.tutorialHighestRank??-1),TUTORIAL_RANK[tier]??0)};if(dismiss)body.tutorialDismissedVersion=TUTORIAL_VERSION;try{const r=await api('PATCH','/api/me/settings',body);state.user.settings=r.settings;}catch{}};
  const cleanup=()=>{closed=true;window.removeEventListener('resize',reposition);window.removeEventListener('scroll',reposition,true);root.remove();};
  const finish=async(d=false)=>{cleanup();await save(d);};
- const waitForTarget=async selector=>{if(!selector)return null;for(let n=0;n<40&&!closed;n++){const node=document.querySelector(selector);if(node&&node.getClientRects().length)return node;await new Promise(r=>setTimeout(r,50));}return null;};
- let currentTarget=null,preferredSide=null;
+ const waitForTarget=async selector=>{if(!selector)return null;for(let n=0;n<40&&!closed;n++){const node=document.querySelector(selector);if(node){let parent=node.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement;}if(node.getClientRects().length)return node;}await new Promise(r=>setTimeout(r,50));}return null;};
+ let currentTarget=null,preferredSide=null,focusTicket=0;
  const setBox=(node)=>{
    const vw=window.innerWidth,vh=window.innerHeight,pad=8;
    if(!node){ring.style.display='none';allDims.forEach(d=>{d.style.cssText='position:fixed;inset:0;display:block'});return null;}
@@ -3224,10 +3227,14 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false,inDepth
  function reposition(){if(closed)return;placeCard(setBox(currentTarget));}
  window.addEventListener('resize',reposition);window.addEventListener('scroll',reposition,true);
  const focus=async step=>{
+   const ticket=++focusTicket;
    currentTarget=null;setBox(null);
-   if(state.view!==step.view){go(step.view);await new Promise(r=>setTimeout(r,80));}
-   const target=await waitForTarget(step.selector);
-   if(target){target.scrollIntoView({behavior:'auto',block:window.innerWidth<900?'start':'center',inline:'nearest'});if(window.innerWidth<900)window.scrollBy(0,-88);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));currentTarget=target;}
+   const sectionChanged=step.section&&state.affiliateSection!==step.section;if(step.section)state.affiliateSection=step.section;
+   if(state.view!==step.view||sectionChanged){go(step.view);await new Promise(r=>setTimeout(r,80));}
+   let target=await waitForTarget(step.selector);if(closed||ticket!==focusTicket)return;if(!target&&step.fallback){target=await waitForTarget(step.fallback);const copy=card.querySelector('.tutorial-step-copy');if(copy&&step.missingCopy)copy.textContent=step.missingCopy;}
+   if(!target&&affiliateGuideOnly()){const copy=card.querySelector('.tutorial-step-copy');if(copy)copy.textContent='This tool will appear once your confirmed account is linked to an active campaign. You can continue to the next step.';}
+   if(closed||ticket!==focusTicket)return;
+   if(target){target.scrollIntoView({behavior:'auto',block:window.innerWidth<900?'start':'center',inline:'nearest'});if(window.innerWidth<900)window.scrollBy(0,-88);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));if(closed||ticket!==focusTicket)return;currentTarget=target;}
    reposition();
  };
  const move=delta=>{const next=Math.max(0,Math.min(steps.length-1,i+delta));if(next===i&&delta>0)return finish();i=next;draw();};
@@ -3237,7 +3244,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false,inDepth
    card.appendChild(el('div',{class:'guide-tutor-head'},[el('div',{class:'guide-mascot-stage is-tutorial','aria-hidden':'true'},tutorialMascot),el('div',{},[el('b',{},'Better Guide'),el('span',{},releaseOnly?'What’s new in Better':inDepth?'The full walkthrough':'Your 10-step introduction')])]));
    card.appendChild(el('button',{type:'button',class:'btn-ghost tutorial-dock-toggle',onclick:()=>{preferredSide=card.dataset.dock==='left'?'right':'left';reposition();card.querySelector('.tutorial-dock-toggle').textContent=preferredSide==='left'?'Move right':'Move left';}},preferredSide==='left'?'Move right':'Move left'));
    card.appendChild(el('div',{class:'tutorialprogress'},`${onlyNew?'NEW FEATURE TOUR':releaseOnly?'WHAT’S NEW':inDepth?'FULL WALKTHROUGH':'QUICK START'} · ${i+1} OF ${steps.length}`));
-   card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{},step.copy));
+   card.appendChild(el('h2',{},step.title));card.appendChild(el('p',{class:'tutorial-step-copy'},step.copy));
    if(i===0&&!onlyNew&&!releaseOnly)card.appendChild(el('button',{type:'button',class:'btn-ghost guide-tour-course-cta',onclick:async()=>{cleanup();state.guideCourseModule=state.user?.settings?.guideCourseLastModule||'foundations';go('learn');}},affiliateGuideOnly()?'Learn your affiliate tools':'I’m new to wholesaling — start the free course'));
    card.appendChild(el('div',{class:'tutorialmembership'},`Showing ${tier==='wholesale'?'Team':tier[0].toUpperCase()+tier.slice(1)} access`));
    const actions=el('div',{class:'tutorialactions'});
@@ -6376,15 +6383,16 @@ async function promoEmailControls(){
 }
 
 function renderAffiliateToolsTraining(){
- const page=el('div',{class:'page service-form'});page.append(el('h1',{},'Learn your affiliate tools'),el('p',{class:'sub'},'Your job is to introduce relevant people to Better. Signup is free. Paid memberships are optional.'));
- for(const [title,copy]of [
- ['1. Your campaign and link','Open Affiliate Center → Campaign partnerships. Confirm the agreement and copy your assigned referral link. If no campaign appears, confirm your email and give the admin your username. Campaign partners do not need the standard affiliate application.'],
- ['2. Public leads and source links','Use relevant business websites and public professional profiles. In the lead source field, paste the clickable page link where you found the contact. Enter the contact’s email in Recipient email. The source is not your signup link.'],
- ['3. Write and preview','Open Outreach email → Create an email draft. Choose your campaign, enter the recipient, source, subject and personalized message. Lead with free signup. Preview adds your tracked link, signature and company footer.'],
- ['4. Admin approval before sending','Save draft sends nothing. Submit for admin review. Only the admin can approve the exact version and send it. Editing clears approval. Every follow-up needs review too.'],
- ['5. Your reply inbox','Open Outreach email → Reply inbox or View email conversation. After receiving is configured, replies to your emails appear here and for the admin. Other affiliates cannot see your replies. Attachments are listed for admin inspection through the provider. Older messages using the company mailbox do not import automatically.'],
- ['6. Referral proof and results','Under Campaign partnerships, open Your referred users and submit relevant public qualification evidence. Review counts show awaiting proof, pending, approved and rejected separately. Only approved signups count toward the agreed goal.'],
- ['7. Earnings and next steps','Read Your agreement and Earnings and external payments. Campaign compensation is handled through the named freelance platform. The standard affiliate program has separate accepted terms and payout tools. Ask the admin about continuing a trial or a new commission rate.']
- ])page.append(el('section',{class:'card'},[el('h2',{},title),el('p',{},copy)]));
- page.append(el('button',{class:'btn-primary',onclick:()=>go('affiliate')},'Open Affiliate Center'));return page;
+ const page=el('div',{class:'page affiliate-learning-page'}),intro=el('header',{'data-tour':'affiliate-learning-intro'});intro.append(el('h1',{},'Affiliate quick guide'),el('p',{class:'sub'},'Signup is free. Paid memberships are optional.'),el('button',{class:'btn-ghost',onclick:()=>startTutorial(true)},'Take the guided walkthrough'));page.append(intro);
+ const lessons=el('div',{class:'affiliate-learning-lessons','data-tour':'affiliate-learning-lessons'});page.append(lessons);const opened=[];
+ const items=[
+ ['Your campaign and link','Copy your assigned campaign link in Campaign partnerships. Confirm the agreement before starting. If no campaign appears, verify your email and give the admin your Better username.','campaigns','Open campaigns'],
+ ['Public leads and source links','Use relevant business websites and professional profiles. Paste the page where you found the contact into Public lead source; enter the email separately. Signup is free.','outreach','Open outreach'],
+ ['Write, save or submit','Write a personalized email and choose Save email draft or Submit for approval. Saving never sends. Submitting notifies the admin for review.','outreach','Create an email'],
+ ['Review and sending','The admin checks the exact recipient and complete preview. Approve & send dispatches that version automatically when email is ready. Edits clear approval. Every follow-up needs review.','outreach','View your email log'],
+ ['Your reply inbox','Replies to emails you sent appear in Reply inbox for you and the admin. Other affiliates cannot see them.','outreach','Open reply inbox'],
+ ['Proof and results','Open Your referred users and submit relevant public qualification evidence. Only approved signups count toward the agreed goal. Review agreement, earnings and review counts separately.','campaigns','View results']
+ ];
+ for(const [index,[title,copy,section,label]]of items.entries()){const detail=el('details',{class:'affiliate-learning-lesson'});detail.append(el('summary',{},(index+1)+'. '+title),el('div',{class:'affiliate-learning-content'},[el('p',{},copy),el('button',{class:'btn-ghost',onclick:()=>{state.affiliateSection=section;go('affiliate');}},label)]));detail.addEventListener('toggle',()=>{if(detail.open)for(const other of opened)if(other!==detail)other.open=false;});opened.push(detail);lessons.append(detail);}
+ return page;
 }

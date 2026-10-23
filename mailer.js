@@ -268,3 +268,5 @@ exports.retrieveReceivedEmail = async id => {
  const r=await fetch('https://api.resend.com/emails/receiving/'+encodeURIComponent(id),{headers:{Authorization:'Bearer '+RESEND_KEY},signal:AbortSignal.timeout(12000),redirect:'error'});
  if(!r.ok)throw Error('Received email retrieval failed');return r.json();
 };
+
+exports.sendOutreachApprovalAlert = a => send(a.to,a.title,shell(a.title,'<p>'+esc(a.body)+'</p>'+button(a.url,'Review partner email')),a.body+'\n'+a.url,{idempotencyKey:a.key,signal:AbortSignal.timeout(8000)});

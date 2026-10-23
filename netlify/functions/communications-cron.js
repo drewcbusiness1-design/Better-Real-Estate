@@ -5,13 +5,14 @@ const { runUnreadReminderCycle, runBroadcastCycle } = require('../../communicati
 exports.handler = async (event, context) => {
   if (context) context.callbackWaitsForEmptyEventLoop = false;
   try {
-    const [reminders, broadcasts, verification, matches] = await Promise.all([
+    const [reminders, broadcasts, verification, matches, outreachAlerts] = await Promise.all([
       runUnreadReminderCycle({ limit: 60 }),
       runBroadcastCycle({ limit: 40 }),
       runVerificationReminderCycle({ limit: 40 }),
-      require('../../matchDelivery').run({limit:10})
+      require('../../matchDelivery').run({limit:10}),
+      require('../../outreachAlerts').run({limit:5})
     ]);
-    console.log('[communications-cron]', JSON.stringify({ reminders, broadcasts, verification, matches }));
+    console.log('[communications-cron]', JSON.stringify({ reminders, broadcasts, verification, matches, outreachAlerts }));
     return { statusCode: 200 };
   } catch (e) {
     console.error('[communications-cron]', e.message, e.stack);
