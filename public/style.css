@@ -1663,3 +1663,8 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .campaign-panel .service-check input{margin-top:2px}
 .campaign-panel .service-actions>button{flex:1 1 150px}
 @media(max-width:480px){.campaign-panel .service-form{padding:10px}.campaign-panel .service-actions{margin:8px 0}}
+
+.outreach-preview{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-width:100%;margin:0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text);font:inherit;}
+.outreach-email-panel input,.outreach-email-panel select,.outreach-email-panel textarea{max-width:100%;min-width:0;}
+
+.outreach-email-panel,.outreach-email-panel details{min-width:0;max-width:100%;overflow-wrap:anywhere;box-sizing:border-box}.outreach-email-panel summary{cursor:pointer;padding:12px;line-height:1.5;}

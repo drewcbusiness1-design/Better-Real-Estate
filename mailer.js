@@ -88,7 +88,7 @@ async function send(to, subject, html, text, extra = {}) {
     method: 'POST',
     ...(extra.signal ? { signal: extra.signal } : {}),
     headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json', ...(extra.idempotencyKey?{'Idempotency-Key':extra.idempotencyKey}:{}) },
-    body: JSON.stringify({ from: senderAddress(extra.sender), to: [to], subject, html, text, reply_to: extra.replyTo || REPLY_TO, ...(extra.headers ? { headers: extra.headers } : {}) })
+    body: JSON.stringify({ from: extra.from || senderAddress(extra.sender), to: [to], subject, html, text, reply_to: extra.replyTo || REPLY_TO, ...(extra.headers ? { headers: extra.headers } : {}) })
   });
   if (!res.ok) {
     const body = await res.text();
@@ -239,6 +239,10 @@ exports.sendMembershipGranted = (to, name, { tier, expiresAt, reason }) => {
 exports.sendMailTest = (to) => send(to, `${APP_NAME} email test`,
   shell('Email delivery test', `<p>If you received this, Better Real Estate can send transactional mail from the currently configured sender.</p>${button(APP_URL, 'Open Better Real Estate')}`),
   `Better Real Estate email delivery test. ${APP_URL}`);
+
+// Only server-built, admin-approved snapshots reach this function.
+exports.outreachSender = name => `${String(name||'Partner').replace(/[^\p{L}\p{N} .'-]/gu,'').slice(0,60)} | Better Real Estate <partners@betterrealestate.org>`;
+exports.sendPartnerOutreach = snapshot => send(snapshot.to,snapshot.subject,snapshot.html,snapshot.text,{from:snapshot.from,replyTo:snapshot.replyTo,idempotencyKey:snapshot.key,signal:AbortSignal.timeout(12000),headers:{'List-Unsubscribe':`<${snapshot.unsubscribeUrl}>`,'List-Unsubscribe-Post':'List-Unsubscribe=One-Click'}});
 
 exports.health = () => ({
   configured: !!RESEND_KEY,

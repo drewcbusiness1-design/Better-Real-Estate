@@ -28,6 +28,7 @@ try { ({ Pool } = require('pg')); } catch {}
 const affiliateAccounts = require('./affiliateAccounts');
 const policy = require('./policy');
 const COLLECTIONS = [
+  'campaignOutreach',
   'acquisitionCampaigns',
   'feedbackReports','serviceJobs','matchDeliveries','titleCompanies','buyerResponses','privateDeals','dealIntroductions','supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
   'users','companies','companyInvites','listings','saves','follows','friendRequests','friendships','messages','ledger','unlocks',
@@ -193,6 +194,7 @@ async function saveDB(db) {
     if(fsMod.existsSync(FILE_PATH)){
       const latest=JSON.parse(fsMod.readFileSync(FILE_PATH,'utf8'));
       if(!db.__writeCampaigns)out.acquisitionCampaigns=latest.acquisitionCampaigns||[];
+      if(!db.__writeOutreach)out.campaignOutreach=latest.campaignOutreach||[];
       if(!db.__writeMatchDeliveries)out.matchDeliveries=(out.matchDeliveries||[]).map(row=>({...row,...(latest.matchDeliveries||[]).find(x=>x.id===row.id)}));
       for(const row of latest.matchDeliveries||[])if(!out.matchDeliveries.some(x=>x.id===row.id)&&!(db.__matchDeliveryIds||[]).includes(row.id))out.matchDeliveries.push(row);
       out.users=out.users.map(row=>{const current=latest.users?.find(u=>u.id===row.id);if(!current)return row;const before=db.__creditSnapshot?.[row.id];const delta=before===undefined?0:Number(row.betterCreditCents||0)-before;const merged={...row,betterCreditCents:Math.max(0,Number(current.betterCreditCents||0)+delta)};if(!db.__writeMembershipCredits)merged.membershipCreditState=current.membershipCreditState;return merged;});
@@ -206,6 +208,8 @@ async function saveDB(db) {
   }
   await init();
   await Promise.all(COLLECTIONS.map(async c => {
+    // Outreach uses its own revision-checked writer; unrelated saves cannot overwrite it.
+    if(c==='campaignOutreach')return;
     const rows = db[c] || [];
     const t = tableFor(c);
     const seen = new Set();

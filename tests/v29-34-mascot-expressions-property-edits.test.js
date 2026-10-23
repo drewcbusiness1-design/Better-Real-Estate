@@ -1,6 +1,6 @@
 const fs=require('fs'),assert=require('assert');
 const app=fs.readFileSync('public/app.js','utf8'),css=fs.readFileSync('public/style.css','utf8'),srv=fs.readFileSync('server.js','utf8'),pkg=require('../package.json');
-assert.ok(['2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.51','2.9.53','2.9.54','2.9.55','2.9.57','2.9.58','2.9.59','2.9.60','2.9.61','2.9.62','2.9.63','2.9.64','2.9.65','2.9.66','2.9.67','2.9.68','2.9.69','2.9.70','2.9.71','2.9.72'].includes(pkg.version));
+assert.ok(['2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.51','2.9.53','2.9.54','2.9.55','2.9.57','2.9.58','2.9.59','2.9.60','2.9.61','2.9.62','2.9.63','2.9.64','2.9.65','2.9.66','2.9.67','2.9.68','2.9.69','2.9.70','2.9.71','2.9.72','2.9.73'].includes(pkg.version));
 for(const x of ['mascotExpression','data-expression','mascot-brow-left','mascot-lid-left','concerned','sleepy','focused','mascotSiteEvent'])assert.ok((app+css).includes(x),x);
 assert.ok(!app.includes('mascot-poses/'),'slideshow pose assets must not return');
 assert.ok(!app.includes('living-mascot-bubble'),'speech bubble must not return');

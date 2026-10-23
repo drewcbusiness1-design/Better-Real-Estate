@@ -177,6 +177,7 @@ const requireAdmin = (req, res, next) =>
     ? next()
     : res.status(403).json({ error: 'Admin only' });
 campaignTracking.install(app,{store:require('./store'),requireAuth,requireAdmin,baseUrl:appBaseUrl,service:campaignService});
+require('./campaignOutreach').install(app,{store:require('./store'),requireAuth,requireAdmin,baseUrl:appBaseUrl,mailer});
 
 require('./releaseRoutes').register(app,{requireAuth,requireAdmin,saveDB,isAdminUser,isDemoUser});
 
