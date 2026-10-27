@@ -100,18 +100,15 @@ function reorderPropertyPhotos(photos,from,to){
 
 async function api(method, path, body) {
   const actionTarget=document.activeElement;
-  const controller=new AbortController();
-  // Bound reads so a dropped connection cannot leave a screen spinning forever.
-  // Writes keep their existing semantics and are never retried automatically.
-  const timeout=method==='GET'?setTimeout(()=>controller.abort(),20000):null;
-  try{
-    const res=await fetch(path,{method,credentials:'include',signal:controller.signal,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok)throw new Error(data.error||'Something went wrong.');
-    try{mascotActionCompleted(method,path,data,actionTarget);}catch{}
-    return data;
-  }catch(e){if(e.name==='AbortError')throw new Error('This is taking longer than expected. Check your connection and try again.');throw e;}
-  finally{if(timeout)clearTimeout(timeout);}
+  const res = await fetch(path, {
+    method, credentials: 'include',
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+  try{mascotActionCompleted(method,path,data,actionTarget);}catch{}
+  return data;
 }
 
 
@@ -583,7 +580,7 @@ function renderTop() {
     }
   }, iconSvg(document.documentElement.getAttribute('data-theme') === 'dark' ? 'sun' : 'moon', 19)));
   if(state.user && state.navigationWorkspace==='services')nav.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('feed')},'Main dashboard'));
-  if (!state.user) { nav.appendChild(el('button', { onclick: () => { state.authMode = 'login'; go('auth'); } }, 'Sign in')); return; }
+  if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
   if (state.user?.demo && state.demoAdminSession) nav.appendChild(el('button',{class:'demo-return-btn',title:'Return to Admin',onclick:async()=>{try{await api('POST','/api/demo/return-admin');await refreshMe();go('admin',{}, {replace:true});}catch(e){toast(e.message,'err');}}},'Return to Admin'));
   if(!hasRole(state.user,'affiliate')){
   const inboxBtn = el('button', { class: 'iconbtn', title: 'Messages', onclick: () => go('messages') }, iconSvg('mail',19));
@@ -935,7 +932,7 @@ function renderAuth() {
   };
   wrap.appendChild(submit);
   wrap.appendChild(el('div', { class: 'switchline' }, el('a', {
-    onclick: () => { state.authMode = isSignup ? 'login' : 'signup'; writeRoute('replace'); render(); }
+    onclick: () => { state.authMode = isSignup ? 'login' : 'signup'; render(); }
   }, isSignup ? 'Already have an account? Sign in' : 'New here? Create an account')));
   if (!isSignup) wrap.appendChild(el('div', { class: 'switchline' }, el('a', { onclick: () => go('forgot') }, 'Forgot your password?')));
   wrap.appendChild(el('div', { class: 'hint', style: 'text-align:center;margin-top:14px' }, [
@@ -3869,7 +3866,6 @@ async function renderMessages() {
       avatarNode(c.other),
       el('div', { class: 'chatpreview' }, [
         el('div', { class: 'chatpreviewtop' }, [el('b', {}, c.other.name), el('span', {}, formatChatTime(c.latest.at))]),
-        c.other.activityStatus ? el('div', { class: 'activity-status' }, [el('span',{class:'activity-dot'},''), c.other.activityStatus]) : null,
         el('div', { class: 'chatpreviewbody' }, (c.latest.outgoing ? 'You: ' : '') + c.latest.body),
         c.latest.listingAddress ? el('div', { class: 'chatcontext' }, 'Property: ' + c.latest.listingAddress) : null
       ]),
@@ -3900,10 +3896,9 @@ async function renderChat(context = liveUIContext()) {
   renderTop();
   renderTabs();
   const wrap = el('div', { class: 'page chatpage' });
-  const presence = el('span', { class: 'activity-status' }, other.activityStatus || ''); presence.hidden = !other.activityStatus;
   wrap.appendChild(el('div', { class: 'chathead' }, [
     el('button', { class: 'backbtn', onclick: () => go('messages') }, '← Messages'),
-    el('div', { class: 'chatperson', onclick: () => go('profile', { profileId: other.id }) }, [avatarNode(other, 'small'), el('div', {}, [el('b', {}, other.name), el('span', {}, [roleLabel(other), ...(other.markets || [])].filter(Boolean).slice(0,2).join(' · ')), presence])]),
+    el('div', { class: 'chatperson', onclick: () => go('profile', { profileId: other.id }) }, [avatarNode(other, 'small'), el('div', {}, [el('b', {}, other.name), el('span', {}, [roleLabel(other), ...(other.markets || [])].filter(Boolean).slice(0,2).join(' · '))])]),
     context.demo ? el('span',{class:'demopill'},'SAMPLE BUYER') : friendButton(other, () => {})
   ]));
   const attachedListingId=state.chatListingId||null;
@@ -3936,7 +3931,7 @@ async function renderChat(context = liveUIContext()) {
     const currentUserId = state.chatUserId;
     const fresh = await api('GET', '/api/conversations/' + encodeURIComponent(currentUserId));
     if (state.view !== 'chat' || state.chatUserId !== currentUserId) return;
-    other = fresh.other; presence.textContent = other.activityStatus || ''; presence.hidden = !other.activityStatus;
+    other = fresh.other;
     messages = fresh.messages || [];
     const sig = signatureFor(messages);
     if (force || sig !== lastSignature) {
@@ -4067,14 +4062,6 @@ function openAdminAccessModal(u,onDone=()=>{},inlineHost=null){
 }
 
 /* ================= PROFILES ================= */
-async function showConnections(userId, kind){
- const {card:panel,close}=workspaceDialog(kind==='friends'?'Friends':'Followers');
- const list=el('div');let offset=0;const status=el('p',{class:'hint',role:'status'},'Loading…');panel.append(status,list);
- const load=async()=>{try{const r=await api('GET',`/api/users/${encodeURIComponent(userId)}/connections?kind=${kind}&offset=${offset}`);status.textContent='';if(!r.users.length&&!offset)status.textContent='No people to show yet.';r.users.forEach(u=>list.appendChild(el('button',{class:'connection-row',onclick:()=>{close();go('profile',{profileId:u.id});}},[avatarNode(u,'small'),el('span',{},u.name)])));offset+=r.users.length;if(r.hasMore){const more=el('button',{class:'btn-ghost',onclick:()=>{more.remove();load();}},'Load more');list.appendChild(more);}}catch{status.textContent='Could not load this list. Close and try again.';}};await load();
-}
-function profileConnections(id,followers,friends){return el('div',{class:'profile-connection-buttons'},[el('button',{class:'btn-ghost',onclick:()=>showConnections(id,'followers')},`${followers||0} followers`),el('button',{class:'btn-ghost',onclick:()=>showConnections(id,'friends')},`${friends||0} friends`)]);}
-function profileBanner(url) { return el('div', { class: 'website-profile-banner' }, el('img', { src: url, alt: 'Profile banner' })); }
-
 async function renderMe() {
   if(state.navigationWorkspace==='services')return renderServiceAccountProfile();
   const wrap = el('div', { class: 'page' });
@@ -4091,9 +4078,7 @@ async function renderMe() {
       el('div',{class:'profile-actions'},[el('button', { class: 'btn-ghost profileeditbtn profile-action-equal', onclick: () => go('settings') }, state.user.avatarUrl ? 'Edit profile' : 'Add profile photo'),el('button',{class:'btn-ghost profile-action-equal',onclick:async()=>{const url=location.origin+'/s/profile/'+encodeURIComponent(state.user.username||state.user.id);try{await navigator.clipboard.writeText(url);toast('Public profile link copied','ok')}catch{prompt('Copy public profile link',url);}}},'Copy public profile')])
     ])
   ]);
-  try { const banner = await api('GET', '/api/users/' + encodeURIComponent(state.user.id) + '/banner'); if (banner.bannerUrl) wrap.appendChild(profileBanner(banner.bannerUrl)); } catch (e) { console.warn('Unable to load profile banner:', e); }
   wrap.appendChild(mineHeader);
-  wrap.appendChild(profileConnections(state.user.id,d.followerCount,d.friendCount));
 
   wrap.appendChild(el('div', { class: 'statgrid' }, [
     stat(cents(w.balance), 'Wallet'), stat(state.user.unlockCredits, 'Unlocks'), stat(d.listings.length, 'Listings')
@@ -4187,9 +4172,7 @@ async function renderProfile(context = liveUIContext()) {
     owner.bio ? el('p', { class: 'profilebio' }, owner.bio) : null
   ]);
   const profileHero = el('div', { class: 'profilehero' }, [avatarNode(owner, 'profile'), profileBody]);
-  if (!context.demo) { try { const banner = await api('GET', '/api/users/' + encodeURIComponent(owner.id) + '/banner'); if (banner.bannerUrl) wrap.appendChild(profileBanner(banner.bannerUrl)); } catch (e) { console.warn('Unable to load profile banner:', e); } }
   wrap.appendChild(profileHero);
-  if(!context.demo) wrap.appendChild(profileConnections(owner.id,followerCount,friendCount));
   if(!context.demo && state.navigationWorkspace==='services'){try{const service=await api('GET','/api/services/profiles/'+encodeURIComponent(owner.id));wrap.appendChild(servicePublicProfileCard(service.profile));}catch(e){wrap.appendChild(el('p',{class:'hint'},'No published service profile is available for this member.'));}}
   if(credibility) wrap.appendChild(el('div',{class:'credibility-row'},[credibility.accountSince?el('span',{},'Member since '+new Date(credibility.accountSince).toLocaleDateString(undefined,{month:'short',year:'numeric'})):null,el('span',{},`${credibility.verifiedClosings||0} verified closing${credibility.verifiedClosings===1?'':'s'}`),credibility.responseRate!==null?el('span',{},`${credibility.responseRate}% response rate`):null].filter(Boolean)));
   if (!context.demo) wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${roleLabel(owner)}${owner.location ? ' · ' + owner.location : ''}` }));
@@ -4386,16 +4369,6 @@ function renderSettings() {
   } }, 'Save profile'));
   pbox.appendChild(pst);
   wrap.appendChild(pbox);
-  const bannerBox = el('div', { class: 'card website-banner-settings' });
-  const bannerPreview = el('div', { class: 'website-banner-preview' }, 'No banner selected');
-  const bannerFile = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', 'aria-label': 'Choose profile banner' });
-  const bannerStatus = el('div', { class: 'hint', 'aria-live': 'polite' });
-  let bannerData = null;
-  const showBanner = url => { bannerPreview.replaceChildren(...(url ? [el('img', { src: url, alt: 'Profile banner preview' })] : ['No banner selected'])); };
-  api('GET', '/api/users/' + encodeURIComponent(state.user.id) + '/banner').then(r => showBanner(r.bannerUrl)).catch(e => { bannerStatus.textContent = 'Could not load your banner: ' + e.message; });
-  bannerFile.onchange = () => { const file = bannerFile.files?.[0]; bannerData = null; if (!file) return; if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 3 * 1024 * 1024) { bannerStatus.textContent = 'Choose a JPG, PNG or WebP image under 3 MB.'; return; } const reader = new FileReader(); reader.onload = () => { bannerData = reader.result; showBanner(bannerData); bannerStatus.textContent = 'Preview ready. Save banner to apply it.'; }; reader.onerror = () => { bannerStatus.textContent = 'Could not read this image.'; }; reader.readAsDataURL(file); };
-  bannerBox.append(el('b', {}, 'Profile banner'), el('p', { class: 'hint' }, 'Choose a wide JPG, PNG or WebP image up to 3 MB.'), bannerPreview, bannerFile, el('div', { class: 'website-banner-actions' }, [el('button', { class: 'btn-primary', onclick: async e => { if (!bannerData) { bannerStatus.textContent = 'Choose an image first.'; return; } try { const r = await withButtonBusy(e.currentTarget, () => api('POST', '/api/me/banner', { imageData: bannerData })); bannerData = null; bannerFile.value = ''; showBanner(r.bannerUrl); bannerStatus.textContent = 'Banner saved.'; } catch (error) { bannerStatus.textContent = error.message; } } }, 'Save banner'), el('button', { class: 'btn-ghost', onclick: async e => { try { await withButtonBusy(e.currentTarget, () => api('POST', '/api/me/banner', { reset: true })); bannerData = null; bannerFile.value = ''; showBanner(null); bannerStatus.textContent = 'Banner removed.'; } catch (error) { bannerStatus.textContent = error.message; } } }, 'Remove banner')]), bannerStatus);
-  wrap.appendChild(bannerBox);
 
   if (state.user.role !== 'admin') {
     wrap.appendChild(el('div', { class: 'sectiontitle' }, 'How you work'));
@@ -4521,8 +4494,7 @@ function renderSettings() {
   }).catch(() => { if (emailPrefsHost.isConnected) emailPrefsHost.replaceChildren(el('div',{class:'hint',style:'padding:14px 16px'},'Email preferences are temporarily unavailable. The rest of Settings is ready to use.')); });
 
   wrap.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%;margin-top:20px', onclick: async () => {
-    if(!await confirmSignOut())return;
-    try{await api('POST', '/api/logout');state.user=null;state.access=null;state.postAuthTarget=null;state.authMode='login';go('home',{}, {replace:true});}catch(e){toast(e.message,'err');}
+    await api('POST', '/api/logout'); state.user = null; go('home');
   } }, 'Log out'));
   return wrap;
 }

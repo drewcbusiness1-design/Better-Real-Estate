@@ -1677,19 +1677,7 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 
 [data-tour]{scroll-margin-top:150px}.affiliate-learning-lesson summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:12px}
 
-.guide-more{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:12px}.guide-more summary{cursor:pointer;font-weight:600}.guide-more>button{margin-top:12px}.cart-item{padding:16px;margin:12px 0}.cart-item .shopactions{margin-top:10px}
-
+/* Website marketplace additions. Header and mascot retain v29.75 styles. */
 .shop-layout-controls{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap}.shopgrid-list{grid-template-columns:1fr}.shopgrid-list .shopcard{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr) auto;align-items:center;gap:12px}.shopgrid-list .si{height:120px}.productmainphoto{touch-action:pan-y;cursor:zoom-in}.product-photo-counter{text-align:center;padding:8px;font-size:13px;color:var(--muted)}.shop-photo-viewer{position:fixed;inset:0;z-index:10000;background:#111;color:white;display:flex;flex-direction:column}.shop-photo-toolbar{display:flex;align-items:center;justify-content:center;gap:12px;padding:max(12px,env(safe-area-inset-top)) 12px 12px;flex-wrap:wrap}.shop-photo-toolbar button{background:#333;color:white;border:1px solid #777;padding:10px 14px;border-radius:10px;min-height:44px}.shop-photo-stage{flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;touch-action:none}.shop-photo-stage img{width:100%;height:100%;object-fit:contain;user-select:none;pointer-events:none}.productthumbs img{object-fit:contain}@media(max-width:480px){.shopgrid-list .shopcard{grid-template-columns:96px minmax(0,1fr)}.shopgrid-list .shopcard>button:last-child{grid-column:2}.shopgrid-list .si{height:96px}}
-
-/* Profile cover is optional and uses the existing profile header. */
-.website-profile-banner{height:clamp(100px,18vw,190px);border-radius:14px 14px 0 0;overflow:hidden;background:#211a16;margin-bottom:12px}
-.website-profile-banner img,.website-banner-preview img{width:100%;height:100%;object-fit:cover;display:block}
-.website-banner-settings{padding:16px;margin-top:16px}.website-banner-preview{height:120px;overflow:hidden;border-radius:10px;background:#211a16;display:flex;align-items:center;justify-content:center;color:#aaa;margin:12px 0}.website-banner-actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
-
-/* Keep the complete logo visible while the header controls wrap on narrow screens. */
-#topbar .brand{min-width:0;overflow:visible}
-#topbar .brand .brand-logo{display:block;width:min(340px,100%);height:auto;max-width:100%;object-fit:contain;flex-shrink:1}
-@media(max-width:620px){#topbar .bar{flex-wrap:wrap}#topbar .brand{flex:1 1 150px;max-width:100%}#topbar .brand .brand-logo{width:min(250px,100%)}#topbar .navlinks{flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;max-width:100%}}
-
+.cart-item{padding:16px;margin:12px 0}.cart-item .shopactions{margin-top:10px}
 .marketplace-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.marketplace-heading h2{margin:0}.marketplace-cart{white-space:nowrap}
-.profile-connection-buttons{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.connection-row{display:flex;align-items:center;gap:12px;width:100%;padding:10px;border:0;background:transparent;color:inherit;text-align:left}.signout-confirm{max-width:420px}
