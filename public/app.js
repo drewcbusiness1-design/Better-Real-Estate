@@ -580,7 +580,7 @@ function renderTop() {
     }
   }, iconSvg(document.documentElement.getAttribute('data-theme') === 'dark' ? 'sun' : 'moon', 19)));
   if(state.user && state.navigationWorkspace==='services')nav.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('feed')},'Main dashboard'));
-  if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
+  if (!state.user) { nav.appendChild(el('button', { onclick: () => { state.authMode = 'login'; go('auth'); } }, 'Sign in')); return; }
   if (state.user?.demo && state.demoAdminSession) nav.appendChild(el('button',{class:'demo-return-btn',title:'Return to Admin',onclick:async()=>{try{await api('POST','/api/demo/return-admin');await refreshMe();go('admin',{}, {replace:true});}catch(e){toast(e.message,'err');}}},'Return to Admin'));
   if(!hasRole(state.user,'affiliate')){
   const inboxBtn = el('button', { class: 'iconbtn', title: 'Messages', onclick: () => go('messages') }, iconSvg('mail',19));
@@ -2581,7 +2581,7 @@ async function renderOrders() {
         try { await api('POST', `/api/orders/${o.id}/ship`, { tracking: trackInput.value }); toast('Marked shipped — buyer notified.', 'ok'); render(); }
         catch (e) { toast(e.message, 'err'); }
       };
-      s.appendChild(el('div', { style: 'display:flex;gap:8px;margin:0 16px 12px' }, [trackInput, shipBtn]));
+      s.appendChild(el('div', { class: 'order-tracking-actions', style: 'margin:0 16px 12px' }, [trackInput, shipBtn]));
     }
   });
   wrap.appendChild(s);
@@ -2598,7 +2598,7 @@ async function renderPromote() {
 
   const st = el('div', { class: 'okmsg' });
   tiers.forEach(t => {
-    const card = el('div', { class: 'card', style: 'padding:16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px' }, [
+    const card = el('div', { class: 'card boost-purchase-row', style: 'padding:16px;margin-bottom:10px' }, [
       el('div', { class: 'grow' }, [
         el('div', { style: 'font-weight:600;font-size:14.5px' }, t.label),
         el('div', { class: 'hint', style: 'margin-top:2px' }, t.id === 'bump' ? 'Resets your freshness score — like reposting.'
@@ -5925,7 +5925,7 @@ async function renderSuppliers() {
             }
           };
 
-          results.appendChild(el('div', { style: 'display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px' }, [
+          results.appendChild(el('div', { class: 'supplier-review-heading', style: 'margin-bottom:10px' }, [
             el('div', { class: 't', style: 'font-size:18px' }, 'Review CJ listing'),
             el('button', { onclick: drawVariantList }, '← Variants')
           ]));
@@ -5979,7 +5979,7 @@ async function renderSuppliers() {
           ]));
         });
         results.appendChild(list);
-        const pager = el('div', { style: 'display:flex;justify-content:space-between;gap:8px;margin-top:10px' });
+        const pager = el('div', { class: 'supplier-result-pager', style: 'margin-top:10px' });
         const prev = el('button', { disabled: r.page <= 1 ? 'disabled' : null, onclick: () => doSearch(r.page - 1) }, '← Previous');
         const next = el('button', { disabled: r.page * r.size >= r.total ? 'disabled' : null, onclick: () => doSearch(r.page + 1) }, 'Next →');
         pager.appendChild(prev); pager.appendChild(el('span', { class: 'hint' }, `Page ${r.page}`)); pager.appendChild(next);
