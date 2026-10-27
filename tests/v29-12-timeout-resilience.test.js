@@ -1,6 +1,6 @@
 const fs=require('fs'),assert=require('assert');
 const server=fs.readFileSync('server.js','utf8'),app=fs.readFileSync('public/app.js','utf8'),ds=fs.readFileSync('dealSources.js','utf8'),pkg=require('../package.json');
-assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.51','2.9.53','2.9.54','2.9.55','2.9.57','2.9.58','2.9.59','2.9.60','2.9.61','2.9.62','2.9.63','2.9.64','2.9.65','2.9.66','2.9.67','2.9.68','2.9.69','2.9.70','2.9.71','2.9.72','2.9.73','2.9.74','2.9.75'].includes(pkg.version));
+assert(['2.9.29','2.9.30','2.9.31','2.9.32','2.9.33','2.9.34','2.9.35','2.9.36','2.9.37','2.9.38','2.9.39','2.9.40','2.9.41','2.9.45','2.9.46','2.9.47','2.9.48','2.9.51','2.9.53','2.9.54','2.9.55','2.9.57','2.9.58','2.9.59','2.9.60','2.9.61','2.9.62','2.9.63','2.9.64','2.9.65','2.9.66','2.9.67','2.9.68','2.9.69','2.9.70','2.9.71','2.9.72','2.9.73','2.9.74','2.9.75','2.9.76'].includes(pkg.version));
 assert(server.includes("/api/deal-builder/research/start"),'research must start independently of final synthesis');
 assert(app.includes("/api/deal-builder/research/start"),'client must start research separately');
 assert(app.includes('Researching property · ${job.progress||0}%')&&app.includes('Research complete · assembling the cross-source investor analysis'),'client must show real background progress');

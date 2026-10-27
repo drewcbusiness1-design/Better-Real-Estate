@@ -100,17 +100,19 @@ function reorderPropertyPhotos(photos,from,to){
 
 async function api(method, path, body) {
   const actionTarget=document.activeElement;
-  const res = await fetch(path, {
-    method, credentials: 'include',
-    headers: body ? { 'Content-Type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Something went wrong.');
-  try{mascotActionCompleted(method,path,data,actionTarget);}catch{}
-  return data;
+  const controller=new AbortController();
+  // Bound reads so a dropped connection cannot leave a screen spinning forever.
+  // Writes keep their existing semantics and are never retried automatically.
+  const timeout=method==='GET'?setTimeout(()=>controller.abort(),20000):null;
+  try{
+    const res=await fetch(path,{method,credentials:'include',signal:controller.signal,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Something went wrong.');
+    try{mascotActionCompleted(method,path,data,actionTarget);}catch{}
+    return data;
+  }catch(e){if(e.name==='AbortError')throw new Error('This is taking longer than expected. Check your connection and try again.');throw e;}
+  finally{if(timeout)clearTimeout(timeout);}
 }
-
 
 /* ================= toasts ================= */
 function toast(msg, kind = '') {
@@ -170,14 +172,19 @@ document.addEventListener('pointerdown', e => {
   setTimeout(() => button.classList.remove('tap-ack'), 180);
 }, { passive: true });
 
+// Keep the mobile message composer above navigation while the keyboard is open.
+document.addEventListener('focusin',e=>{if(e.target?.matches?.('.chatcomposer textarea')){document.body.classList.add('chat-composing');setTimeout(()=>{if(document.activeElement===e.target)e.target.scrollIntoView({block:'nearest'});},200);}});
+document.addEventListener('focusout',e=>{if(e.target?.matches?.('.chatcomposer textarea'))document.body.classList.remove('chat-composing');});
+
 const money = n => '$' + Number(n).toLocaleString();
 const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['manageproperties','feedback','services','servicesdirectory','try','support','home','auth','feed','detail','shop','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['manageproperties','feedback','services','servicesdirectory','try','support','home','auth','feed','detail','shop','cart','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
 function applyRouteParams(params) {
   const requested = params.get('view');
+  if(requested==='auth'&&['login','signup'].includes(params.get('mode')))state.authMode=params.get('mode');
   state.navigationWorkspace = params.get('workspace') === 'services' || ['services','servicesdirectory'].includes(requested) ? 'services' : 'main';
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
   const id = params.get('id');
@@ -208,6 +215,7 @@ function routeUrl(view = state.view) {
   if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
   if (view === 'try' && state.tryScreen && state.tryScreen !== 'feed') p.set('screen',state.tryScreen);
+  if(view==='auth')p.set('mode',state.authMode==='login'?'login':'signup');
   if (view === 'compose' && state.composeEditId) p.set('id', state.composeEditId);
   if (view === 'profile' && state.profileId) p.set('user', state.profileId);
   if(view === 'support' && state.supportThreadId) p.set('thread',state.supportThreadId);
@@ -578,7 +586,7 @@ function renderTop() {
     }
   }, iconSvg(document.documentElement.getAttribute('data-theme') === 'dark' ? 'sun' : 'moon', 19)));
   if(state.user && state.navigationWorkspace==='services')nav.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('feed')},'Main dashboard'));
-  if (!state.user) { nav.appendChild(el('button', { onclick: () => go('auth') }, 'Sign in')); return; }
+  if (!state.user) { nav.appendChild(el('button', { onclick: () => { state.authMode = 'login'; go('auth'); } }, 'Sign in')); return; }
   if (state.user?.demo && state.demoAdminSession) nav.appendChild(el('button',{class:'demo-return-btn',title:'Return to Admin',onclick:async()=>{try{await api('POST','/api/demo/return-admin');await refreshMe();go('admin',{}, {replace:true});}catch(e){toast(e.message,'err');}}},'Return to Admin'));
   if(state.user.role==='admin'){const alerts=el('button',{class:'iconbtn outreach-alert-button',title:'Partner email submissions','aria-label':'Partner email submissions',onclick:async()=>{try{await api('POST','/api/outreach/alerts/read',{});await refreshUnread();}catch{}state.openOutreachApprovals=true;go('admin');}},iconSvg('mail',19));const count=notificationCountFor('admin');if(count)alerts.append(el('span',{class:'msgbadge'},String(count)));nav.append(alerts);}
   if(!hasRole(state.user,'affiliate')){
@@ -627,7 +635,7 @@ async function renderApp() {
     compose: renderCompose, saved: renderSaved, messages: renderMessages, chat: renderChat, network: renderNetwork,
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
-    wallet: renderWallet, shop: renderShop, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
+    wallet: renderWallet, shop: renderShop, cart: renderCart, shopitem: renderShopItem, sellitem: renderSellItem, shopmanage: renderShopManage, shopedit: renderShopEdit, offers: renderOffers,
     upgrade: renderUpgrade, analytics: renderAnalytics, orders: renderOrders, suppliers: renderSuppliers, fulfilment: renderFulfilment, reports: renderReports,
     boostpicker: renderBoostPicker, workspace: renderWorkspace, companyworkspace: renderCompanyWorkspace, company: renderCompany, companyjoin: renderCompanyJoin, buyerportal: renderBuyerPortal, insights: renderDemandInsights, dealbuilder: renderDealBuilder, buyercrm: renderBuyerCRM, commandcenter: renderCommandCenter, search: renderUniversalSearch, savedsearches: renderSavedSearches, pipeline: renderPipeline, dealcalendar: renderDealCalendar, markethubs: renderMarketHubs, titledirectory: renderTitleDirectoryPage, dealroom: renderDealRoom, transactionhub: renderTransactionHub, affiliate: renderAffiliateCenter, support: renderSupportChat, intake: renderDealIntake, learn: renderLearnWholesaling,
     about: pageAbout, terms: pageTerms, privacy: pagePrivacy, contact: pageContact, faq: pageFaq,
@@ -931,7 +939,7 @@ function renderAuth() {
   };
   wrap.appendChild(submit);
   wrap.appendChild(el('div', { class: 'switchline' }, el('a', {
-    onclick: () => { state.authMode = isSignup ? 'login' : 'signup'; render(); }
+    onclick: () => { state.authMode = isSignup ? 'login' : 'signup'; writeRoute('replace'); render(); }
   }, isSignup ? 'Already have an account? Sign in' : 'New here? Create an account')));
   if (!isSignup) wrap.appendChild(el('div', { class: 'switchline' }, el('a', { onclick: () => go('forgot') }, 'Forgot your password?')));
   wrap.appendChild(el('div', { class: 'hint', style: 'text-align:center;margin-top:14px' }, [
@@ -1360,7 +1368,7 @@ async function renderDetail(context = liveUIContext()) {
 
   const spread = listing.arv ? listing.arv - listing.asking : null;
   wrap.appendChild(el('div', { class: 'dhead' }, [
-    el('div', {}, [el('h2', {}, listing.address), el('div', { class: 'c' }, listing.city), listing.freshness ? el('div', { class: 'freshnessline' }, [el('span', { class: 'freshnesspill' + (listing.freshness.needsConfirmation ? ' warn' : '') }, listing.freshness.needsConfirmation ? 'Needs seller confirmation' : `Confirmed ${listing.freshness.confirmedDaysAgo === 0 ? 'today' : listing.freshness.confirmedDaysAgo + 'd ago'}`), listing.contractDeadline ? el('span', {}, `Deadline ${listing.contractDeadline}`) : null]) : null]),
+    el('div', {}, [el('div',{class:'property-address-row'},[el('h2', {}, listing.address), (!context.demo && state.user && (state.user.id===listing.ownerId || state.access?.adminUnlimited)) ? el('button',{class:'iconbtn','aria-label':'Manage property',title:'Manage property',onclick:()=>{const panel=document.querySelector('.listing-management-panel');if(panel){panel.hidden=!panel.hidden;if(!panel.hidden)panel.scrollIntoView({behavior:'smooth',block:'nearest'});}}},'✎') : null]), el('div', { class: 'c' }, listing.city), listing.freshness ? el('div', { class: 'freshnessline' }, [el('span', { class: 'freshnesspill' + (listing.freshness.needsConfirmation ? ' warn' : '') }, listing.freshness.needsConfirmation ? 'Needs seller confirmation' : `Confirmed ${listing.freshness.confirmedDaysAgo === 0 ? 'today' : listing.freshness.confirmedDaysAgo + 'd ago'}`), listing.contractDeadline ? el('span', {}, `Deadline ${listing.contractDeadline}`) : null]) : null]),
     el('div', { class: 'dprice' }, money(listing.asking))
   ]));
   if (!context.demo) wrap.appendChild(propertyShareBar(listing));
@@ -1481,12 +1489,15 @@ async function renderDetail(context = liveUIContext()) {
     wrap.appendChild(el('div', { class: 'dsection' }, [el('h3', {}, 'Message the seller'), msg, mb, mst]));
   }
 
-  if (state.user && (state.user.id === owner.id || (listing.companyId && state.user.companyId === listing.companyId) || state.access?.adminUnlimited)) {
-    wrap.appendChild(el('div',{class:'dsection owner-ops'},[el('h3',{},'Deal operations'),el('div',{class:'owner-ops-actions'},[el('button',{class:'btn-primary',onclick:()=>go('compose',{composeEditId:listing.id})},'Edit property'),el('button',{class:'btn-primary',onclick:()=>go('dealroom',{detailId:listing.id})},'Open deal room'),el('button',{class:'btn-ghost',onclick:async()=>{await api('POST','/api/pipeline',{listingId:listing.id,title:listing.address,stage:'dispo'});toast('Added to pipeline','ok');go('pipeline');}},'Add to pipeline'),el('button',{class:'btn-ghost',onclick:()=>go('analytics',{detailId:listing.id})},'Listing analytics')]) ]));
+  let ownerTools=null;
+  if (state.user && (state.user.id === owner.id || state.access?.adminUnlimited)) {
+    ownerTools=el('div',{class:'dsection owner-ops'},[el('h3',{},'Deal operations'),el('div',{class:'owner-ops-actions'},[el('button',{class:'btn-primary',onclick:()=>go('compose',{composeEditId:listing.id})},'Edit property'),el('button',{class:'btn-primary',onclick:()=>go('dealroom',{detailId:listing.id})},'Open deal room'),el('button',{class:'btn-ghost',onclick:async()=>{await api('POST','/api/pipeline',{listingId:listing.id,title:listing.address,stage:'dispo'});toast('Added to pipeline','ok');go('pipeline');}},'Add to pipeline'),el('button',{class:'btn-ghost',onclick:()=>go('analytics',{detailId:listing.id})},'Listing analytics')]) ]);
   }
-  if(!context.demo&&state.user&&(state.user.id===listing.ownerId||state.access?.adminUnlimited)){const manager=el('section',{class:'card service-form listing-top-actions'},[el('h3',{},'Manage this property'),listingManagerActions(listing)]);wrap.insertBefore(manager,wrap.children[1]||null);}
+  if(!context.demo&&state.user&&(state.user.id===listing.ownerId||state.access?.adminUnlimited)){const manager=el('section',{class:'card service-form listing-management-panel',hidden:'hidden'},[el('h3',{},'Manage this property'),listingManagerActions(listing),el('button',{class:'btn-ghost',onclick:()=>go('compose',{composeEditId:listing.id})},'Edit property and photos'),ownerTools]);const header=wrap.querySelector('.dhead');if(header)header.after(manager);else wrap.appendChild(manager);}
 
 
+  const toolLoading=el('div',{class:'hint property-tools-loading',role:'status'},'Loading property tools…');wrap.appendChild(toolLoading);
+  const loadPropertyTools=async()=>{
   if (state.user && !context.demo) {
     try {
       const sh = await api('GET', '/api/listings/' + encodeURIComponent(listing.id) + '/showings');
@@ -1517,7 +1528,7 @@ async function renderDetail(context = liveUIContext()) {
           sec.appendChild(el('div',{class:'showing-actions'},toggle));
           sec.appendChild(form);
         }
-        wrap.appendChild(sec);
+        (sh.canManage?(wrap.querySelector('.listing-management-panel')||wrap):wrap).appendChild(sec);
       }
     } catch {}
   }
@@ -1533,7 +1544,7 @@ async function renderDetail(context = liveUIContext()) {
   }
 
   if(state.user && !context.demo){try{wrap.appendChild(await renderConnectedListing(listing));}catch(e){wrap.appendChild(el('p',{class:'errmsg'},'Connected tools: '+e.message));}}
-  if (state.user && state.user.id === owner.id) {
+  if (state.user && (state.user.id === owner.id || state.access?.adminUnlimited)) {
     const command = el('div', { class:'dsection dealcommand' });
     command.appendChild(el('div',{class:'sectioneyebrow'},'DEAL COMMAND CENTER'));
     command.appendChild(el('h3',{},'Keep the deal moving'));
@@ -1552,7 +1563,7 @@ async function renderDetail(context = liveUIContext()) {
       command.appendChild(el('div',{class:'dealcommandgrid'},[el('div',{},[el('label',{},'Stage'),stage]),el('div',{},[el('label',{},'Next action'),next])]));
       command.appendChild(el('label',{},'Tasks')); command.appendChild(taskList); command.appendChild(addTask); command.appendChild(el('label',{},'Private notes')); command.appendChild(notes); command.appendChild(save);
     } catch(e) { command.appendChild(el('div',{class:'errmsg'},e.message)); }
-    wrap.appendChild(command);
+    (wrap.querySelector('.listing-management-panel')||wrap).appendChild(command);
 
     const dispo = el('div', { class: 'dsection betterdispopanel' });
     dispo.appendChild(el('div', { class: 'dispoeyebrow' }, 'BETTER DISPO'));
@@ -1599,8 +1610,10 @@ async function renderDetail(context = liveUIContext()) {
       el('button', { class: 'submitbtn', onclick: () => go('promote', { detailId: listing.id }) }, 'Promote listing'),
       el('button', { class: 'btn-ghost', onclick: () => go('analytics', { detailId: listing.id }) }, 'View analytics')
     ]));
-    wrap.appendChild(dispo);
+    (wrap.querySelector('.listing-management-panel')||wrap).appendChild(dispo);
   }
+  };
+  loadPropertyTools().catch(e=>{wrap.appendChild(el('p',{class:'errmsg'},'Property tools: '+e.message));}).finally(()=>toolLoading.remove());
   return wrap;
 }
 
@@ -1918,6 +1931,17 @@ async function renderWallet() {
 }
 
 /* ================= SHOP ================= */
+async function renderCart(){
+ const wrap=el('div',{class:'page'});wrap.append(el('button',{class:'backbtn',onclick:()=>go('shop')},'← Marketplace'),el('h2',{},'Your cart'),el('p',{class:'sub'},'Saved to your account. Check out each item separately so its seller, delivery and final price can be confirmed.'));
+ if(!state.user){wrap.appendChild(el('button',{class:'btn-primary',onclick:()=>{state.postAuthTarget={view:'cart'};state.authMode='login';go('auth');}},'Sign in to view your cart'));return wrap;}
+ const {items}=await api('GET','/api/shop/cart');if(!items.length){wrap.appendChild(el('div',{class:'empty'},'Your cart is empty.'));return wrap;}
+ for(const item of items){
+  const row=el('div',{class:'cart-item card'});row.append(el('b',{},item.title),el('div',{class:'hint'},item.available?cents(item.price):'No longer available'));
+  const actions=el('div',{class:'shopactions'});if(item.available)actions.appendChild(el('button',{class:'btn-primary',onclick:()=>go('shopitem',{shopItemId:item.id})},'Review and buy'));
+  actions.appendChild(el('button',{class:'btn-ghost',onclick:async e=>{try{await withButtonBusy(e.currentTarget,()=>api('POST','/api/shop/cart',{itemId:item.id,action:'remove'}));render();}catch(e){toast(e.message,'err');}}},'Remove'));row.appendChild(actions);wrap.appendChild(row);
+ }
+ return wrap;
+}
 async function renderShop() {
   const wrap = el('div', { class: 'page' });
   const { categories } = await api('GET', '/api/shop/categories');
@@ -1937,6 +1961,7 @@ async function renderShop() {
   wrap.appendChild(chips);
 
   const shopActions = el('div', { class: 'shopactions' }, [
+    el('button', { class: 'btn-ghost', onclick: () => go('cart') }, 'Cart'),
     el('button', { class: 'btn-primary', onclick: () => go('sellitem') }, '＋ Sell an item'),
     el('button', { class: 'btn-ghost', onclick: () => go('shopmanage') }, state.user?.role === 'admin' ? 'Manage shop listings' : 'My shop listings')
   ]);
@@ -1945,7 +1970,11 @@ async function renderShop() {
   const { items } = await api('GET', `/api/shop/items?category=${encodeURIComponent(state.shopCat)}&q=${encodeURIComponent(state.shopQ)}`);
   if (!items.length) { wrap.appendChild(el('div', { class: 'empty' }, [el('h3', {}, 'Nothing here yet'), el('p', {}, 'Be the first to list something.')])); return wrap; }
 
-  const grid = el('div', { class: 'shopgrid' });
+  let shopLayout=state.user?.settings?.shopLayout;const layoutKey='bre_shop_layout_'+(state.user?.id||'guest');if(!['grid','list'].includes(shopLayout)){shopLayout='grid';try{shopLayout=localStorage.getItem(layoutKey)==='list'?'list':'grid';}catch{}}
+  const layoutControls = el('div',{class:'shop-layout-controls','aria-label':'Shop layout'});
+  ['grid','list'].forEach(mode => layoutControls.appendChild(el('button',{class:shopLayout===mode?'btn-primary':'btn-ghost','aria-pressed':shopLayout===mode?'true':'false',onclick:async e=>{try{if(state.user){const r=await withButtonBusy(e.currentTarget,()=>api('PATCH','/api/me/settings',{shopLayout:mode}));state.user.settings=r.settings;}try{localStorage.setItem(layoutKey,mode);}catch{}render();}catch(e){toast(e.message,'err');}}}, mode === 'grid' ? 'Grid view' : 'List view')));
+  wrap.appendChild(layoutControls);
+  const grid = el('div', { class: 'shopgrid' + (shopLayout === 'list' ? ' shopgrid-list' : '') });
   items.forEach(i => {
     const openItem = () => go('shopitem', { shopItemId: i.id });
     const btn = el('button', { onclick: openItem }, 'View item');
@@ -1966,6 +1995,21 @@ async function renderShop() {
   return wrap;
 }
 
+function openShopPhotos(photos,index,title){
+ const previous=document.activeElement,shade=el('div',{class:'shop-photo-viewer',role:'dialog','aria-modal':'true','aria-label':'Product photos'}),image=el('img',{alt:title,draggable:'false'}),stage=el('div',{class:'shop-photo-stage'},image),count=el('span',{'aria-live':'polite'});
+ let scale=1,x=0,y=0,lastDistance=null,lastPoint=null;const points=new Map();
+ const paint=()=>{image.style.transform=`translate(${x}px,${y}px) scale(${scale})`;};
+ const show=()=>{image.src=photos[index];count.textContent=`${index+1} / ${photos.length}`;scale=1;x=y=0;paint();};
+ const close=()=>{shade.remove();previous?.focus?.();};
+ const change=step=>{index=(index+step+photos.length)%photos.length;show();};
+ const toolbar=el('div',{class:'shop-photo-toolbar'},[el('button',{'aria-label':'Previous photo',onclick:()=>change(-1)},'←'),count,el('button',{'aria-label':'Next photo',onclick:()=>change(1)},'→'),el('button',{onclick:()=>{scale=1;x=y=0;paint();}},'Reset zoom'),el('button',{onclick:close},'Close')]);
+ stage.onpointerdown=e=>{stage.setPointerCapture(e.pointerId);points.set(e.pointerId,{x:e.clientX,y:e.clientY});lastPoint={x:e.clientX,y:e.clientY};lastDistance=null;};
+ stage.onpointermove=e=>{if(!points.has(e.pointerId))return;points.set(e.pointerId,{x:e.clientX,y:e.clientY});const a=[...points.values()];if(a.length>=2){const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);if(lastDistance)scale=Math.max(1,Math.min(5,scale*d/lastDistance));lastDistance=d;}else if(scale>1&&lastPoint){x+=e.clientX-lastPoint.x;y+=e.clientY-lastPoint.y;}lastPoint={x:e.clientX,y:e.clientY};paint();};
+ const end=e=>{points.delete(e.pointerId);lastDistance=null;lastPoint=null;};stage.onpointerup=end;stage.onpointercancel=end;
+ stage.ondblclick=()=>{scale=scale>1?1:2;x=y=0;paint();};
+ shade.onkeydown=e=>{if(e.key==='Escape')close();if(e.key==='ArrowRight')change(1);if(e.key==='ArrowLeft')change(-1);if(e.key==='Tab'){const b=[...toolbar.querySelectorAll('button')];if(e.shiftKey&&document.activeElement===b[0]){e.preventDefault();b.at(-1).focus();}else if(!e.shiftKey&&document.activeElement===b.at(-1)){e.preventDefault();b[0].focus();}}};
+ shade.append(toolbar,stage);document.body.appendChild(shade);show();toolbar.querySelector('button:last-child').focus();
+}
 async function renderShopItem() {
   const wrap = el('div', { class: 'page shopdetailpage' });
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go('shop') }, '← Marketplace'));
@@ -1978,12 +2022,13 @@ async function renderShopItem() {
   const addressAuto = item.dropship && state.user
     ? await api('GET', '/api/address/config').catch(() => ({ enabled: false }))
     : { enabled: false };
-  const photos = Array.isArray(item.photos) ? item.photos.filter(Boolean) : [];
+  const photos = Array.isArray(item.photos) ? [...new Set(item.photos.filter(Boolean))] : [];
   const mainMedia = el('div', { class: 'productmainphoto' });
-  let mainImg = null;
+  let mainImg = null, selectedPhoto=0,suppressPhotoClickUntil=0;
+  const photoCounter=el('div',{class:'product-photo-counter','aria-live':'polite'},photos.length?'1 / '+photos.length:'');
   if (photos.length) {
     mainImg = el('img', { src: photos[0], alt: item.title });
-    mainMedia.appendChild(mainImg);
+    mainMedia.appendChild(mainImg);mainMedia.tabIndex=0;mainMedia.setAttribute('role','button');mainMedia.setAttribute('aria-label','Open full-screen product photos');mainMedia.onclick=()=>{if(Date.now()>=suppressPhotoClickUntil)openShopPhotos(photos,selectedPhoto,item.title);};mainMedia.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openShopPhotos(photos,selectedPhoto,item.title);}};
   } else {
     mainMedia.appendChild(el('div', { class: 'productnophoto' }, 'No photo available'));
   }
@@ -1991,6 +2036,7 @@ async function renderShopItem() {
   photos.forEach((src, idx) => {
     const thumb = el('button', { class: idx === 0 ? 'active' : '' }, el('img', { src, alt: `${item.title} photo ${idx + 1}` }));
     thumb.onclick = () => {
+      selectedPhoto=idx;photoCounter.textContent=(idx+1)+' / '+photos.length;
       if (mainImg) mainImg.src = src;
       [...thumbs.children].forEach(x => x.classList.remove('active'));
       thumb.classList.add('active');
@@ -1998,7 +2044,8 @@ async function renderShopItem() {
     thumbs.appendChild(thumb);
   });
 
-  const gallery = el('div', { class: 'productgallery' }, [mainMedia, thumbs]);
+  let startX=null;mainMedia.addEventListener('touchstart',e=>{startX=e.touches.length===1?e.touches[0].clientX:null;},{passive:true});mainMedia.addEventListener('touchend',e=>{if(startX===null)return;const dx=e.changedTouches[0].clientX-startX;startX=null;if(Math.abs(dx)>45){suppressPhotoClickUntil=Date.now()+500;const next=(selectedPhoto+(dx<0?1:-1)+photos.length)%photos.length;thumbs.children[next]?.click();}},{passive:true});
+  const gallery = el('div', { class: 'productgallery' }, [mainMedia, photoCounter, thumbs]);
   const info = el('div', { class: 'productinfo' });
   info.appendChild(el('div', { class: 'productcategory' }, item.category || 'Marketplace'));
   info.appendChild(el('h1', {}, item.title));
@@ -2016,6 +2063,8 @@ async function renderShopItem() {
   info.appendChild(el('div', { class: 'productsectiontitle' }, 'Product details'));
   info.appendChild(el('div', { class: 'productdescription' }, item.description || 'No additional description was provided.'));
 
+  const purchaseActions=el('div',{class:'shopactions'}),addCart=el('button',{class:'btn-ghost',type:'button',disabled:Number(item.stock)>0?null:'disabled',onclick:async e=>{if(!state.user){state.postAuthTarget={view:'shopitem',shopItemId:item.id};state.authMode='login';return go('auth');}try{await withButtonBusy(e.currentTarget,()=>api('POST','/api/shop/cart',{itemId:item.id}));toast('Added to cart','ok');}catch(e){toast(e.message,'err');}}},'Add to cart');
+  purchaseActions.append(addCart,el('button',{class:'btn-ghost',onclick:()=>go('cart')},'View cart'),el('button',{class:'btn-primary',onclick:()=>checkout.scrollIntoView({behavior:'smooth',block:'start'})},'Buy now'));info.appendChild(purchaseActions);
   const checkout = el('div', { class: 'productcheckout' });
   checkout.appendChild(el('h3', {}, item.dropship ? 'Delivery & checkout' : 'Order this item'));
   const checkoutStatus = el('div', { class: 'errmsg' });
@@ -2340,7 +2389,7 @@ async function renderShopManage() {
       ];
       const actions = el('div', { class: 'manageactions' });
       if (live) actions.appendChild(el('button', { class: 'btn-ghost', onclick: () => go('shopitem', { shopItemId: item.id }) }, 'View'));
-      actions.appendChild(el('button', { onclick: () => go('shopedit', { shopEditId: item.id }) }, 'Edit'));
+      actions.appendChild(el('button', { class:'btn-primary', onclick: () => go('shopedit', { shopEditId: item.id }) }, 'Edit item'));
       const toggle = el('button', { class: 'btn-ghost' }, item.active ? 'Unpublish' : 'Publish');
       toggle.disabled = !item.active && item.stock < 1;
       toggle.title = (!item.active && item.stock < 1) ? 'Set quantity above 0 before publishing.' : '';
@@ -2962,28 +3011,28 @@ function openBetterGuide(){
   panel.appendChild(el('div',{class:'better-guide-head'},[mascot,el('div',{class:'grow'},[el('div',{class:'dispoeyebrow'},'BETTER GUIDE'),el('h2',{},'How can I help?'),el('div',{class:'hint'},'Platform help, learning and guidance without leaving your workflow.')]),close]));
   if(state.user?.settings?.guideContextTips!==false)panel.appendChild(el('div',{class:'guide-context-card'},[el('b',{},ctxTitle),el('div',{class:'hint'},ctxCopy)]));
   const tourDone=Number(state.user?.settings?.tutorialCompletedVersion||0)>=TUTORIAL_VERSION;
-  panel.appendChild(el('div',{class:'guide-progress-center'},[el('div',{},[el('span',{},'Platform tour'),el('b',{},tourDone?'Complete':'Available')]),el('div',{},[el('span',{},affiliateGuideOnly()?'Affiliate workbench':'Wholesaling course'),el('b',{},affiliateGuideOnly()?'Ready':`${progress.done}/${progress.total}`)])]));
+
   const quick=el('div',{class:'guide-quick-grid'});
   quick.append(
     el('button',{onclick:()=>{closeBetterGuide();startTutorial(true);}},[el('b',{},'Guide me through Better'),el('span',{},'A focused 10-step introduction')]),
-    el('button',{onclick:()=>{closeBetterGuide();startTutorial(true,false,false,true);}},[el('b',{},'Full platform walkthrough'),el('span',{},'Explore every feature available to your account')]),
     el('button',{onclick:()=>affiliateGuideOnly()?navigateFromGuide('learn'):navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||next.module||'foundations')},[el('b',{},affiliateGuideOnly()?'Affiliate training & tools':'Learn Wholesaling — Free'),el('span',{},affiliateGuideOnly()?'Scripts, plans and follow-ups':`${progress.done}/${progress.total} modules complete`)]),
     el('button',{onclick:()=>navigateFromGuide('faq')},[el('b',{},'Help center'),el('span',{},'Browse common questions')]),
     el('button',{onclick:()=>navigateFromGuide('support')},[el('b',{},'Chat with Better'),el('span',{},'AI help or request a person')])
   );
-  panel.appendChild(quick);panel.appendChild(platformHelpPanel(false));
+  panel.appendChild(quick);
+  const moreGuide=el('details',{class:'guide-more'});moreGuide.append(el('summary',{},'More guidance'),el('button',{onclick:()=>{closeBetterGuide();startTutorial(true,false,false,true);}},'Full platform walkthrough'));panel.appendChild(moreGuide);
   panel.appendChild(el('div',{class:'guide-section-label'},'SEARCH BETTER HELP'));
   const input=el('input',{class:'guide-search',placeholder:affiliateGuideOnly()?'Try “scripts”, “prospects”, or “earnings”':'Try “ARV”, “post a property”, or “affiliate”','aria-label':'Search Better Help'}),results=el('div',{class:'guide-search-results'});
   const drawResults=()=>{const q=input.value.trim().toLowerCase();results.innerHTML='';const rows=(q?guideHelpCatalog().filter(x=>(x.terms+' '+x.title+' '+x.copy).toLowerCase().includes(q)):guideHelpCatalog().slice(0,4)).slice(0,6);if(!rows.length){results.appendChild(el('div',{class:'guide-empty'},'No exact help topic found. Try a shorter search or contact support.'));return;}rows.forEach(x=>results.appendChild(el('button',{onclick:()=>navigateFromGuide(x.view)},[el('b',{},x.title),el('span',{},x.copy)])));};
   input.oninput=drawResults;panel.append(input,results);drawResults();
   panel.appendChild(el('div',{class:'guide-section-label'},'YOUR NEXT STEP'));
   panel.appendChild(el('button',{class:'guide-next-card',onclick:()=>navigateFromGuide(next.view,next.module)},[el('div',{},[el('b',{},next.title),el('span',{},next.copy)]),el('span',{class:'guide-arrow'},'→')]));
-  panel.appendChild(el('div',{class:'guide-section-label'},'PERSONALIZED MEMBER GUIDANCE'));
-  if(affiliateGuideOnly())panel.appendChild(el('div',{class:'guide-premium-card unlocked'},[el('b',{},'Help with your affiliate work'),el('div',{class:'hint'},'Use your approved tracked link, keep prospect notes private, and review the current terms for eligible earnings.'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('affiliate')},'Open affiliate center')]));
-  else if(betterGuidePremium()){const insight=guidePremiumInsight();panel.appendChild(el('div',{class:'guide-premium-card unlocked'},[el('b',{},insight.title),el('div',{class:'hint'},insight.copy),el('div',{class:'guide-premium-actions'},[el('button',{class:'btn-primary',onclick:()=>navigateFromGuide(insight.view,insight.module)},'Open guided workflow'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||'foundations')},'Continue learning')]) ]));}
-  else panel.appendChild(el('div',{class:'guide-premium-card'},[el('b',{},'Free help stays useful'),el('div',{class:'hint'},'The course, product help and basic contextual guidance are free. Paid memberships add deeper personalized workflow guidance without locking the fundamentals away.'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('upgrade')},'See membership options')]));
+  const guidance=el('details',{class:'guide-more'});guidance.appendChild(el('summary',{},'Personalized guidance'));panel.appendChild(guidance);
+  if(affiliateGuideOnly())guidance.appendChild(el('div',{class:'guide-premium-card unlocked'},[el('b',{},'Help with your affiliate work'),el('div',{class:'hint'},'Use your approved tracked link, keep prospect notes private, and review the current terms for eligible earnings.'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('affiliate')},'Open affiliate center')]));
+  else if(betterGuidePremium()){const insight=guidePremiumInsight();guidance.appendChild(el('div',{class:'guide-premium-card unlocked'},[el('b',{},insight.title),el('div',{class:'hint'},insight.copy),el('div',{class:'guide-premium-actions'},[el('button',{class:'btn-primary',onclick:()=>navigateFromGuide(insight.view,insight.module)},'Open guided workflow'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('learn',state.user?.settings?.guideCourseLastModule||'foundations')},'Continue learning')]) ]));}
+  else guidance.appendChild(el('div',{class:'guide-premium-card'},[el('b',{},'Free help stays useful'),el('div',{class:'hint'},'The course, product help and basic contextual guidance are free. Paid memberships add deeper personalized workflow guidance without locking the fundamentals away.'),el('button',{class:'btn-ghost',onclick:()=>navigateFromGuide('upgrade')},'See membership options')]));
   panel.appendChild(guideSupportFooter());
-  shade.appendChild(panel);document.body.appendChild(shade);document.querySelector('.better-guide-trigger')?.classList.add('is-open');requestAnimationFrame(()=>{reactBetterMascot('wave');input.focus({preventScroll:true});});
+  shade.appendChild(panel);document.body.appendChild(shade);document.querySelector('.better-guide-trigger')?.classList.add('is-open');requestAnimationFrame(()=>{reactBetterMascot('wave');panel.focus({preventScroll:true});});
 }
 
 async function markGuideModuleComplete(slug){
@@ -3203,7 +3252,7 @@ async function startTutorial(force=false,onlyNew=false,releaseOnly=false,inDepth
  const save=async(dismiss=false)=>{const body={tutorialCompletedVersion:TUTORIAL_VERSION,tutorialCompletedKeys:[...new Set([...seen,key])],tutorialHighestRank:Math.max(Number(state.user.settings?.tutorialHighestRank??-1),TUTORIAL_RANK[tier]??0)};if(dismiss)body.tutorialDismissedVersion=TUTORIAL_VERSION;try{const r=await api('PATCH','/api/me/settings',body);state.user.settings=r.settings;}catch{}};
  const cleanup=()=>{closed=true;window.removeEventListener('resize',reposition);window.removeEventListener('scroll',reposition,true);root.remove();};
  const finish=async(d=false)=>{cleanup();await save(d);};
- const waitForTarget=async selector=>{if(!selector)return null;for(let n=0;n<40&&!closed;n++){const node=document.querySelector(selector);if(node){let parent=node.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement;}if(node.getClientRects().length)return node;}await new Promise(r=>setTimeout(r,50));}return null;};
+ const waitForTarget=async selector=>{if(!selector)return null;for(let n=0;n<40&&!closed;n++){const node=document.querySelector(selector);if(node){let parent=node.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;if(parent.classList?.contains('listing-management-panel'))parent.hidden=false;parent=parent.parentElement;}if(node.getClientRects().length)return node;}await new Promise(r=>setTimeout(r,50));}return null;};
  let currentTarget=null,preferredSide=null,focusTicket=0;
  const setBox=(node)=>{
    const vw=window.innerWidth,vh=window.innerHeight,pad=8;
@@ -3830,6 +3879,7 @@ async function renderMessages() {
       avatarNode(c.other),
       el('div', { class: 'chatpreview' }, [
         el('div', { class: 'chatpreviewtop' }, [el('b', {}, c.other.name), el('span', {}, formatChatTime(c.latest.at))]),
+        c.other.activityStatus ? el('div', { class: 'activity-status' }, [el('span',{class:'activity-dot'},''), c.other.activityStatus]) : null,
         el('div', { class: 'chatpreviewbody' }, (c.latest.outgoing ? 'You: ' : '') + c.latest.body),
         c.latest.listingAddress ? el('div', { class: 'chatcontext' }, 'Property: ' + c.latest.listingAddress) : null
       ]),
@@ -3860,9 +3910,11 @@ async function renderChat(context = liveUIContext()) {
   renderTop();
   renderTabs();
   const wrap = el('div', { class: 'page chatpage' });
+  const presence = el('span', { class: 'activity-status' }, other.activityStatus || '');
+  presence.hidden = !other.activityStatus;
   wrap.appendChild(el('div', { class: 'chathead' }, [
     el('button', { class: 'backbtn', onclick: () => go('messages') }, '← Messages'),
-    el('div', { class: 'chatperson', onclick: () => go('profile', { profileId: other.id }) }, [avatarNode(other, 'small'), el('div', {}, [el('b', {}, other.name), el('span', {}, [roleLabel(other), ...(other.markets || [])].filter(Boolean).slice(0,2).join(' · '))])]),
+    el('div', { class: 'chatperson', onclick: () => go('profile', { profileId: other.id }) }, [avatarNode(other, 'small'), el('div', {}, [el('b', {}, other.name), el('span', {}, [roleLabel(other), ...(other.markets || [])].filter(Boolean).slice(0,2).join(' · ')), presence])]),
     context.demo ? el('span',{class:'demopill'},'SAMPLE BUYER') : friendButton(other, () => {})
   ]));
   const attachedListingId=state.chatListingId||null;
@@ -3896,6 +3948,7 @@ async function renderChat(context = liveUIContext()) {
     const fresh = await api('GET', '/api/conversations/' + encodeURIComponent(currentUserId));
     if (state.view !== 'chat' || state.chatUserId !== currentUserId) return;
     other = fresh.other;
+    presence.textContent = other.activityStatus || ''; presence.hidden = !other.activityStatus;
     messages = fresh.messages || [];
     const sig = signatureFor(messages);
     if (force || sig !== lastSignature) {
@@ -4026,6 +4079,20 @@ function openAdminAccessModal(u,onDone=()=>{},inlineHost=null){
 }
 
 /* ================= PROFILES ================= */
+async function showConnections(userId, kind){
+ const {card:panel,close}=workspaceDialog(kind==='friends'?'Friends':'Followers');
+ const list=el('div');let offset=0;const status=el('p',{class:'hint',role:'status'},'Loading…');panel.append(status,list);
+ const load=async()=>{try{const r=await api('GET',`/api/users/${encodeURIComponent(userId)}/connections?kind=${kind}&offset=${offset}`);status.textContent='';if(!r.users.length&&!offset)status.textContent='No people to show yet.';r.users.forEach(u=>list.appendChild(el('button',{class:'connection-row',onclick:()=>{close();go('profile',{profileId:u.id});}},[avatarNode(u,'small'),el('span',{},u.name)])));offset+=r.users.length;if(r.hasMore){const more=el('button',{class:'btn-ghost',onclick:()=>{more.remove();load();}},'Load more');list.appendChild(more);}}catch{status.textContent='Could not load this list. Close and try again.';}};await load();
+}
+function profileConnections(id,followers,friends){return el('div',{class:'profile-connection-buttons'},[el('button',{class:'btn-ghost',onclick:()=>showConnections(id,'followers')},`${followers||0} followers`),el('button',{class:'btn-ghost',onclick:()=>showConnections(id,'friends')},`${friends||0} friends`)]);}
+async function profileBanner(id, editable){
+ const banner=el('div',{class:'profile-cover'},el('img',{class:'default-profile-banner',src:'/brand-logo-header.png',alt:'Better Real Estate — Make better your standard.'}));api('GET','/api/users/'+encodeURIComponent(id)+'/banner').then(r=>{if(r.bannerUrl){banner.textContent='';banner.appendChild(el('img',{src:r.bannerUrl,alt:'Profile banner'}));}}).catch(()=>{});
+ const holder=el('div',{class:'profile-cover-wrap'},banner);if(!editable)return holder;
+ const picker=el('input',{type:'file',accept:'image/jpeg,image/png,image/webp',hidden:'hidden'}),status=el('div',{class:'hint'}),preview=el('div'),actions=el('div',{class:'profile-connection-buttons'});
+ actions.append(el('button',{class:'btn-ghost',onclick:()=>picker.click()},'Change banner'),el('button',{class:'btn-ghost',onclick:async()=>{try{await api('POST','/api/me/banner',{reset:true});toast('Better banner restored','ok');render();}catch(e){status.textContent=e.message;}}},'Restore Better banner'));
+ picker.onchange=async()=>{try{const f=picker.files?.[0];if(!f)return;if(f.size>15*1024*1024)throw new Error('Choose a photo under 15 MB.');const data=await downscale(f,1500);const img=new Image();img.onload=()=>{const canvas=document.createElement('canvas');canvas.width=1500;canvas.height=500;const scale=Math.max(1500/img.width,500/img.height),w=img.width*scale,h=img.height*scale;canvas.getContext('2d').drawImage(img,(1500-w)/2,(500-h)/2,w,h);const cropped=canvas.toDataURL('image/jpeg',.82);preview.replaceChildren(el('img',{src:cropped,alt:'Preview banner crop'}),el('button',{class:'btn-primary',onclick:async e=>{try{await withButtonBusy(e.currentTarget,()=>api('POST','/api/me/banner',{imageData:cropped}));toast('Banner saved','ok');render();}catch(e){status.textContent=e.message;}}},'Save banner'));status.textContent='Preview: center crop, 3:1.';};img.onerror=()=>{status.textContent='Could not read this photo.';};img.src=data;}catch(e){status.textContent=e.message;}};
+ holder.append(actions,picker,status,preview);return holder;
+}
 async function renderMe() {
   if(state.navigationWorkspace==='services')return renderServiceAccountProfile();
   const wrap = el('div', { class: 'page' });
@@ -4035,14 +4102,16 @@ async function renderMe() {
     el('div', { class: 'profileherobody' }, [
       el('h2', {}, [state.user.name, state.user.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, state.user.foundingMember ? el('span',{class:'founding-badge'},state.user.founderLaunchPosition?`Founding Member · #${state.user.founderLaunchPosition}`:'Founding Member') : null, state.user.settings?.showMembershipLevel !== false ? membershipBadge(state.access?.adminUnlimited ? 'Admin' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free') : null]),
       state.user.username ? el('div', { class: 'profileusername' }, '@' + state.user.username) : null,
-      el('div', { class: 'sub' }, `${roleLabel(state.user)} · ${d.listings.length} listing(s) · ${d.followerCount} follower(s) · ${d.friendCount || 0} friend(s) · ${state.user.points} pts · ${state.access?.adminUnlimited ? 'Admin — Unlimited' : state.access?.wholesale ? 'Wholesale Teams' : state.access?.platinum ? 'Platinum' : state.access?.pro ? 'Plus' : state.access?.trial ? 'Trial' : 'Free'}`),
+      el('div', { class: 'sub' }, `${roleLabel(state.user)} · ${d.listings.length} listing(s)`),
       state.user.location ? el('div', { class: 'profilelocation' }, state.user.location) : null,
       state.user.investmentMarkets?.length ? el('div',{class:'profile-markets'},state.user.investmentMarkets.map(x=>el('span',{},x))) : null,
       state.user.bio ? el('p', { class: 'profilebio' }, state.user.bio) : null,
       el('div',{class:'profile-actions'},[el('button', { class: 'btn-ghost profileeditbtn profile-action-equal', onclick: () => go('settings') }, state.user.avatarUrl ? 'Edit profile' : 'Add profile photo'),el('button',{class:'btn-ghost profile-action-equal',onclick:async()=>{const url=location.origin+'/s/profile/'+encodeURIComponent(state.user.username||state.user.id);try{await navigator.clipboard.writeText(url);toast('Public profile link copied','ok')}catch{prompt('Copy public profile link',url);}}},'Copy public profile')])
     ])
   ]);
+  wrap.appendChild(await profileBanner(state.user.id,true));
   wrap.appendChild(mineHeader);
+  wrap.appendChild(profileConnections(state.user.id,d.followerCount,d.friendCount));
 
   wrap.appendChild(el('div', { class: 'statgrid' }, [
     stat(cents(w.balance), 'Wallet'), stat(state.user.unlockCredits, 'Unlocks'), stat(d.listings.length, 'Listings')
@@ -4057,6 +4126,8 @@ async function renderMe() {
   }
 
   const toolgroups = el('div', { class: 'profile-toolgroups' });
+  const toolsSearch=el('input',{type:'search',placeholder:'Search your tools…','aria-label':'Search your tools'});wrap.appendChild(toolsSearch);
+  toolsSearch.oninput=()=>{const q=toolsSearch.value.trim().toLowerCase();for(const group of toolgroups.children){let matches=0;for(const button of group.querySelectorAll('.profile-tool')){button.hidden=!!q&&!button.textContent.toLowerCase().includes(q);if(!button.hidden)matches++;}group.hidden=!matches;if(q&&matches)group.open=true;}};
   const groups=[
     ['Workspace', [['Manage my properties','manageproperties'],['Command center','commandcenter'],['Transaction hub','transactionhub'],['Deal pipeline','pipeline'],['Deal calendar','dealcalendar'],['AI Deal Builder','dealbuilder'],['Buyer CRM','buyercrm'],['Investor workspace'+(state.access?.platinum?'':' 🔒'),'workspace']]],
     ['Discover', [['Liked properties','saved'],['Saved searches & alerts','savedsearches'],['Buy box','buybox'],['Buyer demand insights','insights'],['Market Hubs','markethubs'],['Title Directory','titledirectory'],['Network & friends','network']]],
@@ -4064,7 +4135,7 @@ async function renderMe() {
   ];
   if(state.access?.wholesale||state.user.companyId)groups[0][1].push(['Company workspace','companyworkspace']);
   if(state.user.role==='admin')groups.push(['Administration',[['Admin command center','admin'],['Admin — Affiliates','affiliate'],['Admin — Email Center','emailcenter'],['Admin — Membership grants','memberships'],['Admin — suppliers','suppliers'],['Admin — fulfilment queue','fulfilment'],['Admin — reports','reports']]]);
-  groups.forEach(([title,items])=>{const g=el('section',{class:'profile-toolgroup'},[el('div',{class:'eyebrow'},title)]);items.forEach(([t,v])=>{const count=notificationCountFor(v);g.appendChild(el('button',{class:'profile-tool',onclick:()=>go(v)},[el('span',{},t),el('span',{class:'profile-tool-tail'},[notificationBadge(count,'msgbadge profile-row-badge'),el('b',{},'→')]) ]));});toolgroups.appendChild(g);});
+  groups.forEach(([title,items])=>{const g=el('details',{class:'profile-toolgroup'},[el('summary',{class:'eyebrow'},title)]);items.forEach(([t,v])=>{const count=notificationCountFor(v);g.appendChild(el('button',{class:'profile-tool',onclick:()=>go(v)},[el('span',{},t),el('span',{class:'profile-tool-tail'},[notificationBadge(count,'msgbadge profile-row-badge'),el('b',{},'›')]) ]));});toolgroups.appendChild(g);});
   wrap.appendChild(toolgroups);
 
   // referral growth dashboard
@@ -4126,20 +4197,23 @@ async function renderProfile(context = liveUIContext()) {
   wrap.appendChild(el('button', { class: 'backbtn', onclick: () => go(state.navigationWorkspace==='services'?'servicesdirectory':'feed') }, '← Back'));
   const avg = reviews?.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
   const profileBody = el('div', { class: 'profileherobody' }, [
-    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null, owner.foundingMember ? el('span',{class:'founding-badge'},owner.founderLaunchPosition?`Founding Member · #${owner.founderLaunchPosition}`:'Founding Member') : null, membershipBadge(owner.publicMembership)]),
+    el('h2', {}, [owner.name, owner.verified ? el('span', { class: 'vbadge' }, '✓ Verified') : null]),
     owner.username ? el('div', { class: 'profileusername' }, '@' + owner.username) : null,
+    el('div',{class:'profile-membership-badges'},[owner.foundingMember?el('span',{class:'founding-badge'},owner.founderLaunchPosition?`Founding Member · #${owner.founderLaunchPosition}`:'Founding Member'):null,membershipBadge(owner.publicMembership)]),
     owner.activityStatus ? el('div',{class:'activity-status'},[el('span',{class:'activity-dot'},''),owner.activityStatus]) : null,
     company ? el('button', { class: 'companychip', onclick: () => go('company', { companyId: company.id }) }, company.name) : null,
-    el('div', { class: 'sub' }, `${roleLabel(owner)} · ${listings.length} listing(s) · ${followerCount} follower(s) · ${friendCount || 0} friend(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')),
+    el('div', { class: 'sub' }, `${roleLabel(owner)} · ${listings.length} listing(s)` + (avg ? ` · ★ ${avg} (${reviews.length})` : '')),
     owner.location ? el('div', { class: 'profilelocation' }, owner.location) : null,
     owner.investmentMarkets?.length ? el('div',{class:'profile-markets'},owner.investmentMarkets.map(x=>el('span',{},x))) : null,
     owner.bio ? el('p', { class: 'profilebio' }, owner.bio) : null
   ]);
   const profileHero = el('div', { class: 'profilehero' }, [avatarNode(owner, 'profile'), profileBody]);
+  if(!context.demo) wrap.appendChild(await profileBanner(owner.id,false));
   wrap.appendChild(profileHero);
+  if(!context.demo) wrap.appendChild(profileConnections(owner.id,followerCount,friendCount));
   if(!context.demo && state.navigationWorkspace==='services'){try{const service=await api('GET','/api/services/profiles/'+encodeURIComponent(owner.id));wrap.appendChild(servicePublicProfileCard(service.profile));}catch(e){wrap.appendChild(el('p',{class:'hint'},'No published service profile is available for this member.'));}}
   if(credibility) wrap.appendChild(el('div',{class:'credibility-row'},[credibility.accountSince?el('span',{},'Member since '+new Date(credibility.accountSince).toLocaleDateString(undefined,{month:'short',year:'numeric'})):null,el('span',{},`${credibility.verifiedClosings||0} verified closing${credibility.verifiedClosings===1?'':'s'}`),credibility.responseRate!==null?el('span',{},`${credibility.responseRate}% response rate`):null].filter(Boolean)));
-  if (!context.demo) wrap.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: `${owner.name} on Better Real Estate`, text: `${roleLabel(owner)}${owner.location ? ' · ' + owner.location : ''}` }));
+  const profileShare=()=>{const {card}=workspaceDialog('Share profile');card.appendChild(shareStrip({ kind: 'profile', targetId: owner.id, title: owner.name+' on Better Real Estate', text: roleLabel(owner) }));};
 
   if (state.user && state.user.id !== owner.id) {
     const actions = el('div', { class: 'profileactions' });
@@ -4152,8 +4226,9 @@ async function renderProfile(context = liveUIContext()) {
     actions.appendChild(el('button', { class: 'btn-primary', onclick: () => go('chat', { chatUserId: owner.id }) }, 'Message'));
     if (hasRole(owner, 'seller')) actions.appendChild(el('button', { class: 'btn-ghost', onclick: () => go('buyerportal', { buyerPortalType: 'user', buyerPortalId: owner.id }) }, 'Join buyer list'));
     if(!context.demo&&hasRole(owner,'service'))actions.appendChild(el('button',{class:'btn-ghost',onclick:()=>go('servicesdirectory')},'Explore property services'));
-    wrap.appendChild(actions);
-  }
+    actions.appendChild(el('button',{class:'btn-ghost',onclick:profileShare},'Share'));
+    profileBody.insertBefore(actions,profileBody.children[1]||null);
+  }else if(!context.demo){profileBody.insertBefore(el('button',{class:'btn-ghost',onclick:profileShare},'Share profile'),profileBody.children[1]||null);}
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Listings'));
   const grid = el('div', { class: 'minigrid' });
   listings.forEach(l => grid.appendChild(el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
@@ -4288,6 +4363,9 @@ async function renderBuyBox() {
   return wrap;
 }
 
+function confirmSignOut(){
+ return new Promise(resolve=>{const previous=document.activeElement,shade=el('div',{class:'quick-shade'}),card=el('section',{class:'quick-card signout-confirm',role:'dialog','aria-modal':'true','aria-label':'Sign out of Better?'});let done=false;const finish=value=>{if(done)return;done=true;shade.remove();previous?.focus?.();resolve(value);};const cancel=el('button',{class:'btn-ghost',onclick:()=>finish(false)},'Cancel'),yes=el('button',{class:'btn-primary',onclick:()=>finish(true)},'Sign out');card.append(el('h3',{},'Sign out of Better?'),el('p',{},'You can sign back in whenever you are ready.'),el('div',{class:'shopactions'},[cancel,yes]));card.onkeydown=e=>{if(e.key==='Escape')finish(false);if(e.key==='Tab'){if(e.shiftKey&&document.activeElement===cancel){e.preventDefault();yes.focus();}else if(!e.shiftKey&&document.activeElement===yes){e.preventDefault();cancel.focus();}}};shade.onclick=e=>{if(e.target===shade)finish(false);};shade.appendChild(card);document.body.appendChild(shade);cancel.focus();});
+}
 function renderSettings() {
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Settings'));
@@ -4455,7 +4533,8 @@ function renderSettings() {
   }).catch(() => { if (emailPrefsHost.isConnected) emailPrefsHost.replaceChildren(el('div',{class:'hint',style:'padding:14px 16px'},'Email preferences are temporarily unavailable. The rest of Settings is ready to use.')); });
 
   wrap.appendChild(el('button', { class: 'btn-ghost', style: 'width:100%;margin-top:20px', onclick: async () => {
-    await api('POST', '/api/logout'); state.user = null; go('home');
+    if(!await confirmSignOut())return;
+    try{await api('POST', '/api/logout');state.user=null;state.access=null;state.postAuthTarget=null;state.authMode='login';go('home',{}, {replace:true});}catch(e){toast(e.message,'err');}
   } }, 'Log out'));
   return wrap;
 }

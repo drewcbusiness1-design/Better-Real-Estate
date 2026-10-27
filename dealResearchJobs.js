@@ -30,7 +30,7 @@ async function setJSON(key,value){
   return clean;
 }
 async function getJob(id){ return getJSON(jobKey(id)); }
-async function saveJob(job){ job.updatedAt=new Date().toISOString(); await setJSON(jobKey(job.id),job); return job; }
+async function saveJob(job){ job.updatedAt=new Date().toISOString(); await setJSON(jobKey(job.id),job); try { await require('./nativeLiveActivities.cjs').notifyJob(job); } catch {} return job; }
 async function startOrReuse({userId,address,researchKey,cacheVersion,forceRefresh=false}){
   const lk=lockKey(userId,researchKey), priorLock=await getJSON(lk);
   if(priorLock?.jobId){

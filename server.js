@@ -169,6 +169,9 @@ async function requireAuth(req, res, next) {
   req.user = user; req.db = db; next();
 }
 require('./serviceProviders').register(app,{requireAuth,saveDB,writeImage});
+require('./nativePush.cjs').register(app,{requireAuth,saveDB});
+require('./nativeLiveActivities.cjs').register(app,{requireAuth,saveDB});
+require('./socialMediaRoutes.cjs').register(app,{requireAuth,saveDB,writeImage,isAdminUser});
 
 // Belt and braces: the stored role must say admin AND the email must be on
 // the allowlist. A tampered database row alone is not enough.
@@ -944,6 +947,7 @@ app.patch('/api/me/settings', requireAuth, async (req, res) => {
   if (typeof body.autoMatchListings === 'boolean') next.autoMatchListings = body.autoMatchListings;
   if (typeof body.showMembershipLevel === 'boolean') next.showMembershipLevel = body.showMembershipLevel;
   if (typeof body.showActivityStatus === 'boolean') next.showActivityStatus = body.showActivityStatus;
+  if (['grid','list'].includes(body.shopLayout)) next.shopLayout=body.shopLayout;
   if (typeof body.firstLookCompleted === 'boolean') next.firstLookCompleted = body.firstLookCompleted;
   if (typeof body.guideContextTips === 'boolean') next.guideContextTips = body.guideContextTips;
   if (typeof body.adMeasurement === 'boolean') next.adMeasurement = body.adMeasurement;
@@ -1896,8 +1900,7 @@ app.get('/api/listings/:id/distribution', requireAuth, async (req, res) => {
 /* ============================ DEAL OPERATIONS ============================ */
 function canManageListing(db, user, listing) {
   if (!user || !listing) return false;
-  if (isAdminUser(user) || listing.ownerId === user.id) return true;
-  return !!(listing.companyId && user.companyId && listing.companyId === user.companyId && ['owner','admin','member'].includes(user.companyRole || 'member'));
+  return isAdminUser(user) || listing.ownerId === user.id;
 }
 function dealRoomFor(listing) {
   listing.dealRoom = listing.dealRoom || { stage:'marketing', nextAction:'', privateNotes:'', tasks:[], updatedAt:null };
@@ -3090,6 +3093,25 @@ app.get('/api/shop/items/:id/photo/:index', async (req, res) => {
   }
 });
 
+// Cart is account-scoped and uses current server item data, never client prices.
+app.get('/api/shop/cart', requireAuth, async (req,res)=>{
+  const ids=Array.isArray(req.user.shopCart)?req.user.shopCart:[];
+  res.json({items:ids.slice(0,50).map(id=>{const item=req.db.shopItems.find(x=>x.id===id&&!x.deleted);return item?{...publicShopItem(item),available:!!item.active&&item.stock>0}:{id,title:'Item unavailable',available:false};})});
+});
+app.post('/api/shop/cart', requireAuth, async(req,res)=>{
+  const id=String(req.body?.itemId||'');
+  const ids=[...new Set(Array.isArray(req.user.shopCart)?req.user.shopCart:[])];
+  if(req.body?.action==='remove')req.user.shopCart=ids.filter(x=>x!==id);
+  else {
+    const item=req.db.shopItems.find(x=>x.id===id&&!x.deleted&&x.active&&x.stock>0);
+    if(!item)return res.status(404).json({error:'Item unavailable.'});
+    if(item.sellerId===req.user.id)return res.status(400).json({error:'That is your own listing.'});
+    if(!ids.includes(id)&&ids.length>=50)return res.status(400).json({error:'Your cart is full. Remove an item first.'});
+    req.user.shopCart=[...new Set([...ids,id])];
+  }
+  await saveDB(req.db);res.json({ok:true,count:req.user.shopCart.length});
+});
+
 app.get('/api/shop/items/:id', async (req, res) => {
   const db = await loadDB();
   const item = db.shopItems.find(i => i.id === req.params.id && i.active && i.stock > 0);
@@ -3266,6 +3288,7 @@ function fulfilShopPurchase(db, item, buyer, shipping, pricing = {}) {
     at: new Date().toISOString()
   };
   db.orders.push(order);
+  buyer.shopCart=(Array.isArray(buyer.shopCart)?buyer.shopCart:[]).filter(id=>id!==item.id);
   if (isDropship) {
     const supplier = db.suppliers.find(s => s.id === item.supplierId) || null;
     db.supplierOrders.push(dropship.routeOrder({ order, item, supplier, buyer, shipping, crypto }));

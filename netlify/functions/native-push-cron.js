@@ -1,0 +1,1 @@
+const push=require('../../nativePush.cjs');const store=require('../../store');exports.handler=async()=>{try{await push.dispatch(store);await require('../../nativeLiveActivities.cjs').refreshAll();return {statusCode:200};}catch{return {statusCode:500};}};

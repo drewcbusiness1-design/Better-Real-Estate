@@ -28,6 +28,7 @@ try { ({ Pool } = require('pg')); } catch {}
 const affiliateAccounts = require('./affiliateAccounts');
 const policy = require('./policy');
 const COLLECTIONS = [
+  'nativePushDevices','nativeLiveActivities',
   'campaignOutreach',
   'acquisitionCampaigns',
   'feedbackReports','serviceJobs','matchDeliveries','titleCompanies','buyerResponses','privateDeals','dealIntroductions','supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
