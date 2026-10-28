@@ -1144,7 +1144,7 @@ function propertyCard(l, context = liveUIContext()) {
       l.momentum?.label ? el('div',{class:'deal-momentum '+(l.momentum.level||'quiet')},[el('span',{class:'momentum-dot'},''),el('b',{},l.momentum.label),el('span',{},l.momentum.detail||'')]) : null,
       el('div', { class: 'actions' }, [
         saveBtn,
-        !context.demo&&context.state.user?.id===l.ownerId?el('button',{class:'btn-ghost',onclick:e=>{e.stopPropagation();go('compose',{composeEditId:l.id});}},'Edit property'):null,
+        !context.demo&&canEditProperty(l,context.state)?el('button',{class:'btn-ghost',onclick:e=>{e.stopPropagation();go('compose',{composeEditId:l.id});}},'Edit property'):null,
         el('button', { onclick: e => { e.stopPropagation(); openPropertyShare(l); } }, 'Share'),
         el('button', { title:'Hide this property and improve recommendations', onclick: async e => { e.stopPropagation(); await api('POST','/api/feed/feedback',{listingId:l.id,kind:'hide'}); toast('Hidden from your feed','ok'); render(); } }, 'Not interested'),
         el('button', { class: 'primary', onclick: e => { e.stopPropagation(); openListingDetail(l, idx); } }, l.locked ? '🔒 Unlock' : 'View details')
@@ -1482,7 +1482,7 @@ async function renderDetail(context = liveUIContext()) {
     wrap.appendChild(el('div', { class: 'dsection' }, [el('h3', {}, 'Message the seller'), msg, mb, mst]));
   }
 
-  if (state.user && (state.user.id === owner.id || (listing.companyId && state.user.companyId === listing.companyId) || state.access?.adminUnlimited)) {
+  if (!context.demo && canEditProperty(listing)) {
     wrap.appendChild(el('div',{class:'dsection owner-ops'},[el('h3',{},'Deal operations'),el('div',{class:'owner-ops-actions'},[el('button',{class:'btn-primary',onclick:()=>go('compose',{composeEditId:listing.id})},'Edit property'),el('button',{class:'btn-primary',onclick:()=>go('dealroom',{detailId:listing.id})},'Open deal room'),el('button',{class:'btn-ghost',onclick:async()=>{await api('POST','/api/pipeline',{listingId:listing.id,title:listing.address,stage:'dispo'});toast('Added to pipeline','ok');go('pipeline');}},'Add to pipeline'),el('button',{class:'btn-ghost',onclick:()=>go('analytics',{detailId:listing.id})},'Listing analytics')]) ]));
   }
   if(!context.demo&&state.user&&(state.user.id===listing.ownerId||state.access?.adminUnlimited)){const manager=el('section',{class:'card service-form listing-top-actions'},[el('h3',{},'Manage this property'),listingManagerActions(listing)]);wrap.insertBefore(manager,wrap.children[1]||null);}
@@ -3456,9 +3456,14 @@ function wirePropertyPhotoDrag(preview,status,redraw){
   preview.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const d=drag;d.x=e.clientX;d.y=e.clientY;if(!d.started&&Math.hypot(d.x-d.startX,d.y-d.startY)>6){d.started=true;d.ghost=d.tile.cloneNode(true);d.ghost.className='property-photo-tile property-photo-drag-ghost';d.ghost.setAttribute('aria-hidden','true');d.ghost.inert=true;document.body.appendChild(d.ghost);d.tile.classList.add('is-dragging');status.textContent='Dragging photo. Drop on another photo to reorder.';}if(d.started){d.ghost.style.left=`${d.x-56}px`;d.ghost.style.top=`${d.y-80}px`;locate();e.preventDefault();}});
   preview.addEventListener('pointerup',e=>{if(drag&&e.pointerId===drag.id){drag.x=e.clientX;drag.y=e.clientY;locate();finish(true);}});preview.addEventListener('pointercancel',()=>finish());preview.addEventListener('lostpointercapture',()=>finish());return ()=>finish();
 }
+function canEditProperty(listing, context = state) {
+  return !!(listing && context.user && (context.user.id === listing.ownerId ||
+    context.access?.adminUnlimited || listing.canEdit === true));
+}
+
 async function renderCompose() {
   const editingId=state.composeEditId||null;let editingListing=null;
-  if(editingId){const r=await api('GET','/api/listings/'+encodeURIComponent(editingId));editingListing=r.listing;if(!editingListing||(editingListing.ownerId!==state.user?.id&&!state.access?.adminUnlimited))throw new Error('You do not have permission to edit this property.');}
+  if(editingId){const r=await api('GET','/api/listings/'+encodeURIComponent(editingId));editingListing=r.listing;if(!canEditProperty(editingListing))throw new Error('You do not have permission to edit this property.');}
   const wrap = el('div', { class: 'panel composepage' });
   wrap.appendChild(el('h2', {}, editingListing?'Edit property':'Post a property'));
   wrap.appendChild(el('div', { class: 'sub' }, editingListing?'Update the property details buyers see. Changes publish immediately.':'Appears in the feed immediately, ranked for the buyers it fits.'));

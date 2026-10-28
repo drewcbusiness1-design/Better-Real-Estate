@@ -10,7 +10,7 @@ vm.createContext(sandbox);
 function extract(name){const m=source.match(new RegExp('^(?:async )?function '+name+'\\(','m'));assert(m,name);const tail=source.slice(m.index+m[0].length),next=tail.search(/^(?:async )?function /m);return source.slice(m.index,next<0?source.length:m.index+m[0].length+next);}
 vm.runInContext(source.slice(source.indexOf('const ROUTED_VIEWS'),source.indexOf('function writeRoute')),sandbox);
 vm.runInContext(source.slice(source.indexOf('/* Shared screen context:'),source.indexOf('function renderHome()')),sandbox);
-for(const name of ['renderFeed','propertyCard','renderDetail','dealCalculator','renderProfile','renderChat','renderPipeline','renderDealRoom'])vm.runInContext(extract(name),sandbox);
+for(const name of ['canEditProperty','renderFeed','propertyCard','renderDetail','dealCalculator','renderProfile','renderChat','renderPipeline','renderDealRoom'])vm.runInContext(extract(name),sandbox);
 const all=(e,p)=>!(e instanceof Element)?[]:[...(p(e)?[e]:[]),...e.children.flatMap(x=>all(x,p))];
 const find=(root,text)=>{const a=all(root,e=>e.tag==='button'&&e.text===text);assert(a.length,text);return a[0];};
 async function click(root,text){const e=find(root,text);assert(!e.disabled,text+' disabled');await (e.onclick||e.events.click)({stopPropagation(){}});}

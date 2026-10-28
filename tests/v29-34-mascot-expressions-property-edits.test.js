@@ -8,5 +8,5 @@ assert.ok(app.includes("go('compose',{composeEditId:listing.id})"),'owner edit a
 assert.ok(app.includes("state.composeEditId = id || null"),'edit route persistence missing');
 assert.ok(app.includes("editingListing?'Save property changes':'Post to feed'"),'edit submit mode missing');
 assert.ok(srv.includes("app.patch('/api/listings/:id'"),'property edit endpoint missing');
-assert.ok(srv.includes("listing.ownerId!==req.user.id&&!isAdminUser(req.user)"),'property edit authorization missing');
+assert.ok(srv.includes("if(!canEditProperty(req.db,req.user,listing))return res.status(403)"),'property edit authorization missing');
 console.log('v29.34 mascot expressions + property edits regression: PASS');

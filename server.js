@@ -1898,6 +1898,15 @@ app.get('/api/listings/:id/distribution', requireAuth, async (req, res) => {
 });
 
 /* ============================ DEAL OPERATIONS ============================ */
+function canEditProperty(db, user, listing) {
+  if (!user || !listing) return false;
+  const current = (db.users || []).find(u => u.id === user.id);
+  if (!current) return false;
+  if (isAdminUser(current) || listing.ownerId === current.id) return true;
+  return !!(listing.companyId && current.companyId === listing.companyId &&
+    (db.companies || []).some(c => c.id === listing.companyId));
+}
+
 function canManageListing(db, user, listing) {
   if (!user || !listing) return false;
   return isAdminUser(user) || listing.ownerId === user.id;
@@ -2235,11 +2244,12 @@ async function notifyPlatinumMatches(db, listing) {
 
 function gateListing(listing, user, db) {
   // Free users see everything EXCEPT exact address, contact and notes until unlocked.
-  const unlocked = user && (hasFullAccess(user) || listing.ownerId === user.id ||
+  const canEdit = canEditProperty(db, user, listing);
+  const unlocked = user && (hasFullAccess(user) || canEdit ||
     db.unlocks.some(u => u.userId === user.id && u.listingId === listing.id));
-  if (unlocked) return { ...listing, freshness: listingFreshness(listing), locked: false };
+  if (unlocked) return { ...listing, freshness: listingFreshness(listing), canEdit, locked: false };
   const { address, notes, ownerEmail, videoUrl, ...rest } = listing;
-  return { ...rest, freshness: listingFreshness(listing), address: 'Address hidden', notes: null, ownerEmail: null, videoUrl: null, locked: true };
+  return { ...rest, freshness: listingFreshness(listing), address: 'Address hidden', notes: null, ownerEmail: null, videoUrl: null, canEdit: false, locked: true };
 }
 
 app.post('/api/listings/:id/view', requireAuth, async (req, res) => {
@@ -2296,7 +2306,7 @@ app.post('/api/listings/:id/unlock', requireAuth, async (req, res) => {
 app.patch('/api/listings/:id', requireAuth, async (req, res) => {
   const listing=req.db.listings.find(l=>l.id===req.params.id);
   if(!listing)return res.status(404).json({error:'Listing not found.'});
-  if(listing.ownerId!==req.user.id&&!isAdminUser(req.user))return res.status(403).json({error:'Not your listing.'});
+  if(!canEditProperty(req.db,req.user,listing))return res.status(403).json({error:'You cannot edit this property.'});
   const b=req.body||{};
   const previousEvidenceFacts=connectedDeals.fingerprint(listing);
   if(!String(b.address||'').trim()||!String(b.city||'').trim()||!Number(b.asking))return res.status(400).json({error:'Address, city, and asking price are required.'});
