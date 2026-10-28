@@ -1,0 +1,9 @@
+.better-cookie-notice{box-sizing:border-box;width:calc(100% - 32px);max-width:1050px;margin:16px auto;padding:18px;border:1px solid var(--line,#ddd);border-radius:12px;background:var(--surface,var(--bg,#fff));color:var(--ink,#111);font-family:inherit}
+.better-cookie-notice h2{margin:0 0 8px;font-size:17px;line-height:1.4}
+.better-cookie-notice p{margin:0 0 14px;font-size:14px;line-height:1.6}
+.better-cookie-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.better-cookie-actions button,.better-cookie-settings{box-sizing:border-box;min-height:44px;padding:10px 14px;border:1px solid var(--line,#aaa);border-radius:8px;background:var(--bg,#fff);color:var(--ink,#111);font:inherit;cursor:pointer}
+.better-cookie-actions a{display:inline-flex;align-items:center;min-height:44px;color:inherit;text-decoration:underline}
+.better-cookie-actions button:focus-visible,.better-cookie-actions a:focus-visible,.better-cookie-settings:focus-visible{outline:2px solid var(--accent,#e8590c);outline-offset:3px}
+.better-cookie-settings{margin:12px 16px}
+@media(max-width:600px){.better-cookie-notice{width:calc(100% - 24px);margin:12px auto;padding:16px}.better-cookie-actions{align-items:stretch;gap:10px}.better-cookie-actions button{width:100%;white-space:normal;line-height:1.4}}
