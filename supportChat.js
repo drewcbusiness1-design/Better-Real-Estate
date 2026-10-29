@@ -55,6 +55,8 @@ function install(app,{store,requireAuth,requireAdmin,isAdminUser,mailer}){
  app.post('/api/support/message',requireAuth,async(req,res)=>{
   const body=typeof req.body.body==='string'?req.body.body.trim():'';const id=req.body.id;
   if(!body||body.length>2000||typeof id!=='string'||!/^[-a-zA-Z0-9]{8,80}$/.test(id))throw fault('Enter a message of up to 2,000 characters.');
+  const consentThread=await chats.read('support-'+req.user.id);
+  if((!consentThread||consentThread.mode==='ai')&&!require('./privacy-controls.cjs').allowed(req.user))return require('./privacy-controls.cjs').denied(res);
   let reserved=false;
   let row=await chats.mutate(req.user.id,t=>{reserved=false;if(t.messages.some(m=>m.id===id))return false;if(t.pendingAt&&Date.now()-Date.parse(t.pendingAt)<25000)throw fault('Please wait for your current answer.',409);if(t.messages.length>=190)throw fault('Conversation limit reached. Please contact support directly.',409);const day=new Date().toISOString().slice(0,10);if(t.usageDay!==day){t.usageDay=day;t.usage=0;}if(t.mode==='ai'&&t.usage>=20)throw fault('Daily AI allowance reached. Request a person for more help.',429);t.messages.push({id,role:'user',body,at:new Date().toISOString()});if(t.mode==='ai'){t.usage++;t.pendingId=id;t.pendingAt=new Date().toISOString();reserved=true;}return true;});
   let aiError=null;

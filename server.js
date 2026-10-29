@@ -168,6 +168,8 @@ async function requireAuth(req, res, next) {
   if (changed) await saveDB(db);
   req.user = user; req.db = db; next();
 }
+const privacyControls=require('./privacy-controls.cjs');
+privacyControls.register(app,{requireAuth,saveDB});
 require('./serviceProviders').register(app,{requireAuth,saveDB,writeImage});
 require('./nativePush.cjs').register(app,{requireAuth,saveDB});
 require('./nativeLiveActivities.cjs').register(app,{requireAuth,saveDB});
@@ -605,8 +607,9 @@ app.post('/api/signup', async (req, res) => {
     paymentMethods: [], payoutMethod: null,
     emailVerified: false,
     marketingOptIn: marketingOptIn !== false,
-    marketingConsentAt: marketingOptIn !== false ? new Date().toISOString() : null,
-    marketingEnrollmentSource: 'signup-terms-v29.45',
+    marketingConsentAt: null,
+    marketingEnrollmentAt: marketingOptIn !== false ? new Date().toISOString() : null,
+    marketingEnrollmentSource: 'automatic-signup-disclosure-2026-10-28',
     marketingUnsubscribedAt: null, marketingLastSentAt: null, marketingSequence: 0,
     referralCode: crypto.randomBytes(3).toString('hex').toUpperCase(),
     referredBy: referrer ? referrer.id : null, referralPaid: false,
@@ -839,6 +842,7 @@ app.delete('/api/me', requireAuth, async (req, res) => {
   }
 
   const userId = req.user.id;
+  const privacyMedia = privacyControls.collectOwnedMedia(req.db,userId);
   const walletBalance = balanceOf(req.db, userId);
   if (walletBalance > 0) return res.status(409).json({ error: `Withdraw your remaining wallet balance of ${money(walletBalance)} before deleting your account.` });
   const activeOrder = req.db.orders.find(o => (o.buyerId === userId || o.sellerId === userId) && !['shipped','delivered','cancelled','refunded'].includes(String(o.shipStatus || o.status || '').toLowerCase()));
@@ -928,6 +932,7 @@ app.delete('/api/me', requireAuth, async (req, res) => {
 
   req.db.supportThreads = (req.db.supportThreads || []).filter(t => t.userId !== userId);
   req.db.__writeSupportThreads = true;
+  try { await privacyControls.cleanup(req.db,userId,privacyMedia); } catch(e) { return res.status(503).json({error:'Account deletion could not finish removing uploaded content. Please retry; the account has not been removed.'}); }
   req.db.users = req.db.users.filter(u => u.id !== userId);
   await saveDB(req.db);
   if (!require('./store').FILE_MODE) await require('./store').sql('DELETE FROM kv_supportthreads WHERE id=$1', ['support-'+userId]);
@@ -3876,6 +3881,7 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req,res)=>{
   const activeOrder=(req.db.orders||[]).find(o=>(o.buyerId===target.id||o.sellerId===target.id)&&!['shipped','delivered','cancelled','refunded'].includes(String(o.shipStatus||o.status||'').toLowerCase()));
   if(activeOrder)return res.status(409).json({error:'This account has an active marketplace order and cannot be deleted yet.'});
   const id=target.id;
+  const privacyMedia=privacyControls.collectOwnedMedia(req.db,id);
   const founderAward=(req.db.founderAwards||[]).find(a=>a.userId===id&&!a.voidedAt&&!a.limitExcludedAt);
   if(founderAward){founderAward.voidedAt=new Date().toISOString();founderAward.voidReason='admin-account-deletion';founderAward.voidedEmailLower=String(target.email||founderAward.userEmail||'').trim().toLowerCase()||null;founderAward.formerUserId=id;}
   const ownedListingIds=new Set((req.db.listings||[]).filter(l=>l.ownerId===id).map(l=>l.id));
@@ -3888,6 +3894,7 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req,res)=>{
   req.db.shopItems=(req.db.shopItems||[]).filter(x=>x.sellerId!==id);
   req.db.companyInvites=(req.db.companyInvites||[]).filter(x=>x.invitedBy!==id&&String(x.email||'').toLowerCase()!==String(target.email||'').toLowerCase());
   for(const o of (req.db.offers||[])){if(o.buyerId===id){o.buyerId='deleted:admin';o.buyerName='Deleted account';}if(o.sellerId===id)o.sellerId='deleted:admin';}
+  try { await privacyControls.cleanup(req.db,id,privacyMedia); } catch(e) { return res.status(503).json({error:'Uploaded content cleanup failed. Account deletion has not completed; retry.'}); }
   req.db.users=req.db.users.filter(u=>u.id!==id);
   ensureFirst100FounderProgram(req.db);
   await saveDB(req.db);

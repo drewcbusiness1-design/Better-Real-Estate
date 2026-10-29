@@ -208,7 +208,7 @@ async function researchWeb(address,{needFacts=true,needComps=true,subject=null,a
   const parsedAddress=parseAddress(address),webTool={type:'web_search',search_context_size:'high',external_web_access:true};
   if(Array.isArray(allowedDomains)&&allowedDomains.length)webTool.filters={allowed_domains:[...new Set(allowedDomains)].slice(0,100)};
   if(parsedAddress.city||parsedAddress.state)webTool.user_location={type:'approximate',country:'US',...(parsedAddress.city?{city:parsedAddress.city}:{}),...(parsedAddress.state?{region:parsedAddress.state}:{})};
-  const body={model:process.env.OPENAI_RESEARCH_MODEL||'gpt-5.6-luna',tools:[webTool],tool_choice:'required',reasoning:{effort:'medium'},include:['web_search_call.action.sources'],instructions:[
+  const body={store:false,model:process.env.OPENAI_RESEARCH_MODEL||'gpt-5.6-luna',tools:[webTool],tool_choice:'required',reasoning:{effort:'medium'},include:['web_search_call.action.sources'],instructions:[
     'You are the production property-evidence researcher for Better Real Estate. Research ONLY the exact full address supplied. Accuracy, cross-source corroboration, and provenance matter more than speed.',
     `Research pass: ${passLabel}. Do not stop after the first usable page. Deliberately seek multiple independent exact-address sources when they exist.`,
     Array.isArray(avoidDomains)&&avoidDomains.length?`INDEPENDENCE TARGET: Prefer sources outside these already-seen domains/source families when credible alternatives exist: ${avoidDomains.slice(0,12).join(', ')}. Do not force a weaker source merely to be different.`:'',

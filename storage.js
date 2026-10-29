@@ -167,4 +167,12 @@ async function readDocument(key) {
   return null;
 }
 
-module.exports = { writeImage, readImage, writeDocument, readDocument };
+async function deleteMedia(key) {
+ if(!/^(?:doc-)?[a-zA-Z0-9-]+\.[a-zA-Z0-9]+$/.test(key))throw new Error('Invalid media key.');
+ const store=blobStore();
+ if(IS_SERVERLESS&&!store&&FILE_MODE)throw new Error('Durable media storage is unavailable.');
+ if(store)await store.delete(key);
+ if(!FILE_MODE&&sql){await ensureImageTable();await sql('DELETE FROM '+IMAGE_TABLE+' WHERE key=$1',[key]);}
+ if(!IS_SERVERLESS)fs.rmSync(path.join(LOCAL_DIR,key),{force:true});
+}
+module.exports = { writeImage, readImage, writeDocument, readDocument, deleteMedia };

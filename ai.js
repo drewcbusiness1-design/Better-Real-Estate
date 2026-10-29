@@ -59,6 +59,7 @@ async function generateListingCopy({ kind = 'shop', facts = {}, images = [], all
   ].filter(Boolean).join('\n');
 
   const body = {
+    store: false,
     model: OPENAI_MODEL,
     instructions,
     input: [{
@@ -116,6 +117,7 @@ const dealImportSchema = {
 async function generateDealImport(rawText) {
   if (!configured()) throw new Error('AI deal import is not configured.');
   const body = {
+    store: false,
     model: OPENAI_MODEL,
     instructions: [
       'You extract a real-estate investment/wholesale listing from messy deal-marketing text for Better Real Estate.',
@@ -174,6 +176,7 @@ async function generateAddressDealAnalysis(address, evidence = null) {
     conditionEvidence:(evidence?.conditionEvidence||[]).slice(0,6).map(x=>({summary:x.summary,source:x.source,sourceUrl:x.sourceUrl}))
   };
   const body = {
+    store: false,
     model: OPENAI_MODEL,
     instructions: [
       'You are Better Real Estate’s final investor-analysis synthesis layer. The evidence engine has already completed source retrieval, property truth resolution, conflict handling, and closed-sale comp selection. Do not redo or override those steps.',
