@@ -15,7 +15,7 @@ function appleEntitlement(user, now = Date.now()) {
   return { ...e, tier: PRODUCT_PLANS[e.productId][0] };
 }
 function grants(user, tier) { const e = appleEntitlement(user); return !!e && rank[e.tier] >= rank[tier]; }
-function rootCerts() { const certs = JSON.parse(process.env.APPLE_IAP_ROOT_CERTIFICATES_JSON || '[]'); if (!Array.isArray(certs) || !certs.length) throw Error('Apple certificate trust roots not configured'); return certs.map(x => Buffer.from(x, 'base64')); }
+function rootCerts() { const certs = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, 'apple-root-certificates.json'), 'utf8')); if (!Array.isArray(certs) || !certs.length) throw Error('Apple certificate trust roots not configured'); return certs.map(x => Buffer.from(x, 'base64')); }
 async function verified(method, token) {
   if (typeof token !== 'string' || token.length > 30000 || token.split('.').length !== 3) throw Error('Invalid Apple signed payload');
   const roots = rootCerts();
