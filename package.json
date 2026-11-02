@@ -2,12 +2,12 @@
   "name": "better-real-estate",
   "version": "2.9.76",
   "private": true,
-  "description": "Better Real Estate \u2014 social marketplace and operating network for real estate investors, wholesalers, buyers, sellers, lenders, funders and teams.",
+  "description": "Better Real Estate — social marketplace and operating network for real estate investors, wholesalers, buyers, sellers, lenders, funders and teams.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "netlify dev",
-    "build": "echo 'no build step \u2014 static assets served from public/'",
+    "build": "echo 'no build step — static assets served from public/'",
     "seed": "node seed.js",
     "seed:clear": "node seed.js --clear",
     "preflight": "node preflight.js",
@@ -21,7 +21,8 @@
     "express": "^4.19.2",
     "pg": "^8.23.0",
     "serverless-http": "^3.2.0",
-    "stripe": "^22.6.2"
+    "stripe": "^22.6.2",
+    "@apple/app-store-server-library": "^2.0.0"
   },
   "devDependencies": {
     "netlify-cli": "^17.38.0"

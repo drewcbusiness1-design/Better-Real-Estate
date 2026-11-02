@@ -21,6 +21,7 @@ const dropship = require('./dropship');
 const cjAdapter = require('./cj-adapter');
 const policy = require('./policy');
 const payments = require('./payments');
+const appleBilling = require('./appleBilling');
 const ai = require('./ai');
 const marketing = require('./marketing');
 const communications = require('./communications');
@@ -91,7 +92,7 @@ app.use(cookieSession({
   maxAge: 30 * 24 * 60 * 60 * 1000
 }));
 
-const publicUser = u => { if (!u) return null; const { passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, plusToolUsage, verificationEmailLastError, membershipCreditState, ...r } = u; return r; };
+const publicUser = u => { if (!u) return null; const { appleSubscription, passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, plusToolUsage, verificationEmailLastError, membershipCreditState, ...r } = u; return r; };
 const publicProfileUser = social.publicProfileUser;
 const friendRelationship = social.friendRelationship;
 const socialUserCard = social.socialUserCard;
@@ -130,12 +131,11 @@ function uniqueCompanySlug(db, name, exceptId = null) {
 function companyEntitlementUntilForOwner(owner) {
   if (!owner) return null;
   if (isAdminUser(owner)) return '9999-12-31T23:59:59.999Z';
+  const appleUntil = appleBilling.grants(owner, 'wholesale') ? owner.appleSubscription.expiresAt : null;
   const paidUntil = owner.plan === 'wholesale' && owner.planUntil && new Date(owner.planUntil) > new Date() ? owner.planUntil : null;
   const grant = activeMembershipGrant(owner);
   const grantUntil = grant?.plan === 'wholesale' ? grant.until : null;
-  if (!paidUntil) return grantUntil;
-  if (!grantUntil) return paidUntil;
-  return new Date(paidUntil) >= new Date(grantUntil) ? paidUntil : grantUntil;
+  return [paidUntil, grantUntil, appleUntil].filter(Boolean).sort((a,b) => Date.parse(b) - Date.parse(a))[0] || null;
 }
 function syncCompanyMemberEntitlements(db, owner) {
   if (!owner) return false;
@@ -172,6 +172,7 @@ const privacyControls=require('./privacy-controls.cjs');
 privacyControls.register(app,{requireAuth,saveDB});
 require('./serviceProviders').register(app,{requireAuth,saveDB,writeImage});
 require('./nativePush.cjs').register(app,{requireAuth,saveDB});
+appleBilling.install(app,{requireAuth,loadDB,saveDB,syncCompanyMemberEntitlements});
 require('./nativeLiveActivities.cjs').register(app,{requireAuth,saveDB});
 require('./socialMediaRoutes.cjs').register(app,{requireAuth,saveDB,writeImage,isAdminUser});
 
@@ -300,6 +301,7 @@ function grantIncludes(user, tier) {
 function isWholesale(user) {
   if (isAdminUser(user)) return true;
   return !!user && (
+    appleBilling.grants(user, 'wholesale') ||
     (user.plan === 'wholesale' && user.planUntil && new Date(user.planUntil) > new Date()) ||
     grantIncludes(user, 'wholesale') ||
     isCompanyEntitled(user)
@@ -308,6 +310,7 @@ function isWholesale(user) {
 function isPro(user) {
   if (isAdminUser(user)) return true;
   return !!user && (
+    appleBilling.grants(user, 'pro') ||
     ((user.plan === 'pro' || user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) ||
     grantIncludes(user, 'pro') ||
     !!activeFounderPlatinum(user) ||
@@ -317,6 +320,7 @@ function isPro(user) {
 function isPlatinum(user) {
   if (isAdminUser(user)) return true;
   return !!user && (
+    appleBilling.grants(user, 'platinum') ||
     ((user.plan === 'platinum' || user.plan === 'wholesale') && user.planUntil && new Date(user.planUntil) > new Date()) ||
     grantIncludes(user, 'platinum') ||
     !!activeFounderPlatinum(user) ||
@@ -354,7 +358,8 @@ function accessFor(user) {
     adminUnlimited: isAdminUser(user), companyId: user.companyId || null, companyRole: user.companyRole || null,
     grantPlan: grant?.plan || null, grantUntil: grant?.until || null, grantReason: grant?.reason || null,
     founderPlatinumUntil: activeFounderPlatinum(user)?.until || null, founderLaunchPosition: Number(user.founderLaunchPosition || 0) || null,
-    paidPlan: user.plan || 'free', paidPlanUntil: user.planUntil || null
+    paidPlan: user.plan || 'free', paidPlanUntil: user.planUntil || null,
+    applePlan: appleBilling.appleEntitlement(user)?.tier || null, applePlanUntil: appleBilling.appleEntitlement(user)?.expiresAt || null
   };
 }
 // Buy boxes moved from a single object to an array (Platinum can have
