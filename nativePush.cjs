@@ -24,7 +24,14 @@ function send(device,payload,live=false) {
 }
 function eventsFor(db,user) {
   const prefs=user.settings?.notificationPrefs||{};
-  const messages=prefs.messages===false?[]:(db.messages||[]).filter(x=>x.toUserId===user.id&&!x.read).map(x=>({id:'message:'+x.id,at:x.at,title:'New message',body:'You have a new message on Better Real Estate.',view:'messages'}));
+  const messages=prefs.messages===false?[]:(db.messages||[]).filter(x=>x.toUserId===user.id&&!x.read).map(x=>{
+    // Message previews are visible on the lock screen when the recipient enables
+    // notification previews in iOS Settings. Never include message IDs or tokens.
+    const sender=db.users.find(u=>u.id===x.fromUserId);
+    const senderName=String(sender?.name||x.fromName||'Someone').replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,60)||'Someone';
+    const preview=String(x.body||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,180);
+    return {id:'message:'+x.id,at:x.at,title:senderName,body:preview||'Sent you a message.',view:'messages'};
+  });
   const deals=user.settings?.notifyOnMatch===false||prefs.deals===false||prefs.savedSearches===false?[]:(db.dealNotifications||[]).filter(x=>x.userId===user.id&&!x.read).map(x=>({id:'deal:'+x.id,at:x.at,title:'A new real estate update',body:'Open Better to see the latest opportunity.',view:'savedsearches'}));
   return [...messages,...deals].filter(x=>x.id&&!Number.isNaN(Date.parse(x.at))).sort((a,b)=>a.at.localeCompare(b.at)||a.id.localeCompare(b.id));
 }
