@@ -65,24 +65,24 @@ function register(app,{requireAuth,saveDB}) {
 }
 async function dispatch({loadDB,saveDB,deliver=send}) {
   if(!configured())return {configured:false,sent:0};
-  const db=await loadDB();let sent=0,failed=0;const deadline=Date.now()+18000;
+  const db=await loadDB();let sent=0,failed=0,attempted=0,eligible=0;const deadline=Date.now()+18000;const devices=(db.nativePushDevices||[]).length;const unreadMessages=(db.messages||[]).filter(x=>!x.read).length;
   for(const user of db.users||[]){
     for(const device of (db.nativePushDevices||[]).filter(x=>x.userId===user.id)){
       const seen=new Set(device.seen||[]);
       if(Date.now()>deadline)break;
-      for(const event of eventsFor(db,user).filter(x=>x.at>=device.since&&!seen.has(x.id)).slice(0,20)){
+      const pending=eventsFor(db,user).filter(x=>x.at>=device.since&&!seen.has(x.id)).slice(0,20);eligible+=pending.length;for(const event of pending){
         if(Date.now()>deadline)break;
-        let result;try{result=await deliver(device,payloadFor(event));}catch{failed++;break;}
+        let result;attempted++;try{result=await deliver(device,payloadFor(event));}catch(error){failed++;console.error('[native-push] transport error',JSON.stringify({code:String(error?.code||error?.name||'unknown').slice(0,50)}));break;}
         if(result.status===410||['BadDeviceToken','Unregistered','DeviceTokenNotForTopic'].includes(result.reason)){
-          db.nativePushDevices=db.nativePushDevices.filter(x=>x!==device);break;
+          console.error('[native-push] invalid device',JSON.stringify({status:result.status,reason:String(result.reason||'').slice(0,80)}));db.nativePushDevices=db.nativePushDevices.filter(x=>x!==device);break;
         }
-        if(result.status!==200){failed++;break;}
+        if(result.status!==200){failed++;console.error('[native-push] APNs rejected',JSON.stringify({status:result.status,reason:String(result.reason||'').slice(0,80)}));break;}
         if(event.at>device.since){device.since=event.at;seen.clear();}
         seen.add(event.id);device.seen=[...seen];sent++;
       }
     }
   }
   db.nativePushDevices=(db.nativePushDevices||[]).filter(x=>(db.users||[]).some(u=>u.id===x.userId));
-  await saveDB(db);return {configured:true,sent,failed};
+  await saveDB(db);return {configured:true,sent,failed,devices,eligible,attempted,unreadMessages};
 }
 module.exports={register,dispatch,eventsFor,payloadFor,configured,sendLive:(device,payload)=>send(device,payload,true)};
