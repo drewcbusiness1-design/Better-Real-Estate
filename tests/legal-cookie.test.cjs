@@ -1,0 +1,31 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const cookie=fs.readFileSync('public/cookie-notice.js','utf8'),pixel=fs.readFileSync('public/meta-pixel.js','utf8');
+function setup({native=false,search='',values=new Map(),navigator={}}={}){
+ const scripts=[];let reloads=0;
+ const document={documentElement:{style:{overflow:'auto'}},cookie:'',createElement:tag=>new Element(tag),getElementById:id=>find(document.body,e=>e.id===id),getElementsByTagName:()=>[{parentNode:{insertBefore:s=>scripts.push(s)}}]};
+ function find(root,predicate){if(predicate(root))return root;for(const child of root.children){const match=find(child,predicate);if(match)return match;}return null;}
+ class Element{constructor(tag){this.tag=tag;this.children=[];this.listeners={};this.isConnected=true;}setAttribute(k,v){this[k]=v;}addEventListener(k,fn){this.listeners[k]=fn;}appendChild(child){child.parent=this;this.children.push(child);return child;}append(...children){children.forEach(c=>this.appendChild(c));}showModal(){this.open=true;}close(){this.open=false;}remove(){this.isConnected=false;this.parent.children=this.parent.children.filter(x=>x!==this);}querySelector(tag){return find(this,e=>e.tag===tag);}focus(){document.activeElement=this;}click(){this.listeners.click?.();}scrollIntoView(){}}
+ document.body=new Element('body');document.activeElement=new Element('button');const focus=document.activeElement;
+ const window={navigator:{userAgent:native?'BetterRealEstate-iOS/20':'Browser',...navigator},location:{search,pathname:'/',href:'https://betterrealestate.org/'+search,hostname:'betterrealestate.org',reload(){reloads++;}},localStorage:{getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v)},addEventListener(){}};
+ const context={window,document,URLSearchParams};vm.runInNewContext(pixel,context);window.BetterPixel.update({view:'home',signedIn:false});vm.runInNewContext(cookie,context);
+ return {window,document,focus,values,scripts,get reloads(){return reloads;},panel:()=>document.getElementById('better-cookie-notice'),settings:()=>find(document.body,e=>e.textContent==='Cookie settings')};
+}
+let e=setup();assert(e.panel().open);assert.equal(e.document.activeElement.textContent,'Essential only');assert.equal(e.scripts.length,0);let prevented=false;e.panel().listeners.cancel({preventDefault(){prevented=true;}});assert(prevented);e.window.BetterCookieNotice.show();assert.equal(e.document.body.children.filter(x=>x.tag==='dialog').length,1);e.panel().querySelector('button').click();assert.equal(e.panel(),null);assert.equal(e.values.get('bre-ad-measurement-v1'),'decline');assert.equal(e.document.documentElement.style.overflow,'auto');assert.equal(e.document.activeElement,e.focus);assert.equal(e.scripts.length,0);e.settings().click();assert(e.panel().open);
+// Simulate the SPA replacing the footer: the supported mount hook must restore one working control.
+e.settings().remove();assert.equal(e.settings(),null);e.window.BetterCookieNotice.mountSettings();e.window.BetterCookieNotice.mountSettings();assert.equal(e.document.body.children.filter(x=>x.id==='better-cookie-settings').length,1);e.panel().querySelector('button').click();e.settings().click();assert(e.panel().open);
+assert(fs.readFileSync('public/app.js','utf8').includes('window.BetterCookieNotice?.mountSettings(row);'),'SPA footer must remount the control');
+e=setup();e.panel().children.at(-1).children.find(x=>x.textContent==='Allow measurement').click();assert.equal(e.scripts.length,1);assert.equal(e.values.get('bre-ad-measurement-v1'),'allow');e.settings().click();e.panel().querySelector('button').click();assert.equal(e.reloads,1);assert.equal(e.values.get('bre-ad-measurement-v1'),'decline');
+for(const view of ['terms','privacy']){e=setup({search:'?view='+view});assert.equal(e.panel(),null);e.settings().click();assert(e.panel().open);const a=e.panel().children.at(-1).children.find(x=>x.tag==='a');assert.equal(a.href,'/?view=privacy');assert.equal(a.rel,'noopener noreferrer');}
+for(const choice of ['allow','decline']){e=setup({values:new Map([['bre-ad-measurement-v1',choice],['bre-cookie-choice-date-v1',String(Date.now())]])});assert.equal(e.panel(),null);}
+e=setup({values:new Map([['bre-ad-measurement-v1','allow'],['bre-cookie-choice-date-v1',String(Date.now()-181*86400000)]])});assert(e.panel());assert.equal(e.scripts.length,0);
+e=setup({native:true});assert(e.panel().className.includes('--native'));assert.equal(e.panel().querySelector('h2').textContent,'Cookies & device storage');assert.equal(e.panel().children.at(-1).children.filter(x=>x.tag==='button').length,1);e.panel().querySelector('button').click();assert.equal(e.scripts.length,0);
+for(const navigator of [{globalPrivacyControl:true},{doNotTrack:'1'}]){e=setup({navigator});e.panel().children.at(-1).children.find(x=>x.textContent==='Allow measurement').click();assert.equal(e.scripts.length,0);}
+console.log('Cookie behavior: initial consent, both choices, persistence/expiry, legal access, reopen, focus/scroll restore, withdrawal reload, native and privacy-signal protection PASS');
+// Execute the actual legal-page render functions rather than matching source strings.
+const app=fs.readFileSync('public/app.js','utf8'),legal=app.slice(app.indexOf('function pageTerms()'),app.indexOf('function pageContact()'));
+const ctx={staticPage:(title,date,sections)=>({title,date,sections}),el:(tag,props,children)=>({tag,props,children})};vm.createContext(ctx);vm.runInContext(legal,ctx);
+const terms=ctx.pageTerms(),privacy=ctx.pagePrivacy();assert(terms.date.includes('November 4, 2026'));assert(privacy.date.includes('November 4, 2026'));
+for(const p of [terms,privacy]){assert(p.sections.length>10);assert(p.sections.every(x=>Array.isArray(x)&&x.length===2));}
+const t=JSON.stringify(terms),p=JSON.stringify(privacy);assert(t.includes('non-exclusive, worldwide, royalty-free'));assert(t.includes('does not make private messages'));assert(t.includes('not automatically cleared'));assert(p.includes('not made public'));assert(t.includes('partners@betterrealestate.org'));assert(!t.includes('opt in at signup'));assert(!t.includes('working template'));
+console.log('Rendered Terms/Privacy sections, publication date, limited content license, private-content restrictions and no retroactive clearance PASS');
