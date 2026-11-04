@@ -34,7 +34,7 @@ function harness(options={}) {
     return client;
   }};
   const sandbox={module:{exports:{}},Buffer,Date,Set,process:{env},
-    require:name=>name==='node:http2'?http2:name==='node:crypto'?(options.crypto||crypto):require(name),
+    require:name=>name==='node:http2'?http2:name==='node:crypto'?(options.crypto||crypto):name==='./notificationCounts.cjs'?require('../notificationCounts.cjs'):require(name),
     console:{error:(...args)=>state.logs.push(args)},
     setTimeout:fn=>{state.timers.add(fn);return fn;},clearTimeout:fn=>state.timers.delete(fn)};
   vm.runInNewContext(source,sandbox,{filename:'nativePush.cjs'});
@@ -74,6 +74,15 @@ async function main() {
     assert.equal(r.status,200);assert.equal(h.state.connections[0],'https://api.push.apple.com');
     assert.equal(h.state.headers[0]['apns-topic'],'org.example.test.push-type.liveactivity');
     assert.equal(h.state.headers[0]['apns-push-type'],'liveactivity');assert.equal(h.state.headers[0]['apns-priority'],'5');
+    noResources(h);checks++;
+  }
+  {
+    const h=harness(),db=database();db.messages=[];
+    const {result}=await dispatch(h,db);assert.equal(result.badgeUpdates,1);
+    assert.equal(h.state.headers[0]['apns-push-type'],'alert');
+    assert.equal(h.state.headers[0]['apns-priority'],'5');
+    assert.equal(h.state.headers[0]['apns-collapse-id'],'bre-icon-badge');
+    assert.deepEqual(JSON.parse(JSON.stringify(h.state.payloads[0])),{aps:{badge:0}});
     noResources(h);checks++;
   }
   for(const value of ['PRIVATE_KEY_SENTINEL',JSON.stringify(pem),'-----BEGIN PRIVATE KEY-----\nINVALID_PRIVATE_KEY_SENTINEL\n-----END PRIVATE KEY-----',pem.replace(/\n/g,'')+'PY',pem.replace(/\n/g,'').repeat(2),'']) {

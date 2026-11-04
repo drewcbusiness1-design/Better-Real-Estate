@@ -2,6 +2,7 @@
 // Direct APNs delivery. No third-party notification provider. Secrets stay server-side.
 const http2 = require('node:http2');
 const crypto = require('node:crypto');
+const notificationCounts = require('./notificationCounts.cjs');
 const SOUND = 'better-bark.wav';
 const configured = () => ['APNS_TEAM_ID','APNS_KEY_ID','APNS_PRIVATE_KEY','APNS_TOPIC'].every(k => Boolean(process.env[k]));
 function deliveryError(stage,error) {
@@ -44,6 +45,7 @@ function jwt() {
 async function send(device,payload,live=false) {
   // A signing failure must not leave an HTTP/2 session and timer behind.
   const authorization=`bearer ${jwt()}`;
+  const badgeOnly=!live&&!payload.aps?.alert&&!payload.aps?.sound;
   return new Promise((resolve,reject) => {
     let client;
     try { client=http2.connect(device.environment === 'sandbox' ? 'https://api.sandbox.push.apple.com' : 'https://api.push.apple.com'); }
@@ -53,7 +55,7 @@ async function send(device,payload,live=false) {
     const timer=setTimeout(()=>finish(deliveryError('timeout',{code:'APNS_TIMEOUT'})),8000);
     client.on('error',error=>finish(deliveryError('http2-connect',error)));
     let req;
-    try { req=client.request({':method':'POST',':path':`/3/device/${device.token}`,authorization,'apns-topic':process.env.APNS_TOPIC+(live?'.push-type.liveactivity':''),'apns-push-type':live?'liveactivity':'alert','apns-priority':live?'5':'10','apns-expiration':String(Math.floor(Date.now()/1000)+3600),'content-type':'application/json'}); }
+    try { req=client.request({':method':'POST',':path':`/3/device/${device.token}`,authorization,'apns-topic':process.env.APNS_TOPIC+(live?'.push-type.liveactivity':''),'apns-push-type':live?'liveactivity':'alert','apns-priority':live||badgeOnly?'5':'10',...(badgeOnly?{'apns-collapse-id':'bre-icon-badge'}:{}),'apns-expiration':String(Math.floor(Date.now()/1000)+3600),'content-type':'application/json'}); }
     catch(error) { finish(deliveryError('http2-request',error));return; }
     let status,body='';req.on('response',headers=>{status=Number(headers[':status']);});req.on('data',chunk=>{body+=chunk;});req.on('error',error=>finish(deliveryError('http2-request',error)));
     req.on('end',()=>{let reason='';try{reason=JSON.parse(body).reason||'';}catch{}finish(null,{status,reason});});req.end(JSON.stringify(payload));
@@ -72,10 +74,10 @@ function eventsFor(db,user) {
   const deals=user.settings?.notifyOnMatch===false||prefs.deals===false||prefs.savedSearches===false?[]:(db.dealNotifications||[]).filter(x=>x.userId===user.id&&!x.read).map(x=>({id:'deal:'+x.id,at:x.at,title:'A new real estate update',body:'Open Better to see the latest opportunity.',view:'savedsearches'}));
   return [...messages,...deals].filter(x=>x.id&&!Number.isNaN(Date.parse(x.at))).sort((a,b)=>a.at.localeCompare(b.at)||a.id.localeCompare(b.id));
 }
-function payloadFor(event) {
-  return {aps:{alert:{title:event.title,body:event.body},sound:SOUND},url:`https://betterrealestate.org/?view=${event.view}`};
+function payloadFor(event,badgeCount=0) {
+  return {aps:{alert:{title:event.title,body:event.body},sound:SOUND,badge:badgeCount},url:`https://betterrealestate.org/?view=${event.view}`};
 }
-function register(app,{requireAuth,saveDB}) {
+function register(app,{requireAuth,saveDB,deliver=send}) {
   app.get('/api/native-push/status',requireAuth,async(req,res)=>res.json({ready:configured()}));
   const validate=(req,res)=>{
     const token=String(req.body?.token||'').toLowerCase();
@@ -96,30 +98,50 @@ function register(app,{requireAuth,saveDB}) {
   });
   app.delete('/api/native-push/devices',requireAuth,async(req,res)=>{
     const token=validate(req,res);if(!token)return;
+    const removed=(req.db.nativePushDevices||[]).filter(x=>x.userId===req.user.id&&x.token===token);
     req.db.nativePushDevices=(req.db.nativePushDevices||[]).filter(x=>!(x.userId===req.user.id&&x.token===token));
-    await saveDB(req.db);res.json({removed:true});
+    await saveDB(req.db);
+    // Clear this installation's badge when it unregisters/signs out. A provider
+    // outage must not prevent sign-out; do not retain its token just to retry.
+    for(const device of removed){try{await deliver(device,{aps:{badge:0}});}catch(error){const safe=deliveryError(error?.apnsStage,error);console.error('[native-push] badge clear failed',JSON.stringify({stage:safe.apnsStage,code:safe.code}));}}
+    res.json({removed:true});
   });
 }
 async function dispatch({loadDB,saveDB,deliver=send}) {
   if(!configured())return {configured:false,sent:0};
-  const db=await loadDB();let sent=0,failed=0,attempted=0,eligible=0;const deadline=Date.now()+18000;const devices=(db.nativePushDevices||[]).length;const unreadMessages=(db.messages||[]).filter(x=>!x.read).length;
+  const db=await loadDB();let sent=0,failed=0,attempted=0,eligible=0,badgeUpdates=0;const deadline=Date.now()+18000;const devices=(db.nativePushDevices||[]).length;const unreadMessages=(db.messages||[]).filter(x=>!x.read).length;
   for(const user of db.users||[]){
-    for(const device of (db.nativePushDevices||[]).filter(x=>x.userId===user.id)){
+    const userDevices=(db.nativePushDevices||[]).filter(x=>x.userId===user.id);
+    if(!userDevices.length)continue;
+    const badgeCount=notificationCounts.summaryFor(db,user).total;
+    for(const device of userDevices){
       const seen=new Set(device.seen||[]);
       if(Date.now()>deadline)break;
+      let deliveryFailed=false;
+      const attempt=async payload=>{
+        let result;attempted++;
+        try{result=await deliver(device,payload);}catch(error){failed++;deliveryFailed=true;const safe=deliveryError(error?.apnsStage,error);console.error('[native-push] delivery error',JSON.stringify({stage:safe.apnsStage,code:safe.code}));return false;}
+        if(result.status===410||['BadDeviceToken','Unregistered','DeviceTokenNotForTopic'].includes(result.reason)){
+          console.error('[native-push] invalid device',JSON.stringify({status:result.status,reason:String(result.reason||'').slice(0,80)}));db.nativePushDevices=db.nativePushDevices.filter(x=>x!==device);deliveryFailed=true;return false;
+        }
+        if(result.status!==200){failed++;deliveryFailed=true;console.error('[native-push] APNs rejected',JSON.stringify({status:result.status,reason:String(result.reason||'').slice(0,80)}));return false;}
+        device.badgeCount=badgeCount;sent++;return true;
+      };
       const pending=eventsFor(db,user).filter(x=>x.at>=device.since&&!seen.has(x.id)).slice(0,20);eligible+=pending.length;for(const event of pending){
         if(Date.now()>deadline)break;
-        let result;attempted++;try{result=await deliver(device,payloadFor(event));}catch(error){failed++;const safe=deliveryError(error?.apnsStage,error);console.error('[native-push] delivery error',JSON.stringify({stage:safe.apnsStage,code:safe.code}));break;}
-        if(result.status===410||['BadDeviceToken','Unregistered','DeviceTokenNotForTopic'].includes(result.reason)){
-          console.error('[native-push] invalid device',JSON.stringify({status:result.status,reason:String(result.reason||'').slice(0,80)}));db.nativePushDevices=db.nativePushDevices.filter(x=>x!==device);break;
-        }
-        if(result.status!==200){failed++;console.error('[native-push] APNs rejected',JSON.stringify({status:result.status,reason:String(result.reason||'').slice(0,80)}));break;}
+        if(!await attempt(payloadFor(event,badgeCount)))break;
         if(event.at>device.since){device.since=event.at;seen.clear();}
-        seen.add(event.id);device.seen=[...seen];sent++;
+        seen.add(event.id);device.seen=[...seen];
+      }
+      // Badge-only APNs updates need no app execution or new alert. Sync old
+      // unread items, network/admin changes, cross-device reads, and zero counts.
+      // Persist only after APNs accepts it; retry failures on the next cron run.
+      if(!deliveryFailed&&Date.now()<=deadline&&device.badgeCount!==badgeCount){
+        if(await attempt({aps:{badge:badgeCount}}))badgeUpdates++;
       }
     }
   }
   db.nativePushDevices=(db.nativePushDevices||[]).filter(x=>(db.users||[]).some(u=>u.id===x.userId));
-  await saveDB(db);return {configured:true,sent,failed,devices,eligible,attempted,unreadMessages};
+  await saveDB(db);return {configured:true,sent,failed,devices,eligible,attempted,unreadMessages,badgeUpdates};
 }
 module.exports={register,dispatch,eventsFor,payloadFor,configured,sendLive:(device,payload)=>send(device,payload,true)};

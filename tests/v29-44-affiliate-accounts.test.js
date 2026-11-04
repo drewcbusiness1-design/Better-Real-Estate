@@ -19,7 +19,7 @@ assert(!social.searchUsers(db,'future').some(u=>u.id==='approved'));
 assert(social.searchUsers(db,'future').some(u=>u.id==='pending'));
 db.follows.push({followerId:'approved',followingId:'future'});db.friendships.push({userAId:'approved',userBId:'future'});assert.equal(social.socialUserCard(db,'pending',db.users.find(u=>u.id==='future')).friendCount,0);assert.equal(social.socialUserCard(db,'pending',db.users.find(u=>u.id==='future')).followerCount,0);
 const src=fs.readFileSync('server.js','utf8');
-const notificationContext={isAffiliateOnlyUser:accounts.isAffiliateOnlyUser,isAdminUser:u=>u?.role==='admin',Object,Number};
+const notificationContext={notificationCounts:require('../notificationCounts.cjs'),isAffiliateOnlyUser:accounts.isAffiliateOnlyUser,isAdminUser:u=>u?.role==='admin',Object,Number};
 vm.runInNewContext(src.match(/function notificationSummaryFor\([^]*?\n\}/)[0],notificationContext);
 db.friendRequests.push({fromUserId:'approved',toUserId:'future',status:'pending'});
 assert.equal(notificationContext.notificationSummaryFor(db,db.users.find(u=>u.id==='future')).destinations.network,0);

@@ -12,7 +12,9 @@ assert(app.includes('heartbeatInFlight')&&app.includes("controller.abort(),8000"
 
 // Notification hierarchy reuses one aggregate source and existing orange badge language.
 assert(server.includes("app.get('/api/notification-summary'"),'notification summary endpoint missing');
-for(const key of ['messages','network','savedsearches','affiliate','reports']) assert(server.includes(key),`notification destination ${key} missing`);
+assert(server.includes('notificationCounts.summaryFor(db,user'),'API must use the shared notification counter');
+const destinations=require('../notificationCounts.cjs').summaryFor({users:[]},{id:'fixture',role:'buyer'}).destinations;
+for(const key of ['messages','network','savedsearches','affiliate','reports']) assert(Object.hasOwn(destinations,key),`notification destination ${key} missing`);
 assert(app.includes('notificationSummary')&&app.includes("notificationCountFor(v)"),'profile child notification routing missing');
 assert(app.includes("v === 'me'")&&app.includes('tab-msgbadge'),'Profile aggregate badge missing');
 assert(css.includes('.profile-row-badge')&&css.includes('.tab-msgbadge'),'notification badge positioning polish missing');

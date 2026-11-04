@@ -20,6 +20,7 @@ const { writeImage, readImage, writeDocument, readDocument } = require('./storag
 const dropship = require('./dropship');
 const cjAdapter = require('./cj-adapter');
 const policy = require('./policy');
+const notificationCounts = require('./notificationCounts.cjs');
 const payments = require('./payments');
 const appleBilling = require('./appleBilling');
 const ai = require('./ai');
@@ -2529,16 +2530,7 @@ function listingState(l){ const m=String(l?.city||'').toUpperCase().match(/,\s*(
 const activityWindowMs = { '24h':86400000, '7d':7*86400000, '30d':30*86400000 };
 function actualPlanLabel(u){const a=accessFor(u);return a?.adminUnlimited?'Admin':a?.wholesale?'Wholesale Teams':a?.platinum?'Platinum':a?.pro?'Plus':a?.trial?'Trial':'Free';} function safeActivityUser(u){ return {id:u.id,name:u.name,username:u.username||null,email:u.email,role:u.role,roles:Array.isArray(u.roles)?u.roles:[u.role].filter(Boolean),plan:actualPlanLabel(u),verified:!!u.verified,emailVerified:!!u.emailVerified,foundingMember:!!u.foundingMember,demo:!!u.demo,demoPlan:u.demoPlan||null,demoPreview:u.demoPreview||null,lastActiveAt:u.lastActiveAt||null,createdAt:u.createdAt||null,markets:u.investmentMarkets||[]}; }
 function notificationSummaryFor(db,user){
-  const messages=(db.messages||[]).filter(m=>m.toUserId===user.id&&!m.read).length;
-  const network=(db.friendRequests||[]).filter(r=>r.status==='pending'&&r.toUserId===user.id&&!isAffiliateOnlyUser(db.users.find(u=>u.id===r.fromUserId))).length;
-  const savedsearches=(db.dealNotifications||[]).filter(n=>n.userId===user.id&&!n.read).length;
-  const admin=isAdminUser(user);
-  const affiliate=admin?(db.affiliateApplications||[]).filter(a=>a.status==='pending').length:0;
-  const reports=admin?(db.reports||[]).filter(r=>r.status==='open').length:0;
-  const adminAlerts=admin?((db.campaignOutreach||[]).find(g=>g.id==='global')?.alerts||[]).filter(a=>a.userId===user.id&&!a.read).length:0;
-  const destinations={messages,network,savedsearches,affiliate,reports,admin:adminAlerts};
-  const profile=Object.values(destinations).reduce((n,x)=>n+Number(x||0),0);
-  return {total:profile,profile,destinations};
+  return notificationCounts.summaryFor(db,user,{isAdminUser,isAffiliateOnlyUser});
 }
 app.post('/api/activity/heartbeat', requireAuth, async (req,res)=>{
   const now=new Date(), nowIso=now.toISOString();
