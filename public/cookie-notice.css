@@ -25,3 +25,4 @@
 .better-cookie-notice:not(.better-cookie-notice--native) :is(button,a):focus-visible{outline:2px solid #e7c784;outline-offset:3px}
 @media(max-width:480px){.better-cookie-notice:not(.better-cookie-notice--native){width:calc(100% - 24px);max-height:calc(100dvh - 24px);margin:12px auto;padding:20px 18px calc(18px + env(safe-area-inset-bottom,0px))}.better-cookie-notice:not(.better-cookie-notice--native) .better-cookie-actions{grid-template-columns:1fr}.better-cookie-notice:not(.better-cookie-notice--native) h2{font-size:19px}}
 .better-cookie-settings:not(.better-cookie-settings--native){margin:0;padding:8px 0;border:0;border-radius:0;background:transparent;font-size:inherit;color:inherit;text-decoration:underline;text-underline-offset:3px}
+.footlinks .better-cookie-settings:not(.better-cookie-settings--native){margin:-12px 0;padding:12px 0;min-height:44px;font-size:13.5px;line-height:1.5;font-weight:500;color:var(--ink-soft,#666)}
