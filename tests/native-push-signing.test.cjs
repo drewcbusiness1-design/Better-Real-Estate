@@ -86,10 +86,9 @@ async function main() {
       assert.equal(db.nativePushDevices.length,1);assert.equal(db.nativePushDevices[0].since,'2026-11-04T14:00:00.000Z');
       assert.equal(db.nativePushDevices[0].seen.length,0);
       const logged=JSON.parse(h.state.logs[0][1]);assert.equal(logged.stage,'key-parse');
-      assert(Object.values(logged.keyFormat).every(x=>typeof x==='boolean'));
+      assert.deepEqual(Object.keys(logged).sort(),['code','stage']);
       const logs=JSON.stringify(h.state.logs);
       for(const secret of ['PRIVATE_KEY_SENTINEL','INVALID_PRIVATE_KEY_SENTINEL','Test Sender','Private test preview','a'.repeat(64),pem.trim()])assert(!logs.includes(secret));
-      if(value===JSON.stringify(pem))assert.equal(logged.keyFormat.surroundingQuotes,true);
     }
     assert.equal(h.state.connections.length,0);noResources(h);checks++;
   }

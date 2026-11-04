@@ -4,13 +4,12 @@ const http2 = require('node:http2');
 const crypto = require('node:crypto');
 const SOUND = 'better-bark.wav';
 const configured = () => ['APNS_TEAM_ID','APNS_KEY_ID','APNS_PRIVATE_KEY','APNS_TOPIC'].every(k => Boolean(process.env[k]));
-function deliveryError(stage,error,keyFormat) {
+function deliveryError(stage,error) {
   // Never retain/log raw OpenSSL messages, stacks, keys, tokens or request data.
   const failure=new Error('APNs delivery failed.');
   const code=String(error?.code||'');
   failure.code=/^(ERR_[A-Z0-9_]{1,70}|E[A-Z]{2,30}|APNS_[A-Z_]{1,40})$/.test(code)?code:'APNS_OPERATION_FAILED';
   failure.apnsStage=['key-parse','key-validation','jwt-sign','http2-connect','http2-request','timeout'].includes(stage)?stage:'delivery';
-  if(keyFormat)failure.keyFormat=keyFormat;
   return failure;
 }
 function signingKey() {
@@ -26,15 +25,7 @@ function signingKey() {
   }
   let key;
   try { key=crypto.createPrivateKey(pem); }
-  catch(error) {
-    const trimmed=raw.trim(),normalized=pem.trim();
-    throw deliveryError('key-parse',error,{
-      present:Boolean(raw),realNewlines:raw.includes('\n'),escapedNewlines:raw.includes('\\n'),
-      surroundingQuotes:/^["']|["']$/.test(trimmed),
-      header:normalized.startsWith('-----BEGIN PRIVATE KEY-----'),
-      footer:normalized.endsWith('-----END PRIVATE KEY-----')
-    });
-  }
+  catch(error) { throw deliveryError('key-parse',error); }
   if(key.asymmetricKeyType!=='ec'||key.asymmetricKeyDetails?.namedCurve!=='prime256v1')
     throw deliveryError('key-validation',{code:'APNS_INVALID_KEY_TYPE'});
   return key;
@@ -118,7 +109,7 @@ async function dispatch({loadDB,saveDB,deliver=send}) {
       if(Date.now()>deadline)break;
       const pending=eventsFor(db,user).filter(x=>x.at>=device.since&&!seen.has(x.id)).slice(0,20);eligible+=pending.length;for(const event of pending){
         if(Date.now()>deadline)break;
-        let result;attempted++;try{result=await deliver(device,payloadFor(event));}catch(error){failed++;const safe=deliveryError(error?.apnsStage,error);const keyFormat=error?.keyFormat&&Object.fromEntries(['present','realNewlines','escapedNewlines','surroundingQuotes','header','footer'].map(k=>[k,error.keyFormat[k]===true]));console.error('[native-push] delivery error',JSON.stringify({stage:safe.apnsStage,code:safe.code,...(keyFormat?{keyFormat}:{})}));break;}
+        let result;attempted++;try{result=await deliver(device,payloadFor(event));}catch(error){failed++;const safe=deliveryError(error?.apnsStage,error);console.error('[native-push] delivery error',JSON.stringify({stage:safe.apnsStage,code:safe.code}));break;}
         if(result.status===410||['BadDeviceToken','Unregistered','DeviceTokenNotForTopic'].includes(result.reason)){
           console.error('[native-push] invalid device',JSON.stringify({status:result.status,reason:String(result.reason||'').slice(0,80)}));db.nativePushDevices=db.nativePushDevices.filter(x=>x!==device);break;
         }

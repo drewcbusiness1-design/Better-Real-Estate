@@ -1,6 +1,28 @@
 # Better iPhone push delivery — November 4, 2026
 
-## Current follow-up — production cause isolated; normalization fix awaiting live verification
+## Current verified outcome — server delivery restored; physical-device acceptance pending
+
+This section supersedes earlier investigation/deployment status below.
+
+- Format-fix commit `ac1aad23a95223ce3545b3dd4900a0ce6a2c2a15` was verified Published in Netlify production at 9:45 AM America/New_York on November 4, 2026.
+- At **9:46:11 AM**, the production function reported **sent 12, failed 0, devices 2, eligible 12, attempted 12**. In this implementation sent advances only on APNs HTTP 200. Apple accepted all 12 requests. This is real production delivery evidence, not a mock; visible iPhone delivery is not yet confirmed.
+- At **9:47:05 AM**, the next scheduled dispatch reported **sent 0, failed 0, eligible 0, attempted 0**, with both devices retained. Previously accepted events were not sent again in that run. There is still no exactly-once guarantee under overlapping invocations/crash recovery.
+- This cleanup removes temporary key-format flags and retains sanitized stage/code error reporting, normal dispatch counters, strict single-line PEM restoration and connection cleanup. It has passed all 113 npm test entry points, the 23-case push suite against source and bundled code, syntax checks, build and diff checks. Verify this cleanup commit's Published deployment and a fresh error-free dispatch before reporting final rollout complete.
+- `npm audit --omit=dev --audit-level=moderate` reports **zero production vulnerabilities**. This is the current registry result, not a guarantee of security.
+- The Build20 source archive `Better-iPhone-Build20-Message-Push-Previews.zip` was recovered and integrity-checked. Source inspection confirms build 20/version 1.0, app bundle ID `org.betterrealestate.ios`, separate development/production push entitlements and Debug/Release token routing, a foreground banner/sound delegate, internal notification-tap routing and the bundled bark (PCM WAV, 1.22 seconds). These checks do not compile Xcode or verify the installed/signed binary. No native source was changed.
+- **Next user-only acceptance:** keep the regular account signed in on the iPhone, lock the phone, send a NEW message from the web/admin account, wait through the next one-minute scheduler cycle, confirm sender/actual preview (as allowed by iOS preview settings), bark and tap into Messages. Also test foreground delivery, sign-out/account switching and TestFlight production delivery before App Review.
+- App Store release gates remain: successful current physical-device build/archive, signed provisioning/entitlements, real TestFlight StoreKit purchase and restore with approved tiers, device visual/navigation/account-isolation QA, and current App Store Connect metadata/submission status. Do not call the entire app release-certified based on this backend repair.
+- No new native installation is required for this backend format correction. Keep the installed working app and unsynced notes. The backend is updated through GitHub/Netlify; the Mac checkout still requires the safe pull/test commands below if local synchronization is desired. Do not commit again merely to pull this deployed fix.
+
+### Five review passes for this repair
+
+1. **Cause/provenance:** fresh production key-parse failure plus synthetic reproduction isolated flattened PEM framing; the same key data signs after rewrapping.
+2. **Security/privacy:** strict complete-block/canonical-Base64/P-256 checks; corrupt, quoted, appended and concatenated keys fail closed; raw keys/JWTs/tokens/messages absent from failure logs; temporary format telemetry removed.
+3. **Behavior/regression:** full repository suite and 23 real-crypto/mocked-transport scenarios pass, both unbundled and bundled; production dependency audit has zero findings.
+4. **Scope/native separation:** reviewed intended backend/test/package/handoff diff, unchanged website/UI/assets/pricing/native source; inspected Build20 push routing/resources without claiming Xcode or visual QA.
+5. **Production acceptance:** published format-fix SHA matched GitHub; Apple accepted 12 requests without failure and next scheduled run did not replay them. Final cleanup publish and physical-device display must still be verified as stated above.
+
+## Earlier follow-up record — cause isolated; prior to live verification
 
 This section supersedes the initial investigation status below. Andrew explicitly approved all work needed to restore notifications and prepare a stable release, including production deployment.
 
