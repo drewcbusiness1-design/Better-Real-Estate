@@ -4,21 +4,60 @@ const http2 = require('node:http2');
 const crypto = require('node:crypto');
 const SOUND = 'better-bark.wav';
 const configured = () => ['APNS_TEAM_ID','APNS_KEY_ID','APNS_PRIVATE_KEY','APNS_TOPIC'].every(k => Boolean(process.env[k]));
+function deliveryError(stage,error,keyFormat) {
+  // Never retain/log raw OpenSSL messages, stacks, keys, tokens or request data.
+  const failure=new Error('APNs delivery failed.');
+  const code=String(error?.code||'');
+  failure.code=/^(ERR_[A-Z0-9_]{1,70}|E[A-Z]{2,30}|APNS_[A-Z_]{1,40})$/.test(code)?code:'APNS_OPERATION_FAILED';
+  failure.apnsStage=['key-parse','key-validation','jwt-sign','http2-connect','http2-request','timeout'].includes(stage)?stage:'delivery';
+  if(keyFormat)failure.keyFormat=keyFormat;
+  return failure;
+}
+function signingKey() {
+  const raw=String(process.env.APNS_PRIVATE_KEY||'');
+  // Preserve the existing transformation; diagnose the value actually used.
+  const pem=raw.replace(/\\n/g,'\n');
+  let key;
+  try { key=crypto.createPrivateKey(pem); }
+  catch(error) {
+    const trimmed=raw.trim(),normalized=pem.trim();
+    throw deliveryError('key-parse',error,{
+      present:Boolean(raw),realNewlines:raw.includes('\n'),escapedNewlines:raw.includes('\\n'),
+      surroundingQuotes:/^["']|["']$/.test(trimmed),
+      header:normalized.startsWith('-----BEGIN PRIVATE KEY-----'),
+      footer:normalized.endsWith('-----END PRIVATE KEY-----')
+    });
+  }
+  if(key.asymmetricKeyType!=='ec'||key.asymmetricKeyDetails?.namedCurve!=='prime256v1')
+    throw deliveryError('key-validation',{code:'APNS_INVALID_KEY_TYPE'});
+  return key;
+}
 function jwt() {
   const head = Buffer.from(JSON.stringify({alg:'ES256',kid:process.env.APNS_KEY_ID})).toString('base64url');
   const body = Buffer.from(JSON.stringify({iss:process.env.APNS_TEAM_ID,iat:Math.floor(Date.now()/1000)})).toString('base64url');
   const data = `${head}.${body}`;
-  return `${data}.${crypto.sign('sha256',Buffer.from(data),{key:process.env.APNS_PRIVATE_KEY.replace(/\\n/g,'\n'),dsaEncoding:'ieee-p1363'}).toString('base64url')}`;
+  const key=signingKey();
+  let signature;
+  try { signature=crypto.sign('sha256',Buffer.from(data),{key,dsaEncoding:'ieee-p1363'}); }
+  catch(error) { throw deliveryError('jwt-sign',error); }
+  if(signature.length!==64)throw deliveryError('jwt-sign',{code:'APNS_INVALID_SIGNATURE_LENGTH'});
+  return `${data}.${signature.toString('base64url')}`;
 }
-function send(device,payload,live=false) {
+async function send(device,payload,live=false) {
+  // A signing failure must not leave an HTTP/2 session and timer behind.
+  const authorization=`bearer ${jwt()}`;
   return new Promise((resolve,reject) => {
-    const client = http2.connect(device.environment === 'sandbox' ? 'https://api.sandbox.push.apple.com' : 'https://api.push.apple.com');
+    let client;
+    try { client=http2.connect(device.environment === 'sandbox' ? 'https://api.sandbox.push.apple.com' : 'https://api.push.apple.com'); }
+    catch(error) { reject(deliveryError('http2-connect',error));return; }
     let settled=false;
     const finish=(error,result)=>{if(settled)return;settled=true;clearTimeout(timer);client.destroy();error?reject(error):resolve(result);};
-    const timer=setTimeout(()=>finish(new Error('APNs timeout')),8000);
-    client.on('error',error=>finish(error));
-    const req=client.request({':method':'POST',':path':`/3/device/${device.token}`,authorization:`bearer ${jwt()}`,'apns-topic':process.env.APNS_TOPIC+(live?'.push-type.liveactivity':''),'apns-push-type':live?'liveactivity':'alert','apns-priority':live?'5':'10','apns-expiration':String(Math.floor(Date.now()/1000)+3600),'content-type':'application/json'});
-    let status,body='';req.on('response',headers=>{status=Number(headers[':status']);});req.on('data',chunk=>{body+=chunk;});req.on('error',error=>finish(error));
+    const timer=setTimeout(()=>finish(deliveryError('timeout',{code:'APNS_TIMEOUT'})),8000);
+    client.on('error',error=>finish(deliveryError('http2-connect',error)));
+    let req;
+    try { req=client.request({':method':'POST',':path':`/3/device/${device.token}`,authorization,'apns-topic':process.env.APNS_TOPIC+(live?'.push-type.liveactivity':''),'apns-push-type':live?'liveactivity':'alert','apns-priority':live?'5':'10','apns-expiration':String(Math.floor(Date.now()/1000)+3600),'content-type':'application/json'}); }
+    catch(error) { finish(deliveryError('http2-request',error));return; }
+    let status,body='';req.on('response',headers=>{status=Number(headers[':status']);});req.on('data',chunk=>{body+=chunk;});req.on('error',error=>finish(deliveryError('http2-request',error)));
     req.on('end',()=>{let reason='';try{reason=JSON.parse(body).reason||'';}catch{}finish(null,{status,reason});});req.end(JSON.stringify(payload));
   });
 }
@@ -72,7 +111,7 @@ async function dispatch({loadDB,saveDB,deliver=send}) {
       if(Date.now()>deadline)break;
       const pending=eventsFor(db,user).filter(x=>x.at>=device.since&&!seen.has(x.id)).slice(0,20);eligible+=pending.length;for(const event of pending){
         if(Date.now()>deadline)break;
-        let result;attempted++;try{result=await deliver(device,payloadFor(event));}catch(error){failed++;console.error('[native-push] transport error',JSON.stringify({code:String(error?.code||error?.name||'unknown').slice(0,50)}));break;}
+        let result;attempted++;try{result=await deliver(device,payloadFor(event));}catch(error){failed++;const safe=deliveryError(error?.apnsStage,error);const keyFormat=error?.keyFormat&&Object.fromEntries(['present','realNewlines','escapedNewlines','surroundingQuotes','header','footer'].map(k=>[k,error.keyFormat[k]===true]));console.error('[native-push] delivery error',JSON.stringify({stage:safe.apnsStage,code:safe.code,...(keyFormat?{keyFormat}:{})}));break;}
         if(result.status===410||['BadDeviceToken','Unregistered','DeviceTokenNotForTopic'].includes(result.reason)){
           console.error('[native-push] invalid device',JSON.stringify({status:result.status,reason:String(result.reason||'').slice(0,80)}));db.nativePushDevices=db.nativePushDevices.filter(x=>x!==device);break;
         }
