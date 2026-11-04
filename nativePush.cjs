@@ -15,8 +15,15 @@ function deliveryError(stage,error,keyFormat) {
 }
 function signingKey() {
   const raw=String(process.env.APNS_PRIVATE_KEY||'');
-  // Preserve the existing transformation; diagnose the value actually used.
-  const pem=raw.replace(/\\n/g,'\n');
+  let pem=raw.replace(/\\n/g,'\n');
+  // Hosting settings can flatten PEM line breaks. Restore framing only for a
+  // complete PKCS#8 block with canonical Base64; never extract or guess key data.
+  if(!pem.includes('\n')) {
+    const single=pem.match(/^\s*-----BEGIN PRIVATE KEY-----([A-Za-z0-9+/=\s]+)-----END PRIVATE KEY-----\s*$/);
+    const body=single?.[1].replace(/\s+/g,'');
+    if(body&&/^[A-Za-z0-9+/]+={0,2}$/.test(body)&&body.length%4===0&&Buffer.from(body,'base64').toString('base64')===body)
+      pem=`-----BEGIN PRIVATE KEY-----\n${body.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----\n`;
+  }
   let key;
   try { key=crypto.createPrivateKey(pem); }
   catch(error) {

@@ -52,7 +52,7 @@ async function dispatch(h,db=database()) {
 }
 function noResources(h) {assert.equal(h.state.timers.size,0);assert.equal(h.state.connections.length,h.state.destroyed);}
 async function main() {
-  for(const key of [pem,pem.replace(/\n/g,'\\n'),pem.replace(/\n/g,'\r\n')]) {
+  for(const key of [pem,pem.replace(/\n/g,'\\n'),pem.replace(/\n/g,'\r\n'),pem.replace(/\n/g,''),pem.replace(/\n/g,' '),'  '+pem.replace(/\n/g,'')+'  ']) {
     const h=harness({env:{APNS_PRIVATE_KEY:key}}),{result,db}=await dispatch(h);
     assert.equal(result.sent,1);assert.equal(result.failed,0);
     const headers=h.state.headers[0],parts=headers.authorization.slice(7).split('.');
@@ -76,7 +76,7 @@ async function main() {
     assert.equal(h.state.headers[0]['apns-push-type'],'liveactivity');assert.equal(h.state.headers[0]['apns-priority'],'5');
     noResources(h);checks++;
   }
-  for(const value of ['PRIVATE_KEY_SENTINEL',JSON.stringify(pem),'-----BEGIN PRIVATE KEY-----\nINVALID_PRIVATE_KEY_SENTINEL\n-----END PRIVATE KEY-----','']) {
+  for(const value of ['PRIVATE_KEY_SENTINEL',JSON.stringify(pem),'-----BEGIN PRIVATE KEY-----\nINVALID_PRIVATE_KEY_SENTINEL\n-----END PRIVATE KEY-----',pem.replace(/\n/g,'')+'PY',pem.replace(/\n/g,'').repeat(2),'']) {
     const h=harness({env:{APNS_PRIVATE_KEY:value}});
     if(!value) {
       assert.equal(h.push.configured(),false);

@@ -1,6 +1,18 @@
 # Better iPhone push delivery — November 4, 2026
 
-## Current state and source
+## Current follow-up — production cause isolated; normalization fix awaiting live verification
+
+This section supersedes the initial investigation status below. Andrew explicitly approved all work needed to restore notifications and prepare a stable release, including production deployment.
+
+- Diagnostic commit `a16593121a58da99f13312d8b776b733d9e0a7a2` was fast-forwarded to main and verified Published in Netlify production, deploy `6aeb440ee4a487d6b31a8f3c`, at 9:42 AM America/New_York on November 4.
+- Netlify authentication succeeded. Its production native-push-cron was directly inspected and run. At 9:42:51 AM it reported `stage:key-parse`, `ERR_OSSL_UNSUPPORTED`, header/footer true, realNewlines false, escapedNewlines false, surroundingQuotes false; sent 0, failed 2, devices 2, eligible 12. These are fresh observed results. No secret was revealed or changed.
+- A generated synthetic P-256 PEM with every newline removed reproduces `ERR_OSSL_UNSUPPORTED`. Rewrapping its unchanged Base64 restores real parsing/signing. This supports the evidenced format correction without replacing the production key.
+- The follow-up accepts only a complete single-line PKCS#8 PEM block whose body is canonical Base64. It restores framing with 64-character lines; invalid body characters, trailing material, concatenated keys and quoted JSON values are rejected. Existing real/escaped newlines and CRLF keep working. EC P-256 validation and signature verification remain.
+- Full npm test passes (113 entry points), including 23 push scenarios. The same 23 pass against an esbuild bundle. Build, syntax and diff checks pass. Five review passes now additionally cover the observed runtime evidence, exact Base64 preservation, malformed-input rejection, both test forms, and the backend-only diff. No visual app or real APNs success is claimed yet.
+- Next: deploy this follow-up, verify its Published SHA, run native-push-cron and inspect APNs delivery results. Then confirm actual iPhone alert, sender/preview, sound and notification tap with a NEW message. Remove temporary key-format telemetry after diagnosis; keep safe stage reporting. Keep the same installed app and do not uninstall unsynced notes.
+- GitHub changes are deployed through the existing hosting integration. The Mac repository has not been updated by this cloud work; use the pull/test commands below after the final commit. A backend publish does not install/archive an iPhone build.
+
+## Initial investigation record (historical)
 
 Continue the native iPhone notification repair, then App Store release preparation. This is a backend investigation patch, not a completed notification repair or an iPhone release. Source: GitHub main `1f93339975b6aae48b3eeee709022b5dbc4f01fb`, “Add privacy-safe APNs delivery diagnostics.” The cloned checkout was clean. The proposed standalone runtime-key probe is absent from that commit.
 
