@@ -25,7 +25,7 @@ console.log('Cookie behavior: initial consent, both choices, persistence/expiry,
 // Execute the actual legal-page render functions rather than matching source strings.
 const app=fs.readFileSync('public/app.js','utf8'),legal=app.slice(app.indexOf('function pageTerms()'),app.indexOf('function pageContact()'));
 const ctx={staticPage:(title,date,sections)=>({title,date,sections}),el:(tag,props,children)=>({tag,props,children})};vm.createContext(ctx);vm.runInContext(legal,ctx);
-const terms=ctx.pageTerms(),privacy=ctx.pagePrivacy();assert(terms.date.includes('November 4, 2026'));assert(privacy.date.includes('November 4, 2026'));
+const terms=ctx.pageTerms(),privacy=ctx.pagePrivacy();assert(terms.date.includes('November 4, 2026'));assert(privacy.date.includes('November 6, 2026'));
 for(const p of [terms,privacy]){assert(p.sections.length>10);assert(p.sections.every(x=>Array.isArray(x)&&x.length===2));}
 const t=JSON.stringify(terms),p=JSON.stringify(privacy);assert(t.includes('non-exclusive, worldwide, royalty-free'));assert(t.includes('does not make private messages'));assert(t.includes('not automatically cleared'));assert(p.includes('not made public'));assert(t.includes('partners@betterrealestate.org'));assert(!t.includes('opt in at signup'));assert(!t.includes('working template'));
 console.log('Rendered Terms/Privacy sections, publication date, limited content license, private-content restrictions and no retroactive clearance PASS');

@@ -1688,3 +1688,15 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .order-tracking-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.order-tracking-actions>input{flex:1 1 160px;min-width:0}.order-tracking-actions>button{min-height:44px}
 .boost-purchase-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.boost-purchase-row>.grow{min-width:0;flex:1 1 220px}
 .supplier-review-heading,.supplier-result-pager{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.supplier-review-heading>.t{min-width:0;overflow-wrap:anywhere}
+
+/* Affiliate tax review uses the existing website theme and typography. */
+.affiliate-tax details { margin-top: 12px; }
+.affiliate-tax summary { cursor: pointer; font-weight: 600; }
+.affiliate-tax-form { display: grid; gap: 10px; margin-top: 12px; max-width: 660px; }
+.affiliate-tax-form label { font-weight: 600; }
+.affiliate-tax-form input[type=file] { max-width: 100%; min-width: 0; }
+.affiliate-tax-form .affiliate-tax-confirm { display: flex; align-items: flex-start; gap: 10px; font-weight: 400; }
+.affiliate-tax-confirm input { width: auto; flex: 0 0 auto; margin-top: 4px; }
+.affiliate-tax-admin .affiliate-admin-actions { flex-wrap: wrap; }
+.affiliate-tax-admin .grow { min-width: 0; overflow-wrap: anywhere; }
+@media(max-width:600px) { .affiliate-tax-admin .affiliate-admin-row { flex-direction: column; align-items: stretch; } .affiliate-tax-admin .affiliate-admin-filters { flex-wrap: wrap; } }
