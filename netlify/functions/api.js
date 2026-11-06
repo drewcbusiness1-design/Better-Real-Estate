@@ -23,7 +23,7 @@ function normalise(p) {
   return out || '/api';
 }
 
-const handler = serverless(app, { binary: ['image/*', 'application/octet-stream'] });
+const handler = serverless(app, { binary: ['image/*', 'application/octet-stream', 'application/pdf'] });
 
 exports.handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;

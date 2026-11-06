@@ -1,0 +1,36 @@
+'use strict';
+const assert=require('assert/strict'),crypto=require('crypto');
+const taxModule=require('../affiliateTax'),originalInstall=taxModule.install,rows=new Map();
+const repository={async get(id){return structuredClone(rows.get(id)||null);},async list(){return [...rows.values()].map(x=>structuredClone(x));},async put(row,revision){if((rows.get(row.userId)?.revision||0)!==revision)return false;rows.set(row.userId,structuredClone(row));return true;}};
+taxModule.install=(app,options)=>originalInstall(app,{...options,repository});
+const {app,cookie,getDB}=require('./connected-fixture'),payments=require('../payments');
+let payouts=0;payments.connectAccountStatus=async()=>({payoutsEnabled:true});payments.payout=async()=>{payouts++;return {id:'tr_tax_fixture'};};
+process.env.AFFILIATE_TAX_ENCRYPTION_KEY=crypto.randomBytes(32).toString('hex');
+const db=getDB();db.affiliateApplications.push({id:'affiliate_fixture',userId:'buyer',status:'approved',termsAcceptedAt:new Date().toISOString()});db.users.find(u=>u.id==='buyer').stripeAccountId='acct_test';
+db.affiliateCommissions.push({id:'commission_fixture',affiliateUserId:'buyer',status:'available',amountCents:1000,createdAt:'2026-01-01',availableAt:'2026-01-04',sourceId:'fixture_source'});
+const body={formType:'W-9',confirmSigned:true,pdfBase64:Buffer.from('%PDF-1.4\nFICTIONAL QA ONLY\n%%EOF').toString('base64')};
+(async()=>{const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
+async function call(user,path,method='GET',body,extra={}){const r=await fetch(base+path,{method,headers:{...(user?{cookie:cookie(user)}:{}),'Content-Type':'application/json',...extra},...(body?{body:JSON.stringify(body)}:{})});const type=r.headers.get('content-type')||'';return {status:r.status,headers:r.headers,data:type.includes('application/json')?await r.json():await r.text()};}
+try{
+ assert.equal((await call(null,'/api/affiliate/tax')).status,401);
+ assert.equal((await call('outsider','/api/affiliate/tax')).status,403);
+ assert.equal((await call('buyer','/api/admin/affiliate-tax')).status,403);
+ assert.equal((await call('buyer','/api/admin/affiliate-tax-report?year=2026')).status,403);
+ assert.equal((await call('buyer','/api/affiliate/withdraw','POST',{amountCents:1000})).status,403);assert.equal(payouts,0);
+ assert.equal((await call('buyer','/api/affiliate/tax','POST',body,{origin:'https://attacker.example'})).status,403);
+ let response=await call('buyer','/api/affiliate/tax','POST',body);assert.equal(response.status,200);assert(response.headers.get('cache-control').includes('no-store'));let tax=response.data.tax;
+ assert(!JSON.stringify(response.data).includes('FICTIONAL'));assert(!JSON.stringify(response.data).includes('encrypted'));
+ assert.equal((await call('outsider','/api/affiliate/tax/'+tax.documentId+'/document')).status,403);
+ assert.equal((await call('admin','/api/admin/affiliate-tax/buyer/'+tax.documentId+'/document')).status,200);
+ const wrapper=require('../netlify/functions/api');const binary=await wrapper.handler({httpMethod:'GET',path:'/api/admin/affiliate-tax/buyer/'+tax.documentId+'/document',headers:{cookie:cookie('admin'),host:'localhost'},requestContext:{},body:null,isBase64Encoded:false},{});assert.equal(binary.statusCode,200);assert.equal(binary.isBase64Encoded,true);assert(Buffer.from(binary.body,'base64').equals(Buffer.from(body.pdfBase64,'base64')));
+ tax=(await call('buyer','/api/affiliate/tax')).data.tax;
+ assert.equal((await call('admin','/api/admin/affiliate-tax/buyer/review','POST',{...tax,status:'approved',reviewConfirmed:true,noBackupWithholding:true})).status,200);
+ assert.equal((await call('buyer','/api/affiliate/withdraw','POST',{amountCents:'invalid'})).status,400);assert.equal(payouts,0);
+ assert.equal((await call('buyer','/api/affiliate/withdraw','POST',{amountCents:1000})).status,200);assert.equal(payouts,1);
+ const payment=getDB().affiliateCommissions.find(c=>c.id==='commission_fixture');assert.equal(payment.status,'paid');assert.equal(payment.transferId,'tr_tax_fixture');
+ const year=new Date(payment.paidAt).getFullYear(),report=await call('admin','/api/admin/affiliate-tax-report?year='+year);assert.equal(report.status,200);assert(report.data.includes('tr_tax_fixture'));assert(report.data.includes('10.00'));assert(!report.data.includes('FICTIONAL'));assert(!report.data.includes('pdfBase64'));
+ response=await call('buyer','/api/affiliate/tax','POST',body);assert.equal(response.status,200);assert(!response.data.tax.ready);
+ assert.equal((await call('buyer','/api/affiliate/withdraw','POST',{amountCents:100})).status,403);assert.equal(payouts,1);
+ delete process.env.AFFILIATE_TAX_ENCRYPTION_KEY;assert.equal((await call('buyer','/api/affiliate/tax','POST',body)).status,503);
+ console.log('PASS actual HTTP: auth/admin/owner isolation, cross-origin rejection, private response headers, review and replacement gate, invalid amounts, stubbed payout success and paid-only CSV. No real funds moved.');
+}finally{server.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
