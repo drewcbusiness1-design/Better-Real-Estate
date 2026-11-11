@@ -107,7 +107,10 @@ async function api(method, path, body, consentRetried = false) {
   });
   const data = await res.json().catch(() => ({}));
   if(res.status===403&&data.code==='AI_CONSENT_REQUIRED'&&!consentRetried&&window.BetterAIConsent){await window.BetterAIConsent.request();return api(method,path,body,true);}
-  if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+  if (!res.ok) {
+    const error=new Error(res.status===413 ? 'The upload is too large. Your form is still here; try fewer photos or smaller images.' : (data.error || 'Something went wrong.'));
+    error.status=res.status;throw error;
+  }
   try{mascotActionCompleted(method,path,data,actionTarget);}catch{}
   return data;
 }
@@ -3527,9 +3530,17 @@ async function renderCompose() {
   const fileInput = el('input', { type: 'file', accept: 'image/*', multiple: true, style: 'display:none' });
   const preview = el('div', { class: 'previewrow' });
   const picker = el('div', { class: 'picker', onclick: () => fileInput.click() }, 'Tap to add photos (up to 12)');
+  let photoProcessing=false;
   fileInput.onchange = async () => {
-    for (const file of [...fileInput.files].slice(0, 12 - state.composePhotos.length)) state.composePhotos.push(await downscale(file));
-    fileInput.value = ''; draw();
+    if(photoProcessing)return;
+    photoProcessing=true;
+    const files=[...fileInput.files].slice(0,12-state.composePhotos.length);
+    photoOrderStatus.textContent='Preparing photos…';
+    try {
+      for(const file of files)state.composePhotos.push(await downscale(file,1280,250000));
+      photoOrderStatus.textContent='Photos ready. The first photo is the cover.';
+    } catch(e) { photoOrderStatus.textContent=e.message; }
+    finally { photoProcessing=false;fileInput.value='';draw(); }
   };
   const photoOrderStatus=el('div',{class:'hint property-photo-order-status',role:'status','aria-live':'polite'});
   const cancelPhotoDrag=wirePropertyPhotoDrag(preview,photoOrderStatus,draw);
@@ -3550,7 +3561,7 @@ async function renderCompose() {
     });
     picker.textContent = state.composePhotos.length ? `Add more (${state.composePhotos.length}/12)` : 'Tap to add photos (up to 12)';
   }
-  wrap.appendChild(el('label', {}, 'Photos')); wrap.appendChild(picker); wrap.appendChild(fileInput);wrap.appendChild(el('div',{class:'hint'},'Drag a photo by its label to change the order, or use the arrows. The first photo is the cover. Save to keep your new order.')); wrap.appendChild(preview);wrap.appendChild(photoOrderStatus);draw();
+  wrap.appendChild(el('label', {}, 'Photos')); wrap.appendChild(picker); wrap.appendChild(fileInput);wrap.appendChild(el('div',{class:'hint'},'Drag a photo by its label to change the order, or use the arrows. The first photo is the cover. Photos are prepared automatically for posting; wait until they are ready, then save.')); wrap.appendChild(preview);wrap.appendChild(photoOrderStatus);draw();
   wrap.appendChild(el('label', {}, 'Address')); wrap.appendChild(f.address);
   wrap.appendChild(el('label', {}, 'City / State')); wrap.appendChild(f.city);
   wrap.appendChild(el('label', {}, 'Property type')); wrap.appendChild(f.propertyType);
@@ -3587,13 +3598,16 @@ async function renderCompose() {
   const err = el('div', { class: 'errmsg' });
   const submit = el('button', { class: 'submitbtn' }, editingListing?'Save property changes':'Post to feed');
   submit.onclick = async () => {
+    if(submit.disabled)return;
+    if(photoProcessing){err.textContent='Please wait for your photos to finish preparing, then post again.';return;}
     err.textContent='';submit.disabled=true;submit.textContent=editingListing?'Saving…':'Posting…';
     try {
       const payload = { photos: state.composePhotos };
       for (const k in f) payload[k] = f[k].value;
       if(/land/i.test(f.propertyType.value)){for(const k of ['beds','baths','sqft','year'])payload[k]='';payload.rehab=0;}
       payload.openToJV = openToJV.checked;
-      const r=editingListing?await api('PATCH','/api/listings/'+encodeURIComponent(editingListing.id),payload):await api('POST','/api/listings',payload);
+      const upload=await prepareListingPayload(payload);
+      const r=editingListing?await api('PATCH','/api/listings/'+encodeURIComponent(editingListing.id),upload):await api('POST','/api/listings',upload);
       state.composePhotos=[];state.composeEditId=null;mascotSiteEvent('listing');
       toast(editingListing?'Property updated.':(r.matchCount?`Posted — ${r.matchCount} buyer${r.matchCount===1?'':'s'} currently match this deal.`:'Posted — Better Dispo is checking buyer demand.'),'ok');
       go('detail', { detailId: r.listing.id, photoIdx: 0 });
@@ -3606,19 +3620,53 @@ async function renderCompose() {
 function twoUp(l1, i1, l2, i2) {
   return el('div', { class: 'row2' }, [el('div', {}, [el('label', {}, l1), i1]), el('div', {}, [el('label', {}, l2), i2])]);
 }
-function downscale(file, max = 1280) {
-  return new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(1, max / Math.max(img.width, img.height));
-        const c = document.createElement('canvas');
-        c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        resolve(c.toDataURL('image/jpeg', 0.82));
+// Keep JSON plus all 12 photos below the host's request limit, including UTF-8 fields.
+const LISTING_UPLOAD_MAX_BYTES=3500000;
+async function prepareListingPayload(payload) {
+  if(new Blob([JSON.stringify(payload)]).size<=LISTING_UPLOAD_MAX_BYTES)return payload;
+  const photos=payload.photos||[];
+  const inline=photos.filter(p=>String(p).startsWith('data:'));
+  const shell={...payload,photos:photos.map(p=>String(p).startsWith('data:')?'':p)};
+  const remaining=LISTING_UPLOAD_MAX_BYTES-new Blob([JSON.stringify(shell)]).size-1024;
+  if(!inline.length||remaining<inline.length*20000)throw new Error('This post is too large. Shorten the notes or use fewer photos. Your form has been kept.');
+  const limit=Math.floor(remaining/inline.length);
+  const prepared=[];
+  for(const photo of photos){
+    if(String(photo).startsWith('data:')&&photo.length>limit){
+      const response=await fetch(photo);
+      prepared.push(await downscale(await response.blob(),1280,limit));
+    }else prepared.push(photo);
+  }
+  const upload={...payload,photos:prepared};
+  if(new Blob([JSON.stringify(upload)]).size>LISTING_UPLOAD_MAX_BYTES)throw new Error('This post is too large. Try fewer photos. Your form has been kept.');
+  return upload;
+}
+function downscale(file, max = 1280, maxChars = Infinity) {
+  return new Promise((resolve,reject) => {
+    const reader=new FileReader();
+    const failure=()=>reject(new Error('A photo could not be prepared. Try saving it as a JPEG or PNG and select it again.'));
+    reader.onerror=failure;reader.onabort=failure;
+    reader.onload=()=>{
+      const img=new Image();img.onerror=failure;
+      img.onload=()=>{
+        try {
+          const scale=Math.min(1,max/Math.max(img.width,img.height));
+          const c=document.createElement('canvas');
+          c.width=Math.max(1,Math.round(img.width*scale));c.height=Math.max(1,Math.round(img.height*scale));
+          const context=c.getContext('2d');if(!context)throw new Error('Image processing is unavailable.');
+          context.drawImage(img,0,0,c.width,c.height);
+          let result=c.toDataURL('image/jpeg',0.82);
+          // Preserve dimensions first, then reduce dimensions only when still necessary.
+          for(const quality of [0.7,0.58,0.46]){if(result.length<=maxChars)break;result=c.toDataURL('image/jpeg',quality);}
+          for(let pass=0;result.length>maxChars&&pass<12;pass++){
+            c.width=Math.max(1,Math.floor(c.width*0.8));c.height=Math.max(1,Math.floor(c.height*0.8));
+            context.drawImage(img,0,0,c.width,c.height);result=c.toDataURL('image/jpeg',0.72);
+          }
+          if(result.length>maxChars||!result.startsWith('data:image/jpeg;base64,'))throw new Error('Image could not be prepared.');
+          img.src='';resolve(result);
+        }catch(e){failure();}
       };
-      img.src = reader.result;
+      img.src=reader.result;
     };
     reader.readAsDataURL(file);
   });
