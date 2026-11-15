@@ -32,5 +32,10 @@ function all(e,p){return e instanceof E?[...(p(e)?[e]:[]),...e.children.flatMap(
  ctx.stopDailyFeed();
  assert(source.includes('2 AI Deal Builder analyses per day'));assert(!source.includes('5 free listing unlocks'));assert(!source.includes('Use free credit'));assert(source.includes("p.set('feedItem',state.feedFocusId)"));
  const pcStart=source.indexOf('function propertyCard('),pcEnd=source.indexOf('/* ================= BETTER DISPO HELPERS',pcStart);vm.runInContext(source.slice(pcStart,pcEnd),ctx);let opened=null;const preview=ctx.propertyCard({id:'unseen',browsingRequired:true},{openListingDetail:id=>opened=id});assert(preview.textContent.includes('Open property'));all(preview,e=>e.tag==='button')[0].attrs.onclick();assert.equal(opened,'unseen');
+ const profileStart=source.indexOf('async function renderProfile('),profileEnd=source.indexOf('/* ================= BUY BOX / SETTINGS',profileStart);
+ Object.assign(ctx,{liveUIContext:()=>({openListingDetail:id=>opened=id}),membershipBadge:()=>null,roleLabel:()=> 'Seller',avatarNode:()=>new E('div'),shareStrip:()=>new E('div'),money:n=>{assert(Number.isFinite(n),'Restricted profiles must not format missing property data');return '$'+n;}});
+ vm.runInContext(source.slice(profileStart,profileEnd),ctx);
+ const profile=await ctx.renderProfile({state:{profileId:'seller'},go(){},render(){},api:async()=>({owner:{id:'seller',name:'Seller'},listings:[{id:'not-admitted',browsingRequired:true}],followerCount:0,reviews:[]})});
+ assert(profile.textContent.includes('Open property'));assert(!profile.textContent.includes('NaN'));const open=all(profile,e=>e.tag==='button'&&e.textContent==='View property')[0];assert(open);open.attrs.onclick();assert.equal(opened,'not-admitted');
  console.log('PASS actual frontend functions in DOM harness: visible-card-only admission, next/previous, route restoration, no retry loop, recoverable failure, cap gate, blocked-card truncation, two-AI membership copy. This is not rendered-browser or responsive visual verification.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

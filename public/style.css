@@ -157,7 +157,7 @@ textarea{resize:vertical;min-height:80px;line-height:1.55;}
 .daily-browsing-actions{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 12px}
 .daily-browsing-actions button{min-height:44px;flex:1 1 160px;white-space:normal;overflow-wrap:normal}
 .daily-browsing-actions .btn-primary{background:#DCA82D;border-color:#DCA82D;color:#17130A}
-.daily-property-preview{padding:20px}
+.daily-property-preview{padding:20px}.minigrid .daily-property-preview{padding:14px}.minigrid .daily-property-preview h3{font-size:16px}.minigrid .daily-property-preview .hint{font-size:12px}.minigrid .daily-property-preview button{width:100%;padding:10px 6px;font-size:12px;overflow-wrap:normal}
 @media(max-width:390px){.daily-browsing-gate{padding:22px 16px}.daily-browsing-gate h3{font-size:23px}.daily-feed-controls>span{flex-basis:100%}.daily-feed-slot .pcard .actions{gap:6px}.daily-feed-slot .pcard .actions button{font-size:11px}}
 .feedhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:10px;}
 .feedhead h2{font-size:27px;margin:0;}

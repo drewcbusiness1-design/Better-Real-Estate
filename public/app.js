@@ -3677,6 +3677,7 @@ async function renderSaved() {
   listings.forEach(l => {
     const toggle=el('button',{class:'watchtoggle '+(l.notifyChanges?'on':'')},l.notifyChanges?'Notifications on':'Notifications off');
     toggle.onclick=async e=>{e.stopPropagation();const next=!l.notifyChanges;const r=await api('PATCH','/api/saves/'+encodeURIComponent(l.id)+'/notifications',{enabled:next});l.notifyChanges=r.enabled;toggle.className='watchtoggle '+(r.enabled?'on':'');toggle.textContent=r.enabled?'Notifications on':'Notifications off';toast(r.enabled?'Change notifications enabled':'Notifications paused','ok');};
+    if(l.browsingRequired){const preview=propertyCard(l);preview.appendChild(toggle);grid.appendChild(preview);return;}
     grid.appendChild(el('div',{class:'watchcard'},[el('div',{class:'watchphoto',onclick:()=>go('detail',{detailId:l.id,photoIdx:0})},l.photos?.length?el('img',{src:l.photos[0]}):el('div',{class:'nophoto'},'No photo')),el('div',{class:'watchbody'},[el('b',{onclick:()=>go('detail',{detailId:l.id,photoIdx:0})},l.address),el('span',{},l.city+' · '+money(l.asking)),toggle]) ]));
   });
   wrap.appendChild(grid); return wrap;
@@ -4241,7 +4242,7 @@ async function renderProfile(context = liveUIContext()) {
   }
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Listings'));
   const grid = el('div', { class: 'minigrid' });
-  listings.forEach(l => grid.appendChild(el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
+  listings.forEach(l => grid.appendChild(l.browsingRequired ? propertyCard(l) : el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
     el('div', { class: 'mi' }, l.photos?.length ? el('img', { src: l.photos[0] }) : null),
     el('div', { class: 'mt' }, [el('b', {}, l.address), el('span', {}, money(l.asking))])
   ])));
@@ -4608,7 +4609,7 @@ async function renderCompany() {
   wrap.appendChild(team);
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Company listings'));
   const grid = el('div', { class: 'minigrid' });
-  listings.forEach(l => grid.appendChild(el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
+  listings.forEach(l => grid.appendChild(l.browsingRequired ? propertyCard(l) : el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
     el('div', { class: 'mi' }, l.photos?.length ? el('img', { src: l.photos[0] }) : null),
     el('div', { class: 'mt' }, [el('b', {}, l.address), el('span', {}, money(l.asking))])
   ])));
@@ -4805,7 +4806,7 @@ async function renderCompanyWorkspace() {
   const [{ listings }, { messages }] = await Promise.all([api('GET', '/api/company/listings'), api('GET', '/api/company/inbox')]);
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Team listings'));
   const lc = el('div', { class: 'card' });
-  listings.slice(0, 30).forEach(l => lc.appendChild(el('div', { class: 'listrow' }, [el('div', { class: 'grow', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [el('div', { class: 't' }, l.address), el('div', { class: 's' }, `${l.city} · ${money(l.asking)} · ${l.owner?.name || 'Team'}`)]), el('button', { onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, 'Open')])));
+  listings.slice(0, 30).forEach(l => lc.appendChild(l.browsingRequired ? propertyCard(l) : el('div', { class: 'listrow' }, [el('div', { class: 'grow', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [el('div', { class: 't' }, l.address), el('div', { class: 's' }, `${l.city} · ${money(l.asking)} · ${l.owner?.name || 'Team'}`)]), el('button', { onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, 'Open')])));
   if (!listings.length) lc.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'Team listings will appear here.')));
   wrap.appendChild(lc);
 
