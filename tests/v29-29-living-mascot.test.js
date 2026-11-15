@@ -6,7 +6,7 @@ assert(app.includes('function wireBetterMascotRig'),'mascot interaction wiring m
 assert(app.includes('function aimBetterMascotAt'),'tutorial target awareness missing');
 assert(app.includes('<svg class=\"mascot-svg\"')||app.includes('/mascot-rig/body.webp'),'mascot body visual missing');
 for(const c of ['.mascot-head','.mascot-ear-left','.mascot-ear-right','.mascot-tail'])assert(css.includes(c),c);
-assert(app.includes('const TUTORIAL_VERSION = 93;')||app.includes('const TUTORIAL_VERSION = 93;'),'tutorial version must preserve mascot onboarding');
+assert(app.includes('const TUTORIAL_VERSION = 94;')||app.includes('const TUTORIAL_VERSION = 94;'),'tutorial version must preserve mascot onboarding');
 assert(app.includes("release:54,title:'A mascot that actually feels alive'"),'v54 What’s New step missing');
 assert(css.includes('.better-guide-trigger .better-mascot-stage'),'mascot header stage missing');
 assert(css.includes('@media(prefers-reduced-motion:reduce)'),'reduced motion handling required');

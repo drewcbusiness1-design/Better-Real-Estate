@@ -31,13 +31,13 @@ async function setJSON(key,value){
 }
 async function getJob(id){ return getJSON(jobKey(id)); }
 async function saveJob(job){ job.updatedAt=new Date().toISOString(); await setJSON(jobKey(job.id),job); try { await require('./nativeLiveActivities.cjs').notifyJob(job); } catch {} return job; }
-async function startOrReuse({userId,address,researchKey,cacheVersion,forceRefresh=false}){
+async function startOrReuse({userId,address,researchKey,cacheVersion,forceRefresh=false,websiteFreeReservation=null}){
   const lk=lockKey(userId,researchKey), priorLock=await getJSON(lk);
   if(priorLock?.jobId){
     const prior=await getJob(priorLock.jobId);
-    if(prior && ['queued','running'].includes(prior.status)) return {...prior,reused:true};
+    if(prior && ['queued','running'].includes(prior.status) && (!websiteFreeReservation||prior.websiteFreeReservation?.token===websiteFreeReservation.token)) return {...prior,reused:true};
   }
-  const job={id:crypto.randomUUID(),userId,address,researchKey,cacheVersion,forceRefresh,status:'queued',phase:'queued',progress:2,message:'Research queued.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),runToken:crypto.randomBytes(32).toString('hex'),statusToken:crypto.randomBytes(24).toString('hex'),attempt:0,error:null,evidence:null};
+  const job={id:crypto.randomUUID(),userId,address,researchKey,cacheVersion,forceRefresh,...(websiteFreeReservation?{websiteFreeReservation}:{}),status:'queued',phase:'queued',progress:2,message:'Research queued.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),runToken:crypto.randomBytes(32).toString('hex'),statusToken:crypto.randomBytes(24).toString('hex'),attempt:0,error:null,evidence:null};
   await saveJob(job); await setJSON(lk,{jobId:job.id,createdAt:job.createdAt}); return job;
 }
 async function authorizedJob(id,token,kind='status'){
@@ -47,5 +47,5 @@ async function authorizedJob(id,token,kind='status'){
   return job;
 }
 async function updateJob(id,patch){ const job=await getJob(id); if(!job)return null; Object.assign(job,patch||{}); return saveJob(job); }
-function publicJob(job){ if(!job)return null; const {runToken,statusToken,...safe}=job; return safe; }
+function publicJob(job){ if(!job)return null; const {runToken,statusToken,websiteFreeReservation,...safe}=job; return safe; }
 module.exports={startOrReuse,getJob,authorizedJob,updateJob,saveJob,publicJob};

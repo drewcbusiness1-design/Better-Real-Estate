@@ -28,7 +28,7 @@ try { ({ Pool } = require('pg')); } catch {}
 const affiliateAccounts = require('./affiliateAccounts');
 const policy = require('./policy');
 const COLLECTIONS = [
-  'nativePushDevices','nativeLiveActivities',
+  'websiteAiUsage','browsingUsage','nativePushDevices','nativeLiveActivities',
   'campaignOutreach',
   'acquisitionCampaigns',
   'feedbackReports','serviceJobs','matchDeliveries','titleCompanies','buyerResponses','privateDeals','dealIntroductions','supportThreads','affiliateContent','accountMigrations','affiliateProspects','affiliateLeaderboardState',
@@ -196,12 +196,16 @@ async function saveDB(db) {
       const latest=JSON.parse(fsMod.readFileSync(FILE_PATH,'utf8'));
       if(!db.__writeCampaigns)out.acquisitionCampaigns=latest.acquisitionCampaigns||[];
       if(!db.__writeOutreach)out.campaignOutreach=latest.campaignOutreach||[];
+      if(!db.__writeBrowsingUsage)out.browsingUsage=latest.browsingUsage||[];
+      if(!db.__writeWebsiteAiUsage)out.websiteAiUsage=latest.websiteAiUsage||[];
       if(!db.__writeMatchDeliveries)out.matchDeliveries=(out.matchDeliveries||[]).map(row=>({...row,...(latest.matchDeliveries||[]).find(x=>x.id===row.id)}));
       for(const row of latest.matchDeliveries||[])if(!out.matchDeliveries.some(x=>x.id===row.id)&&!(db.__matchDeliveryIds||[]).includes(row.id))out.matchDeliveries.push(row);
       out.users=out.users.map(row=>{const current=latest.users?.find(u=>u.id===row.id);if(!current)return row;const before=db.__creditSnapshot?.[row.id];const delta=before===undefined?0:Number(row.betterCreditCents||0)-before;const merged={...row,betterCreditCents:Math.max(0,Number(current.betterCreditCents||0)+delta)};if(!db.__writeMembershipCredits)merged.membershipCreditState=current.membershipCreditState;return merged;});
       // Targeted credit receipts cannot be erased by an unrelated stale snapshot.
       for(const entry of latest.ledger||[])if(entry.id?.startsWith('membership-credit-')&&!out.ledger.some(l=>l.id===entry.id))out.ledger.push(entry);
     }
+    const liveUsers=new Set(out.users.map(u=>u.id));
+    out.browsingUsage=(out.browsingUsage||[]).filter(r=>liveUsers.has(r.id));out.websiteAiUsage=(out.websiteAiUsage||[]).filter(r=>liveUsers.has(r.id));
     fsMod.writeFileSync(FILE_PATH, JSON.stringify(out, null, 2));
     db.__creditSnapshot=Object.fromEntries(out.users.map(u=>[u.id,Number(u.betterCreditCents||0)]));
     for(const row of db.users){const saved=out.users.find(u=>u.id===row.id);if(saved){row.betterCreditCents=saved.betterCreditCents;row.membershipCreditState=saved.membershipCreditState;}}
@@ -210,7 +214,7 @@ async function saveDB(db) {
   await init();
   await Promise.all(COLLECTIONS.map(async c => {
     // Outreach uses its own revision-checked writer; unrelated saves cannot overwrite it.
-    if(c==='campaignOutreach')return;
+    if(c==='campaignOutreach'||c==='browsingUsage'||c==='websiteAiUsage')return;
     const rows = db[c] || [];
     const t = tableFor(c);
     const seen = new Set();
@@ -237,7 +241,7 @@ async function saveDB(db) {
       }
     }
     for (const oldId of beforeIds) {
-      if (!seen.has(oldId)) writes.push(sql(`DELETE FROM ${t} WHERE id = $1`, [oldId]));
+      if (!seen.has(oldId)) {writes.push(sql(`DELETE FROM ${t} WHERE id = $1`, [oldId]));if(c==='users'){writes.push(sql('DELETE FROM kv_browsingusage WHERE id=$1',[oldId]));writes.push(sql('DELETE FROM kv_websiteaiusage WHERE id=$1',[oldId]));}}
     }
     if (writes.length) await Promise.all(writes);
 

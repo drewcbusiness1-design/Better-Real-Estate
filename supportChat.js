@@ -45,20 +45,20 @@ async function answer(messages,context={}){
  const p=await r.json();if(!r.ok)throw fault('AI support is temporarily unavailable. You can request a person.',503);
  const text=(p.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('\n').trim();if(!text)throw fault('AI support did not return an answer. Please request a person.',503);return text.slice(0,4000);
 }
-function install(app,{store,requireAuth,requireAdmin,isAdminUser,mailer}){
+function install(app,{store,requireAuth,requireAdmin,isAdminUser,mailer,canUseAi=()=>true}){
  const chats=createStore(store);
  const publicRow=row=>row?{id:row.id,userId:row.userId,mode:row.mode,revision:row.revision,messages:row.messages,updatedAt:row.updatedAt,remaining:Math.max(0,20-(row.usageDay===new Date().toISOString().slice(0,10)?row.usage:0)),alertState:row.alertState||null}:null;
  const owner=async(req)=>{const row=await chats.read(req.params.id);if(!row)throw fault('Conversation not found.',404);if(row.userId!==req.user.id&&!isAdminUser(req.user))throw fault('Conversation not found.',404);return row;};
- app.get('/api/support',requireAuth,async(req,res)=>res.json({thread:publicRow(await chats.read('support-'+req.user.id)),aiConfigured:!!process.env.OPENAI_API_KEY}));
+ app.get('/api/support',requireAuth,async(req,res)=>res.json({thread:publicRow(await chats.read('support-'+req.user.id)),aiConfigured:canUseAi(req.user)&&!!process.env.OPENAI_API_KEY}));
  app.get('/api/support/admin',requireAuth,requireAdmin,async(req,res)=>res.json({threads:(await chats.list()).map(publicRow)}));
  app.get('/api/support/:id',requireAuth,async(req,res)=>res.json({thread:publicRow(await owner(req))}));
  app.post('/api/support/message',requireAuth,async(req,res)=>{
   const body=typeof req.body.body==='string'?req.body.body.trim():'';const id=req.body.id;
   if(!body||body.length>2000||typeof id!=='string'||!/^[-a-zA-Z0-9]{8,80}$/.test(id))throw fault('Enter a message of up to 2,000 characters.');
   const consentThread=await chats.read('support-'+req.user.id);
-  if((!consentThread||consentThread.mode==='ai')&&!require('./privacy-controls.cjs').allowed(req.user))return require('./privacy-controls.cjs').denied(res);
+  if(canUseAi(req.user)&&(!consentThread||consentThread.mode==='ai')&&!require('./privacy-controls.cjs').allowed(req.user))return require('./privacy-controls.cjs').denied(res);
   let reserved=false;
-  let row=await chats.mutate(req.user.id,t=>{reserved=false;if(t.messages.some(m=>m.id===id))return false;if(t.pendingAt&&Date.now()-Date.parse(t.pendingAt)<25000)throw fault('Please wait for your current answer.',409);if(t.messages.length>=190)throw fault('Conversation limit reached. Please contact support directly.',409);const day=new Date().toISOString().slice(0,10);if(t.usageDay!==day){t.usageDay=day;t.usage=0;}if(t.mode==='ai'&&t.usage>=20)throw fault('Daily AI allowance reached. Request a person for more help.',429);t.messages.push({id,role:'user',body,at:new Date().toISOString()});if(t.mode==='ai'){t.usage++;t.pendingId=id;t.pendingAt=new Date().toISOString();reserved=true;}return true;});
+  let row=await chats.mutate(req.user.id,t=>{reserved=false;if(!canUseAi(req.user)&&t.mode==='ai'){t.mode='waiting';delete t.pendingId;delete t.pendingAt;}if(t.messages.some(m=>m.id===id))return false;if(t.pendingAt&&Date.now()-Date.parse(t.pendingAt)<25000)throw fault('Please wait for your current answer.',409);if(t.messages.length>=190)throw fault('Conversation limit reached. Please contact support directly.',409);const day=new Date().toISOString().slice(0,10);if(t.usageDay!==day){t.usageDay=day;t.usage=0;}if(t.mode==='ai'&&t.usage>=20)throw fault('Daily AI allowance reached. Request a person for more help.',429);t.messages.push({id,role:'user',body,at:new Date().toISOString()});if(t.mode==='ai'){t.usage++;t.pendingId=id;t.pendingAt=new Date().toISOString();reserved=true;}return true;});
   let aiError=null;
   if(reserved){let reply;try{reply=await answer(row.messages,{affiliateOnly:(req.user.roles||[req.user.role]).includes('affiliate')});}catch(e){aiError=e.message;}
    row=await chats.mutate(req.user.id,t=>{if(t.pendingId!==id)return false;delete t.pendingId;delete t.pendingAt;if(reply&&t.mode==='ai'){const introduced=t.aiIntroduced===true||t.messages.some(m=>m.role==='ai');const clean=reply.replace(/(?:I[’']m|I am) Better Guide(?:, an AI assistant)?[.!]?\s*/gi,'').trim();t.messages.push({id:crypto.randomUUID(),role:'ai',body:(introduced?'':'I’m Better Guide, an AI assistant.\n\n')+(clean||'How can I help you use Better?'),at:new Date().toISOString()});t.aiIntroduced=true;}if(!reply)t.usage=Math.max(0,t.usage-1);return true;});}

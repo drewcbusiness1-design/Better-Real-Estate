@@ -30,6 +30,10 @@ const social = require('./social');
 const dealResearchCache = require('./dealResearchCache');
 const dealResearchJobs = require('./dealResearchJobs');
 const app = express();
+const dailyBrowsing=require('./dailyBrowsing');
+const browsingService=dailyBrowsing.create(require('./store'));
+const websiteAiUsage=require('./websiteAiUsage');
+const websiteAiService=websiteAiUsage.create(require('./store'));
 
 /* Every app.get/post/patch/delete below is an async function. Express 4
    does not catch errors thrown inside an async handler on its own — an
@@ -54,7 +58,7 @@ const PORT = process.env.PORT || 3000;
    Amounts are in CENTS.
    ======================================================================= */
 const PRICING = {
-  freeUnlocks: 5,                 // free detail unlocks before paywall
+  freeUnlocks: 5,                 // preserved native legacy contract; website grants none
   unlockCredit: 199,              // $1.99 to unlock one listing's details
   unlockPack: { qty: 10, price: 1499 }, // $14.99 for 10
   pro: { monthly: 3000, annual: 32000, label: 'Better Plus' },  // $30/mo or $320/yr
@@ -77,6 +81,8 @@ const PRICING = {
   signupTrialDays: 7
 };
 
+function pricingForClient(){return dailyBrowsing.website()?{...PRICING,freeUnlocks:0,signupTrialDays:0,dailyFreeViews:30,dailyFreeAiAnalyses:2}:PRICING;}
+
 const FOUNDER_PROGRAM_LIMIT = 50;
 const FOUNDER_PLATINUM_DAYS = 14;
 
@@ -92,6 +98,8 @@ app.use(cookieSession({
   keys: [process.env.SESSION_SECRET || 'keyline-dev-secret-change-me'],
   maxAge: 30 * 24 * 60 * 60 * 1000
 }));
+
+app.use(dailyBrowsing.middleware);
 
 const publicUser = u => { if (!u) return null; const { appleSubscription, passwordHash, marketingOptIn, marketingConsentAt, marketingUnsubscribedAt, marketingLastSentAt, marketingSequence, aiUsageDay, aiUsageCount, plusToolUsage, verificationEmailLastError, membershipCreditState, ...r } = u; return r; };
 const publicProfileUser = social.publicProfileUser;
@@ -167,7 +175,9 @@ async function requireAuth(req, res, next) {
   // Activity timestamps are owned by the heartbeat endpoint. Updating them in
   // every authenticated request caused unrelated page loads to become writes.
   if (changed) await saveDB(db);
-  req.user = user; req.db = db; next();
+  req.user = user; req.db = db;dailyBrowsing.bindDB(db);
+  if(dailyBrowsing.website()&&!isPro(user)&&/^\/api\/ai\/listing-copy/.test(req.path))return res.status(403).json({error:'AI features require Better Plus or higher.',code:'AI_MEMBERSHIP_REQUIRED'});
+  next();
 }
 const privacyControls=require('./privacy-controls.cjs');
 privacyControls.register(app,{requireAuth,saveDB});
@@ -331,7 +341,7 @@ function isPlatinum(user) {
 function inTrial(user) {
   return !isAdminUser(user) && user.trialUntil && new Date(user.trialUntil) > new Date();
 }
-function hasFullAccess(user) { return isPro(user) || inTrial(user); }
+function hasFullAccess(user) { return isPro(user) || (!dailyBrowsing.website() && inTrial(user)); }
 function maxBuyBoxesFor(user) {
   if (isAdminUser(user)) return Number.MAX_SAFE_INTEGER;
   if (isWholesale(user)) return PRICING.maxBuyBoxes.wholesale;
@@ -355,7 +365,7 @@ function accessFor(user) {
   if (!user) return null;
   const grant = activeMembershipGrant(user);
   return {
-    pro: isPro(user), platinum: isPlatinum(user), wholesale: isWholesale(user), trial: inTrial(user), full: hasFullAccess(user),
+    pro: isPro(user), platinum: isPlatinum(user), wholesale: isWholesale(user), trial: !dailyBrowsing.website() && inTrial(user), full: hasFullAccess(user), websiteBrowsing:dailyBrowsing.website(), ai:isPro(user),
     adminUnlimited: isAdminUser(user), companyId: user.companyId || null, companyRole: user.companyRole || null,
     grantPlan: grant?.plan || null, grantUntil: grant?.until || null, grantReason: grant?.reason || null,
     founderPlatinumUntil: activeFounderPlatinum(user)?.until || null, founderLaunchPosition: Number(user.founderLaunchPosition || 0) || null,
@@ -648,7 +658,7 @@ app.post('/api/signup', async (req, res) => {
   try { await sendNewSignupAlerts(db, user); }
   catch (e) { console.error('[mail][signup-alert]', e.message); }
   req.session.userId = user.id;
-  res.json({ user: publicUser(user), pricing: PRICING, verificationEmailSent, mailConfigured: mailer.configured() });
+  res.json({ user: publicUser(user), pricing: pricingForClient(), verificationEmailSent, mailConfigured: mailer.configured() });
 });
 
 app.post('/api/login', async (req, res) => {
@@ -683,13 +693,13 @@ app.get('/api/me', async (req, res) => {
   }
   res.json({
     user: publicUser(u),
-    pricing: PRICING,
+    pricing: pricingForClient(),
     balance: u ? balanceOf(db, u.id) : 0,
     access: accessFor(u),
     demoAdminSession: !!(u?.demo && req.session?.adminReturnUserId)
   });
 });
-app.get('/api/pricing', async (req, res) => res.json({ pricing: PRICING }));
+app.get('/api/pricing', async (req, res) => res.json({ pricing: pricingForClient() }));
 
 
 async function unsubscribeMarketing(req, res) {
@@ -1455,6 +1465,7 @@ app.post('/api/billing/cancel', requireAuth, async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.post('/api/billing/unlock-pack', requireAuth, async (req, res) => {
+  if(dailyBrowsing.website())return res.status(410).json({error:'Unlock packs are no longer sold on the website. Free membership includes 30 property views daily, with full details and contact information.'});
   if (isAdminUser(req.user)) return res.json({ unlimited: true, unlockCredits: req.user.unlockCredits });
   try {
     const result = await chargeOrIntent(req.db, req.user, PRICING.unlockPack.price, 'unlock_pack', `${PRICING.unlockPack.qty} listing unlocks`);
@@ -1683,20 +1694,30 @@ function dealBuilderAllowance(user) {
     const used = user.dealBuilderUsageDay === day ? Number(user.dealBuilderUsageCount || 0) : 0;
     return { unlimited:false, limit:5, used, remaining:Math.max(0,5-used), label:`${Math.max(0,5-used)} of 5 analyses remaining today`, day };
   }
+  if(dailyBrowsing.website())return websiteAiUsage.usage((dailyBrowsing.currentDB()?.websiteAiUsage||[]).find(r=>r.id===user.id));
   const used = Number(user.dealBuilderTrialUses || 0);
   const active = inTrial(user);
   return { unlimited:false, limit:1, used, remaining:active ? Math.max(0,1-used) : 0, trial:true, trialActive:active, label:active ? (used ? 'Free trial analysis used' : '1 free trial analysis available') : 'Plus or Platinum required' };
 }
 app.get('/api/deal-builder/usage', requireAuth, (req,res) => res.json({ usage:dealBuilderAllowance(req.user) }));
 app.get('/api/tools/usage', requireAuth, (req,res)=>res.json({ dealBuilder:dealBuilderAllowance(req.user), listingAi:plusToolAllowance(req.user,'listingAi',2), dispoAi:plusToolAllowance(req.user,'dispoAi',3) }));
-function dealBuilderLimitError(req,allowance){return isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Plus includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Plus includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.');}
+function dealBuilderLimitError(req,allowance){if(dailyBrowsing.website()&&!isPro(req.user))return 'Your two free daily AI analyses are used or in progress. Return after midnight Eastern, or upgrade for a higher allowance.';return isPro(req.user)?'You have used today’s 5 Deal Builder analyses. Platinum includes unlimited analyses.':(allowance.trialActive?'Your one free trial Deal Builder analysis has been used. Plus includes 5 per day and Platinum includes unlimited analyses.':'Your free trial has ended. Plus includes 5 Deal Builder analyses per day and Platinum includes unlimited analyses.');}
 const DEAL_RESEARCH_CACHE_VERSION = dealResearchCache.VERSION;
 const DEAL_RESEARCH_CACHE_TTL_MS = dealResearchCache.TTL_MS;
 const DEAL_RESEARCH_MIN_REFRESH_MS = dealResearchCache.MIN_REFRESH_MS;
 const DEAL_SYNTHESIS_FAILURE_COOLDOWN_MS = 30 * 60 * 1000;
 function dealResearchKey(address){ return dealResearchCache.key(address); }
 function priorQualifiedDealProperty(db,user,key){ return (db.dealAnalyses||[]).some(x=>x.userId===user.id&&x.qualified===true&&x.researchKey===key); }
-function addressDealAllowance(db,user,key){ const base=dealBuilderAllowance(user), prior=priorQualifiedDealProperty(db,user,key); return {...base, priorQualified:prior, allowedForAddress:prior||base.unlimited||base.remaining>0}; }
+function addressDealAllowance(db,user,key){ const base=dealBuilderAllowance(user), prior=priorQualifiedDealProperty(db,user,key); return {...base, priorQualified:prior, allowedForAddress:prior||base.unlimited||base.remaining>0||(dailyBrowsing.website()&&websiteAiUsage.state((db.websiteAiUsage||[]).find(r=>r.id===user.id)).reservations.some(r=>r.key===key))}; }
+async function reserveWebsiteAnalysis(req,key){
+  if(!dailyBrowsing.website()||isPro(req.user))return {allowed:true};
+  // Reopening an already completed property uses the cached result, not another free analysis.
+  if(priorQualifiedDealProperty(req.db,req.user,key))return {allowed:true,prior:true};
+  const result=await websiteAiService.reserve(req.user.id,key);syncWebsiteAiRow(req.db,req.user.id,result.row);return result;
+}
+function syncWebsiteAiRow(db,id,row){db.websiteAiUsage=(db.websiteAiUsage||[]).filter(r=>r.id!==id);if(row)db.websiteAiUsage.push(row);}
+async function settleWebsiteAnalysis(req,slot,success){if(!slot?.reservation)return;const result=await websiteAiService.settle(req.user.id,slot.reservation,success);syncWebsiteAiRow(req.db,req.user.id,result.row);}
+function websiteAnalysisDenied(res,slot){return res.status(403).json({error:'Your two free daily AI analyses are used or in progress. Return after midnight Eastern or upgrade.',code:'DEAL_BUILDER_LIMIT',usage:slot.usage});}
 function evidenceFingerprint(evidence){
   const compact={subject:evidence?.subject||{},comparisonSubject:evidence?.comparisonSubject||{},fieldEvidence:evidence?.fieldEvidence||{},auxiliaryFacts:evidence?.auxiliaryFacts||{},identity:evidence?.identity||{},conflicts:evidence?.conflicts||[],conditionEvidence:evidence?.conditionEvidence||[],rehabAnalysis:evidence?.rehabAnalysis||null,comps:(evidence?.comps||[]).map(c=>({address:c.address,salePrice:c.salePrice,saleDate:c.saleDate,distanceMiles:c.distanceMiles,squareFootage:c.squareFootage,bedrooms:c.bedrooms,bathrooms:c.bathrooms,yearBuilt:c.yearBuilt,propertyType:c.propertyType,source:c.source,sourceKey:c.sourceKey,lotSizeSqFt:c.lotSizeSqFt,lotSize:c.lotSize,zoning:c.zoning,roadAccess:c.roadAccess,utilities:c.utilities}))};
   return crypto.createHash('sha256').update(JSON.stringify(compact)).digest('hex');
@@ -1708,14 +1729,20 @@ function evidenceOnlyDealAnalysis(address,evidence,compAnalysis,reason){
 }
 app.post('/api/deal-builder/research/start', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8)return res.status(400).json({error:'Enter a complete property address.'});
-  const key=dealResearchKey(address),addressAllowance=addressDealAllowance(req.db,req.user,key);if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
+  const key=dealResearchKey(address),freeSlot=await reserveWebsiteAnalysis(req,key);if(!freeSlot.allowed)return websiteAnalysisDenied(res,freeSlot);
+  const addressAllowance=addressDealAllowance(req.db,req.user,key);if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
   const now=Date.now(),forceRefresh=req.body?.forceRefresh===true;req.db.dealResearchCache=req.db.dealResearchCache||[];
   const cached=req.db.dealResearchCache.find(x=>x.key===key),age=cached?now-new Date(cached.retrievedAt||0).getTime():Infinity;
   if(cached?.evidence&&age<DEAL_RESEARCH_CACHE_TTL_MS&&(!forceRefresh||age<DEAL_RESEARCH_MIN_REFRESH_MS)){
     const evidence=JSON.parse(JSON.stringify(cached.evidence));evidence.serverOwned=true;evidence.cache={hit:true,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:cached.retrievedAt,ageMs:age,refreshProtected:forceRefresh&&age<DEAL_RESEARCH_MIN_REFRESH_MS};
     return res.json({state:'complete',address,evidence,usage:addressAllowance});
   }
-  const job=await dealResearchJobs.startOrReuse({userId:req.user.id,address,researchKey:key,cacheVersion:DEAL_RESEARCH_CACHE_VERSION,forceRefresh});
+  if(freeSlot.reservation&&!freeSlot.fresh){
+    const existing=freeSlot.reservation.jobId?await dealResearchJobs.getJob(freeSlot.reservation.jobId):null;
+    if(existing&&existing.userId===req.user.id)return res.status(200).json({state:existing.status,jobId:existing.id,runToken:existing.runToken,reused:true,backgroundPath:'/.netlify/functions/deal-research-background',statusPath:'/api/deal-builder/research/status',usage:addressAllowance});
+    return res.status(409).json({error:'This property research is already being prepared. Please try again shortly.'});
+  }
+  let job;try{job=await dealResearchJobs.startOrReuse({userId:req.user.id,address,researchKey:key,cacheVersion:DEAL_RESEARCH_CACHE_VERSION,forceRefresh,websiteFreeReservation:freeSlot.reservation||null});if(freeSlot.reservation)await websiteAiService.linkJob(req.user.id,freeSlot.reservation,job.id);}catch(e){await settleWebsiteAnalysis(req,freeSlot,false);throw e;}
   res.status(job.reused?200:202).json({state:job.status,jobId:job.id,runToken:job.runToken,reused:Boolean(job.reused),backgroundPath:'/.netlify/functions/deal-research-background',statusPath:'/api/deal-builder/research/status',usage:addressAllowance});
 });
 
@@ -1729,7 +1756,8 @@ app.get('/api/deal-builder/research/status', requireAuth, async (req,res) => {
 
 app.post('/api/deal-builder/research', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
-  const key=dealResearchKey(address),addressAllowance=addressDealAllowance(req.db,req.user,key); if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
+  const key=dealResearchKey(address),freeSlot=await reserveWebsiteAnalysis(req,key);if(!freeSlot.allowed)return websiteAnalysisDenied(res,freeSlot);
+  const addressAllowance=addressDealAllowance(req.db,req.user,key); if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
   try{
     const dealSources=require('./dealSources'),intelligence=require('./dealIntelligence'),now=Date.now(),forceRefresh=req.body?.forceRefresh===true;
     req.db.dealResearchCache=req.db.dealResearchCache||[];
@@ -1738,20 +1766,24 @@ app.post('/api/deal-builder/research', requireAuth, async (req,res) => {
       const evidence=JSON.parse(JSON.stringify(cached.evidence||{})); evidence.cache={hit:true,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:cached.retrievedAt,ageMs:age,refreshProtected:forceRefresh&&age<DEAL_RESEARCH_MIN_REFRESH_MS}; evidence.serverOwned=true;
       return res.json({address,evidence,usage:addressAllowance});
     }
+    if(freeSlot.reservation){const claim=await websiteAiService.claim(req.user.id,freeSlot.reservation,'research');if(!claim.claimed)return res.status(409).json({error:'This property research is already in progress.'});}
     const evidence=await dealSources.research(address);evidence.compAnalysis=intelligence.analyzeComps(evidence.comparisonSubject||evidence.subject||{},evidence.comps||[]);evidence.rehabAnalysis=intelligence.estimateRehab(evidence.comparisonSubject||evidence.subject||{},evidence.conditionEvidence||[],evidence.fieldEvidence||{});evidence.serverOwned=true;evidence.cache={hit:false,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:evidence.retrievedAt||new Date().toISOString(),ageMs:0,refreshProtected:false};
     const row={id:cached?.id||crypto.randomUUID(),key,address,retrievedAt:evidence.retrievedAt||new Date().toISOString(),evidence:JSON.parse(JSON.stringify(evidence)),synthesis:null};
     if(cached)Object.assign(cached,row);else req.db.dealResearchCache.push(row);
     const cutoff=Date.now()-7*24*60*60*1000;req.db.dealResearchCache=req.db.dealResearchCache.filter(x=>new Date(x.retrievedAt||0).getTime()>=cutoff).sort((a,b)=>String(b.retrievedAt).localeCompare(String(a.retrievedAt))).slice(0,500);
     await saveDB(req.db);
+    if(freeSlot.reservation)await websiteAiService.unlock(req.user.id,freeSlot.reservation);
     res.json({address,evidence,usage:addressAllowance});
-  }catch(e){console.error('[deal builder research]',e.message);res.status(502).json({error:`Property research failed: ${String(e.message).slice(0,240)}`});}
+  }catch(e){await settleWebsiteAnalysis(req,freeSlot,false);console.error('[deal builder research]',e.message);res.status(502).json({error:`Property research failed: ${String(e.message).slice(0,240)}`});}
 });
 app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
   const address=String(req.body?.address||'').trim(); if(address.length<8) return res.status(400).json({error:'Enter a complete property address.'});
-  const key=dealResearchKey(address),addressAllowance=addressDealAllowance(req.db,req.user,key); if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
+  const key=dealResearchKey(address),freeSlot=await reserveWebsiteAnalysis(req,key);if(!freeSlot.allowed)return websiteAnalysisDenied(res,freeSlot);
+  const addressAllowance=addressDealAllowance(req.db,req.user,key); if(!addressAllowance.allowedForAddress)return res.status(403).json({error:dealBuilderLimitError(req,addressAllowance),code:'DEAL_BUILDER_LIMIT',usage:addressAllowance});
   try {
     req.db.dealResearchCache=req.db.dealResearchCache||[];const cached=req.db.dealResearchCache.find(x=>x.key===key);const age=cached?Date.now()-new Date(cached.retrievedAt||0).getTime():Infinity;
-    if(!cached||!cached.evidence||age>=DEAL_RESEARCH_CACHE_TTL_MS)return res.status(409).json({error:'Property research is missing or stale. Run property research again before analysis.',code:'DEAL_RESEARCH_REQUIRED'});
+    if(!cached||!cached.evidence||age>=DEAL_RESEARCH_CACHE_TTL_MS){await settleWebsiteAnalysis(req,freeSlot,false);return res.status(409).json({error:'Property research is missing or stale. Run property research again before analysis.',code:'DEAL_RESEARCH_REQUIRED'});}
+    if(freeSlot.reservation){const claim=await websiteAiService.claim(req.user.id,freeSlot.reservation,'analysis');if(!claim.claimed)return res.status(409).json({error:'This analysis is already in progress.'});}
     // SECURITY/INTEGRITY: final valuation always uses server-cached evidence. Browser-supplied evidence is intentionally ignored.
     const evidence=JSON.parse(JSON.stringify(cached.evidence)); evidence.serverOwned=true; evidence.cache={...(evidence.cache||{}),hit:true,version:DEAL_RESEARCH_CACHE_VERSION,retrievedAt:cached.retrievedAt,ageMs:age};
     const intelligence=require('./dealIntelligence'),compAnalysis=intelligence.analyzeComps(evidence.comparisonSubject||evidence.subject||{},evidence.comps||[]); evidence.compAnalysis=compAnalysis;evidence.rehabAnalysis=evidence.rehabAnalysis||intelligence.estimateRehab(evidence.comparisonSubject||evidence.subject||{},evidence.conditionEvidence||[],evidence.fieldEvidence||{});
@@ -1797,12 +1829,13 @@ app.post('/api/deal-builder/address', requireAuth, async (req,res) => {
       req.db.dealAnalyses=req.db.dealAnalyses||[];
       req.db.dealAnalyses.push({id:crypto.randomUUID(),userId:req.user.id,address,researchKey:key,createdAt:new Date().toISOString(),qualified:true,synthesisReused});
     }
-    if(newQualified&&!addressAllowance.unlimited){const day=new Date().toISOString().slice(0,10);if(isPro(req.user)){if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;}req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1;}else req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1;}
+    if(newQualified&&!addressAllowance.unlimited){const day=new Date().toISOString().slice(0,10);if(isPro(req.user)){if(req.user.dealBuilderUsageDay!==day){req.user.dealBuilderUsageDay=day;req.user.dealBuilderUsageCount=0;}req.user.dealBuilderUsageCount=Number(req.user.dealBuilderUsageCount||0)+1;}else if(!dailyBrowsing.website())req.user.dealBuilderTrialUses=Number(req.user.dealBuilderTrialUses||0)+1;}
     // A newly generated synthesis belongs to the server-side research cache even when the user
     // previously qualified this same property, so persist it without creating another usage event.
     if(newQualified||createdSynthesis||synthesisFailureRecorded)await saveDB(req.db);
+    await settleWebsiteAnalysis(req,freeSlot,successfulAnalysis);
     res.json({analysis,aiDraft,evidence,usage:{...dealBuilderAllowance(req.user),priorQualified:wasQualified||successfulAnalysis},qualified:successfulAnalysis,evidenceReady:readyForAnalysis,synthesisReused,synthesisDeferred,synthesisError});
-  } catch(e){console.error('[deal builder ai]',e.message);res.status(502).json({error:`AI synthesis failed after research completed: ${String(e.message).slice(0,240)}`});}
+  } catch(e){await settleWebsiteAnalysis(req,freeSlot,false);console.error('[deal builder ai]',e.message);res.status(502).json({error:`AI synthesis failed after research completed: ${String(e.message).slice(0,240)}`});}
 });
 
 app.get('/api/deal-builder/diagnostics', requireAuth, (req,res)=>{
@@ -2256,12 +2289,32 @@ async function notifyPlatinumMatches(db, listing) {
 function gateListing(listing, user, db) {
   // Free users see everything EXCEPT exact address, contact and notes until unlocked.
   const canEdit = canEditProperty(db, user, listing);
-  const unlocked = user && (hasFullAccess(user) || canEdit ||
+  const unlocked = user && (hasFullAccess(user) || canEdit || (dailyBrowsing.website()&&dailyBrowsing.admitted(db,user,listing.id)) ||
     db.unlocks.some(u => u.userId === user.id && u.listingId === listing.id));
   if (unlocked) return { ...listing, freshness: listingFreshness(listing), canEdit, locked: false };
+  if(dailyBrowsing.website())return {id:listing.id,locked:true,browsingRequired:true,canEdit:false};
   const { address, notes, ownerEmail, videoUrl, ...rest } = listing;
   return { ...rest, freshness: listingFreshness(listing), address: 'Address hidden', notes: null, ownerEmail: null, videoUrl: null, canEdit: false, locked: true };
 }
+
+function browsingExempt(db,user,listing){return !!user&&(isPro(user)||canEditProperty(db,user,listing)||(db.unlocks||[]).some(x=>x.userId===user.id&&x.listingId===listing.id));}
+async function admitProperty(db,user,listing){
+  if(!dailyBrowsing.website())return {allowed:true,usage:null};
+  if(!user)return {allowed:false,signIn:true,usage:dailyBrowsing.usage(null)};
+  if(browsingExempt(db,user,listing))return {allowed:true,usage:dailyBrowsing.usage((db.browsingUsage||[]).find(r=>r.id===user.id),isPro(user))};
+  const result=await browsingService.consume(user.id,listing.id);
+  db.browsingUsage=(db.browsingUsage||[]).filter(r=>r.id!==user.id);if(result.row)db.browsingUsage.push(result.row);
+  return result;
+}
+function browseDenied(res,result){return res.status(result.signIn?401:429).set('Cache-Control','no-store').json({error:result.signIn?'Sign in to use your 30 daily property views.':'You have viewed 30 properties today. Upgrade for unlimited browsing or return after midnight Eastern.',code:result.signIn?'BROWSING_SIGN_IN':'DAILY_BROWSING_LIMIT',browsing:result.usage});}
+app.get('/api/browsing/usage',requireAuth,async(req,res)=>res.set('Cache-Control','no-store').json({browsing:dailyBrowsing.usage((req.db.browsingUsage||[]).find(r=>r.id===req.user.id),isPro(req.user))}));
+app.post('/api/browsing/view',requireAuth,async(req,res)=>{
+  const listing=req.db.listings.find(l=>l.id===req.body?.listingId&&listingFreshness(l).availabilityStatus!=='archived');
+  if(!listing)return res.status(404).json({error:'Property not found.'});
+  const result=await admitProperty(req.db,req.user,listing);if(!result.allowed)return browseDenied(res,result);
+  const owner=req.db.users.find(u=>u.id===listing.ownerId);
+  res.set('Cache-Control','no-store').json({listing:{...gateListing(listing,req.user,req.db),ownerAvatar:owner?.avatarUrl||null,ownerVerified:!!owner?.verified,isBoosted:!!(listing.boostUntil&&new Date(listing.boostUntil)>new Date()),isSpotlight:!!(listing.spotlightUntil&&new Date(listing.spotlightUntil)>new Date()),saveCount:req.db.saves.filter(x=>x.listingId===listing.id).length,savedByMe:req.db.saves.some(x=>x.userId===req.user.id&&x.listingId===listing.id),matchReasons:scoreListing(listing,req.user,req.db).reasons,momentum:listingMomentum(req.db,listing)},browsing:result.usage});
+});
 
 app.post('/api/listings/:id/view', requireAuth, async (req, res) => {
   // View analytics are intentionally isolated from the property-details read path.
@@ -2277,15 +2330,18 @@ app.get('/api/listings/:id', async (req, res) => {
   const viewer = db.users.find(u => u.id === req.session.userId);
 
   const owner = db.users.find(u => u.id === listing.ownerId);
+  const admission=await admitProperty(db,viewer,listing);if(!admission.allowed)return browseDenied(res,admission);
+  res.set('Cache-Control','no-store');
   const gated = gateListing(listing, viewer, db);
   const others = db.listings.filter(l => l.ownerId === listing.ownerId && l.id !== listing.id)
-    .map(l => ({ id: l.id, address: gated.locked ? 'Address hidden' : l.address, asking: l.asking, photos: l.photos }));
+    .map(l => ({ id: l.id, address: gateListing(l,viewer,db).locked ? 'Address hidden' : l.address, asking: l.asking, photos: l.photos }));
   const ownerCompany = owner?.companyId ? db.companies.find(c => c.id === owner.companyId) : null;
   const gatedOwner = owner ? { ...publicProfileUser(owner), email: gated.locked ? null : owner.email, phone: gated.locked ? null : owner.phone } : null;
   if (gatedOwner) gatedOwner.publicMembership = publicMembershipLabel(owner);
   if (gatedOwner && ownerCompany) gatedOwner.company = publicCompany(ownerCompany);
   res.json({
     listing: gated,
+    browsing:admission.usage,
     owner: gatedOwner,
     otherListings: others,
     unlockCredits: viewer ? viewer.unlockCredits : 0,
@@ -2295,6 +2351,7 @@ app.get('/api/listings/:id', async (req, res) => {
 });
 
 app.post('/api/listings/:id/unlock', requireAuth, async (req, res) => {
+  if(dailyBrowsing.website())return res.status(410).json({error:'Free unlocks have been replaced by 30 daily property views. Open the property to view its full details.'});
   const listing = req.db.listings.find(l => l.id === req.params.id);
   if (!listing) return res.status(404).json({ error: 'Not found.' });
   if (isAdminUser(req.user)) return res.json({ ok: true, already: true, adminUnlimited: true });
@@ -2465,6 +2522,10 @@ app.get('/api/feed', async (req, res) => {
       demo: !!l.demo
     };
   }).sort((a, b) => b._score - a._score);
+  if(dailyBrowsing.website()){
+    const browsing=dailyBrowsing.usage((db.browsingUsage||[]).find(r=>r.id===viewer?.id),isPro(viewer));
+    return res.set('Cache-Control','no-store').json({feed:[],listingIds:browsing.remaining===0?[]:feed.map(l=>l.id),browsing,requiresSignIn:!viewer,access:accessFor(viewer),dashboard:viewer?dashboardSummary(db,viewer):null});
+  }
   res.json({ feed, access: accessFor(viewer), dashboard: viewer ? dashboardSummary(db, viewer) : null });
 });
 
@@ -2628,7 +2689,7 @@ function dashboardSummary(db,user){
   for(const v of db.views.filter(v=>v.userId===user.id).sort((a,b)=>new Date(b.at)-new Date(a.at))){if(seen.has(v.listingId))continue;const l=db.listings.find(x=>x.id===v.listingId);if(l){seen.add(v.listingId);recentViewed.push({id:l.id,address:l.address,city:l.city,asking:l.asking,photo:l.photos?.[0]||null});if(recentViewed.length>=5)break;}}
   return {matched,buyerMatches,pendingOffers,upcoming,recentViewed};
 }
-require('./supportChat').install(app,{store:require('./store'),requireAuth,requireAdmin,isAdminUser,mailer});
+require('./supportChat').install(app,{store:require('./store'),requireAuth,requireAdmin,isAdminUser,mailer,canUseAi:user=>!dailyBrowsing.website()||isPro(user)});
 
 app.get('/api/dashboard', requireAuth, async (req,res)=>res.json(dashboardSummary(req.db,req.user)));
 app.get('/api/team-operations', requireAuth, async (req,res)=>{ if(!req.user.companyId)return res.status(403).json({error:'Join a Team workspace to use shared operations.'}); const members=req.db.users.filter(u=>u.companyId===req.user.companyId).map(u=>({id:u.id,name:u.name,username:u.username})); const deals=(req.db.pipelineDeals||[]).filter(x=>x.companyId===req.user.companyId); const crm=(req.db.buyerCrm||[]).filter(x=>x.companyId===req.user.companyId); const listings=req.db.listings.filter(l=>l.companyId===req.user.companyId); const activity=[...deals.map(d=>({at:d.updatedAt||d.createdAt,text:`Pipeline · ${d.title} · ${d.stage}`})),...crm.map(c=>({at:c.updatedAt||c.createdAt,text:`Buyer CRM · ${c.name} · ${c.status}`})),...listings.map(l=>({at:l.createdAt,text:`Listing posted · ${l.address}`}))].filter(x=>x.at).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,30); res.json({members,deals,activity,analytics:{pipeline:deals.length,buyers:crm.length,listings:listings.length}}); });
@@ -2687,7 +2748,7 @@ app.get('/api/affiliate/me', requireAuth, async(req,res)=>{
  const allowed=isAffiliateOnlyUser(req.user)||isAdminUser(req.user)||['pending','approved'].includes(appRow?.status);
  const leaderboard=allowed?affiliateLeaderboard.snapshot(db,result.state,req.user.id):null;
  const sales=affiliateLeaderboard.acquisitions(db).filter(c=>c.affiliateUserId===req.user.id).length;
- res.json({content:affiliateContent.read(db),pricing:PRICING,application:appRow,terms:affiliateTerms(),leaderboard,metrics:{clicks,sales,pending:bal.pending,available:bal.available,paid:bal.paid,reversed:bal.reversed},commissions:bal.rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,100),link:appRow?.status==='approved'?`${appBaseUrl()}/s/join?aff=${encodeURIComponent(appRow.code)}`:null,payoutConfigured:!!req.user.stripeAccountId});
+ res.json({content:affiliateContent.read(db),pricing:pricingForClient(),application:appRow,terms:affiliateTerms(),leaderboard,metrics:{clicks,sales,pending:bal.pending,available:bal.available,paid:bal.paid,reversed:bal.reversed},commissions:bal.rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,100),link:appRow?.status==='approved'?`${appBaseUrl()}/s/join?aff=${encodeURIComponent(appRow.code)}`:null,payoutConfigured:!!req.user.stripeAccountId});
 });
 app.post('/api/affiliate/apply', requireAuth, async(req,res)=>{
   if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });req.db.affiliateApplications=req.db.affiliateApplications||[];let row=req.db.affiliateApplications.find(a=>a.userId===req.user.id);if(row&&['pending','approved'].includes(row.status))return res.status(409).json({error:`Affiliate application is already ${row.status}.`});const b=req.body||{};row={id:crypto.randomUUID(),userId:req.user.id,name:req.user.name,email:req.user.email,status:'pending',audience:safeText(b.audience,800),channels:safeText(b.channels,500),why:safeText(b.why,1000),code:(req.user.username||req.user.referralCode||crypto.randomBytes(5).toString('hex')).replace(/[^a-z0-9_-]/gi,'').toUpperCase().slice(0,24),rateBps:AFFILIATE_RATE_BPS,termsVersion:affiliateTerms().version,termsAcceptedAt:null,createdAt:new Date().toISOString()};req.db.affiliateApplications.push(row);await saveDB(req.db);res.json({application:row});});
@@ -2704,7 +2765,7 @@ app.get('/api/admin/affiliates', requireAuth, requireAdmin, async(req,res)=>{
  const commissions=db.affiliateCommissions||[],sales=affiliateLeaderboard.acquisitions(db);
  const applications=(db.affiliateApplications||[]).map(a=>{const b=affiliateBalances(db,a.userId),own=affiliateLeaderboard.snapshot(db,result.state,a.userId).own;return {...a,rank:own.rank,currentRatePct:own.currentRatePct,metrics:{pending:b.pending,available:b.available,paid:b.paid,reversed:b.reversed,sales:sales.filter(c=>c.affiliateUserId===a.userId).length}};});
  const sum=status=>commissions.filter(c=>c.status===status).reduce((n,c)=>n+Number(c.amountCents||0),0);
- res.json({applications,terms:affiliateTerms(),content:affiliateContent.read(db),pricing:PRICING,leaderboard:affiliateLeaderboard.snapshot(db,result.state,null),commissions:commissions.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).map(c=>({...c,affiliateName:db.users.find(u=>u.id===c.affiliateUserId)?.name||'Former account'})),totals:{sales:sales.length,clicks:(db.affiliateClicks||[]).length,pending:sum('pending'),available:sum('available'),paid:sum('paid'),reversed:sum('reversed'),bonuses:commissions.filter(c=>c.kind==='sales_milestone_bonus'&&['pending','available','paid'].includes(c.status)).reduce((n,c)=>n+Number(c.amountCents||0),0)}});
+ res.json({applications,terms:affiliateTerms(),content:affiliateContent.read(db),pricing:pricingForClient(),leaderboard:affiliateLeaderboard.snapshot(db,result.state,null),commissions:commissions.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).map(c=>({...c,affiliateName:db.users.find(u=>u.id===c.affiliateUserId)?.name||'Former account'})),totals:{sales:sales.length,clicks:(db.affiliateClicks||[]).length,pending:sum('pending'),available:sum('available'),paid:sum('paid'),reversed:sum('reversed'),bonuses:commissions.filter(c=>c.kind==='sales_milestone_bonus'&&['pending','available','paid'].includes(c.status)).reduce((n,c)=>n+Number(c.amountCents||0),0)}});
 });
 app.patch('/api/admin/affiliate-content',requireAuth,requireAdmin,async(req,res)=>{
  let row;try{row=await saveAffiliateContent(req.body,req.user.id);}catch(e){return res.status(400).json({error:e.message});}
@@ -4010,6 +4071,7 @@ app.get('/api/payments/config', async (req, res) => {
 app.post('/api/payments/intent', requireAuth, async (req, res) => {
   if (isDemoUser(req.user)) return res.status(403).json({ error:'Demo accounts cannot create real billing, payouts, purchases, referrals or affiliate earnings. Convert the account to a real account first.' });
   const { purpose, listingId, tierId } = req.body || {};
+  if(dailyBrowsing.website()&&['unlock_pack','listing_unlock'].includes(purpose))return res.status(410).json({error:'Website unlock purchases have been replaced by daily property browsing.'});
   if (!payments.enabled()) return res.status(400).json({ error: 'Payments are not configured yet.' });
 
   let amount, meta = {};
