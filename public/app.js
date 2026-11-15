@@ -3569,7 +3569,7 @@ async function renderCompose() {
   wrap.appendChild(el('label', {}, 'Notes')); wrap.appendChild(f.notes);
   const openToJV = el('input', { type:'checkbox' });openToJV.checked=!!editingListing?.openToJV;
   wrap.appendChild(el('label', { class:'checkrow dealoption' }, [openToJV, el('span', {}, [el('b', {}, 'Open to JV opportunities'), el('small', {}, 'Let other professionals know you are open to discussing a joint venture on this deal.')]) ]));
-  if (state.access?.platinum || state.user?.role === 'admin') {
+  if (state.access?.pro || state.access?.adminUnlimited || state.user?.role === 'admin') {
     const aiMsg = el('div', { class: 'hint' });
     const aiBtn = el('button', { class: 'btn-ghost', type: 'button' }, '✨ Draft property notes with AI');
     aiBtn.onclick = async () => {
@@ -3585,9 +3585,9 @@ async function renderCompose() {
       } catch (e) { aiMsg.textContent = e.message; }
       finally { aiBtn.disabled = false; aiBtn.textContent = '✨ Rewrite property notes with AI'; }
     };
-    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'Platinum AI Property Assistant'), el('div', { class: 'hint' }, 'Uses property facts and photos, with fair-housing-safe instructions. Exact street address is not sent to the AI.'), aiBtn, aiMsg]));
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, state.access?.platinum || state.access?.adminUnlimited || state.user?.role==='admin' ? 'Unlimited AI Property Assistant' : 'Better Plus AI Property Assistant'), el('div', { class: 'hint' }, 'Uses property facts and photos, with fair-housing-safe instructions. Exact street address is not sent to the AI.'), aiBtn, aiMsg]));
   } else {
-    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI property writing — Platinum'), el('div', { class: 'hint' }, 'Turn your property facts and photos into clean listing notes.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See Platinum')]));
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI property writing — Plus or higher'), el('div', { class: 'hint' }, 'Turn your property facts and photos into clean listing notes.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See memberships')]));
   }
   const err = el('div', { class: 'errmsg' });
   const submit = el('button', { class: 'submitbtn' }, editingListing?'Save property changes':'Post to feed');
