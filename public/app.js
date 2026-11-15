@@ -977,14 +977,16 @@ function renderDailyFeed(wrap,packet,context){
   const ids=packet.listingIds;
   if(!ids.length){wrap.append(el('div',{class:'empty'},[el('h3',{},'No properties in this view yet'),el('p',{},'Try For You, follow a property owner, or post a property.')]));return wrap;}
   const stream=el('div',{class:'daily-feed-stream',tabindex:'0','aria-label':'Property feed. Scroll vertically to the next property.'});
-  let closed=false,busy=false,observer=null,focus=Math.max(0,ids.indexOf(state.feedFocusId));
+  const restoreFocus=!!state.feedFocusId;
+  let closed=false,busy=false,focus=Math.max(0,ids.indexOf(state.feedFocusId));
   const slots=ids.map(id=>el('section',{class:'daily-feed-slot','data-listing-id':id},el('div',{class:'daily-feed-loading',role:'status'},'Scroll here to view this property')));
-  stream.append(...slots);wrap.append(stream,el('div',{class:'daily-feed-controls'},[
+  stream.append(...slots);const controls=el('div',{class:'daily-feed-controls'},[
     el('span',{class:'hint'},'Scroll for the next property'),
     el('button',{class:'btn-ghost','aria-label':'Previous property',onclick:()=>move(-1)},'Previous'),
     el('button',{class:'btn-ghost','aria-label':'Next property',onclick:()=>move(1)},'Next')
-  ]));
-  function move(n){focus=Math.max(0,Math.min(slots.length-1,focus+n));stream.scrollTo({top:slots[focus].offsetTop,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
+  ]);wrap.append(controls,stream);
+  document.documentElement.classList.add('daily-property-feed');
+  function move(n){focus=Math.max(0,Math.min(slots.length-1,focus+n));slots[focus].scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   async function load(slot){
     if(closed||busy||slot.dataset.loaded||slot.dataset.failed)return;
     busy=true;slot.setAttribute('aria-busy','true');slot.replaceChildren(el('div',{class:'daily-feed-loading',role:'status'},'Opening property…'));
@@ -996,18 +998,18 @@ function renderDailyFeed(wrap,packet,context){
       if(closed)return;
       if(e.code==='DAILY_BROWSING_LIMIT'||e.code==='BROWSING_SIGN_IN'){
         if(e.browsing)paint(e.browsing);slot.replaceChildren(dailyBrowsingGate(e.browsing,e.code==='BROWSING_SIGN_IN'));slot.dataset.loaded='true';
-        const index=slots.indexOf(slot);slots.slice(index+1).forEach(x=>x.remove());observer?.disconnect();
+        const index=slots.indexOf(slot);slots.slice(index+1).forEach(x=>x.remove());
       }else{slot.dataset.failed='true';slot.replaceChildren(el('div',{class:'daily-feed-loading'},[el('p',{role:'alert'},e.message),el('button',{class:'btn-ghost',onclick:()=>{delete slot.dataset.failed;load(slot);}},'Try again')]));}
     }finally{busy=false;slot.removeAttribute('aria-busy');if(!closed)requestAnimationFrame(handle);}
   }
-  const handle=()=>{if(closed)return;const rect=stream.getBoundingClientRect();let best=null,area=0;
-    slots.forEach((slot,i)=>{if(!slot.isConnected)return;const r=slot.getBoundingClientRect(),a=Math.max(0,Math.min(r.bottom,rect.bottom)-Math.max(r.top,rect.top));if(a>area){area=a;best=slot;focus=i;}});
-    if(best&&area>=stream.clientHeight*.55){if(state.feedFocusId!==best.dataset.listingId){state.feedFocusId=best.dataset.listingId;if(state.view==='feed')writeRoute('replace');}load(best);}
+  const handle=()=>{if(closed)return;const bottom=Math.max(1,window.innerHeight-70);let best=null,area=0;
+    slots.forEach((slot,i)=>{if(!slot.isConnected)return;const r=slot.getBoundingClientRect(),a=Math.max(0,Math.min(r.bottom,bottom)-Math.max(r.top,0));if(a>area){area=a;best=slot;focus=i;}});
+    if(best&&area>=Math.min(best.getBoundingClientRect().height||bottom,bottom)*.35){if(state.feedFocusId!==best.dataset.listingId){state.feedFocusId=best.dataset.listingId;if(state.view==='feed')writeRoute('replace');}load(best);}
   };
-  stream.addEventListener('scroll',handle,{passive:true});
-  dailyFeedCleanup=()=>{closed=true;observer?.disconnect();stream.removeEventListener('scroll',handle);};
-  // Wait until mounted. No offscreen prefetch or quota use for invisible cards.
-  requestAnimationFrame(()=>{if(closed)return;stream.scrollTop=slots[focus].offsetTop;handle();});
+  window.addEventListener('scroll',handle,{passive:true});window.addEventListener('resize',handle,{passive:true});
+  dailyFeedCleanup=()=>{closed=true;window.removeEventListener('scroll',handle);window.removeEventListener('resize',handle);document.documentElement.classList.remove('daily-property-feed');};
+  // Use the document's natural vertical scroll; never trap touch/wheel input in a second scroller.
+  requestAnimationFrame(()=>{if(closed)return;if(restoreFocus)slots[focus].scrollIntoView({block:'start',behavior:'auto'});handle();});
   return wrap;
 }
 
@@ -1103,6 +1105,7 @@ async function renderFeed(context = liveUIContext()) {
 
 function propertyCard(l, context = liveUIContext()) {
  const {api, go, render, openListingDetail, openPropertyShare} = context;
+  if(l.browsingRequired)return el('div',{class:'pcard daily-property-preview'},[el('h3',{},'Open property'),el('p',{class:'hint'},'Includes full details and seller contact information. Counts as one of your 30 daily views on Free.'),el('button',{class:'btn-primary',onclick:()=>openListingDetail(l.id)},'View property')]);
   const spread = l.arv ? l.arv - l.asking : 0;
   let idx = 0;
   const imgEl = el('div', { class: 'imgwrap' });
