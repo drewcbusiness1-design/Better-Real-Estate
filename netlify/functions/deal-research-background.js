@@ -5,11 +5,13 @@ const dealSources=require('../../dealSources');
 const intelligence=require('../../dealIntelligence');
 const cache=require('../../dealResearchCache');
 const ai=require('../../ai');
+const freeUsage=require('../../websiteAiUsage').create(require('../../store'));
 
 exports.handler=async(event)=>{
   let body={};try{body=JSON.parse(event.body||'{}')}catch{return}
   const job=await jobs.authorizedJob(body.jobId,body.runToken,'run');
   if(!job||!['queued','running'].includes(job.status))return;
+  if(job.websiteFreeReservation){const claim=await freeUsage.claim(job.userId,job.websiteFreeReservation,'worker');if(!claim.claimed)return;}
   const started=Date.now();
   try{
     await jobs.updateJob(job.id,{status:'running',phase:'identity',progress:8,message:'Resolving the exact property and checking deterministic records.',startedAt:new Date().toISOString(),attempt:Number(job.attempt||0)+1});
@@ -25,9 +27,11 @@ exports.handler=async(event)=>{
     }
     await jobs.updateJob(job.id,{status:'running',phase:'saving',progress:98,message:'Saving evidence, valuation and investor analysis.'});
     await cache.persistEvidence(job.address,evidence,{synthesis,synthesisFailure});
+    if(job.websiteFreeReservation)await freeUsage.settle(job.userId,job.websiteFreeReservation,Boolean(comp.valuationReady&&enoughIdentity&&synthesis&&intelligence.dealValuationPrecision(evidence,comp)!=='withheld'));
     const completeMessage=comp.valuationReady?'Research complete. Property facts, closed comps and precise ARV support are ready.':comp.indicativeReady?'Research complete. Property evidence and a defensible working ARV range are ready.':'Research complete. Better preserved the evidence it could establish and withheld unsupported ARV.';
     await jobs.updateJob(job.id,{status:'complete',phase:'complete',progress:100,message:completeMessage,completedAt:new Date().toISOString(),durationMs:Date.now()-started,evidence});
   }catch(e){
+    if(job.websiteFreeReservation)await freeUsage.settle(job.userId,job.websiteFreeReservation,false);
     console.error('[deal research background]',e?.message,e?.stack);
     await jobs.updateJob(job.id,{status:'failed',phase:'failed',progress:100,message:'Property research could not complete.',error:String(e?.message||e).slice(0,400),completedAt:new Date().toISOString(),durationMs:Date.now()-started});
   }

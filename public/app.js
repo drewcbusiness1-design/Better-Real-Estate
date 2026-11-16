@@ -109,8 +109,9 @@ async function api(method, path, body, consentRetried = false) {
   if(res.status===403&&data.code==='AI_CONSENT_REQUIRED'&&!consentRetried&&window.BetterAIConsent){await window.BetterAIConsent.request();return api(method,path,body,true);}
   if (!res.ok) {
     const error=new Error(res.status===413 ? 'The upload is too large. Your form is still here; try fewer photos or smaller images.' : (data.error || 'Something went wrong.'));
-    error.status=res.status;throw error;
+    error.status=res.status;error.code=data.code;error.browsing=data.browsing;throw error;
   }
+  if(data.browsing)state.browsing=data.browsing;
   try{mascotActionCompleted(method,path,data,actionTarget);}catch{}
   return data;
 }
@@ -185,6 +186,7 @@ function applyRouteParams(params) {
   if(requested==='auth'&&['login','signup'].includes(params.get('mode')))state.authMode=params.get('mode');
   state.navigationWorkspace = params.get('workspace') === 'services' || ['services','servicesdirectory'].includes(requested) ? 'services' : 'main';
   if (requested && ROUTED_VIEWS.has(requested)) state.view = requested;
+  if(state.view==='feed'){state.feedFocusId=params.get('feedItem')||null;state.feedMode=params.get('mode')==='following'?'following':'for-you';}
   const id = params.get('id');
   const userId = params.get('user');
   const itemId = params.get('item');
@@ -209,6 +211,7 @@ function applyRouteParams(params) {
 }
 function routeUrl(view = state.view) {
   const p = new URLSearchParams();
+  if(view==='feed'){if(state.feedFocusId)p.set('feedItem',state.feedFocusId);if(state.feedMode==='following')p.set('mode','following');}
   if (state.navigationWorkspace === 'services') p.set('workspace','services');
   if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
@@ -325,7 +328,7 @@ async function refreshUnread() {
 function notificationCountFor(view){ return Number(state.notificationSummary?.destinations?.[view] || 0); }
 function notificationBadge(count, className='navcount'){ const n=Number(count||0); return n>0?el('span',{class:className},n>99?'99+':String(n)):null; }
 let viewPollTimer = null;
-function stopViewPolling() { if (viewPollTimer) { clearInterval(viewPollTimer); viewPollTimer = null; } }
+function stopViewPolling() { stopDailyFeed(); if (viewPollTimer) { clearInterval(viewPollTimer); viewPollTimer = null; } }
 function startViewPolling(fn, ms = 5000) {
   stopViewPolling();
   viewPollTimer = setInterval(() => {
@@ -901,7 +904,7 @@ function renderAuth() {
   wrap.appendChild(el('label', {}, 'Password')); wrap.appendChild(pass);
   if (isSignup) {
     wrap.appendChild(el('label', {}, 'Phone number (optional)')); wrap.appendChild(signupPhone);
-    wrap.appendChild(el('div',{class:'hint'},'Recommended for your account. Required if you later request a verification badge; no SMS is sent. Property contact is shared after unlock.'));
+    wrap.appendChild(el('div',{class:'hint'},'Recommended for your account. Required if you later request a verification badge; no SMS is sent. Free membership includes seller contact information within your 30 daily property views.'));
     wrap.appendChild(el('label', {}, 'Referral code')); wrap.appendChild(ref);
   }
   if(isSignup)wrap.appendChild(el('p',{class:'hint'},'By creating an account, you agree to receive Better product and activity emails. Unsubscribe anytime in Settings or from a marketing email. Account and security messages are separate.'));
@@ -949,37 +952,48 @@ function renderAuth() {
 }
 
 /* ================= TRIAL / UPGRADE BAR ================= */
-function trialBar() {
-  if (!state.user || !state.access) return null;
-  if (state.access.platinum) return null;
-  if (state.access.trial) {
-    const daysLeft = Math.max(0, Math.ceil((new Date(state.user.trialUntil) - Date.now()) / 86400000));
-    return el('div', { class: 'trialbar' }, [
-      el('div', {}, `Free trial — ${daysLeft} day${daysLeft === 1 ? '' : 's'} left. Full access to every listing.`),
-      el('button', { onclick: () => go('upgrade') }, 'See plans')
-    ]);
-  }
-  if (state.access.pro) {
-    // Already paying — the nudge here is upward to Platinum, not a
-    // generic "upgrade" (they're already upgraded once).
-    return el('div', { class: 'trialbar' }, [
-      el('div', {}, 'Get matching listings emailed to you before anyone else sees them — that\'s Platinum.'),
-      el('button', { onclick: () => go('upgrade') }, 'See Platinum')
-    ]);
-  }
-  return el('div', { class: 'trialbar' }, [
-    el('div', {}, `${state.user.unlockCredits} free unlock${state.user.unlockCredits === 1 ? '' : 's'} left. Plus gives you unlimited.`),
-    el('button', { onclick: () => go('upgrade') }, 'Upgrade')
-  ]);
+function trialBar() { return null; }
+function browsingResetText(u){return u?.resetsAt?'Resets '+new Date(u.resetsAt).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' Eastern.':'Resets at midnight Eastern.';}
+function dailyBrowsingGate(u=state.browsing,signIn=false){
+  const card=el('section',{class:'daily-browsing-gate',role:'region','aria-label':'Daily property allowance'},[
+    el('span',{class:'daily-browsing-kicker'},'YOUR DAILY BROWSE'),
+    el('h3',{},signIn?'Your next property starts here':'You have opened today’s 30 properties'),
+    el('p',{},signIn?'Join free to view 30 properties a day, including full details and seller contact information.':'Open more property details with Plus, or keep scrolling through previews and return after your daily allowance resets.'),
+    el('p',{class:'hint'},browsingResetText(u)),
+    el('div',{class:'daily-browsing-actions'},[
+      el('button',{class:'btn-primary',onclick:()=>go(signIn?'auth':'upgrade',signIn?{authMode:'signup'}:{})},signIn?'Join free':'See memberships'),
+      el('button',{class:'btn-ghost',onclick:()=>{state.feedFocusId=null;go('feed');}},signIn?'Back to feed':'Keep scrolling')
+    ]),el('p',{class:'hint'},'Free includes two AI property analyses per day.')
+  ]);return card;
+}
+let dailyFeedCleanup=null;
+function stopDailyFeed(){if(dailyFeedCleanup){dailyFeedCleanup();dailyFeedCleanup=null;}}
+function renderDailyFeed(wrap,packet,context){
+  const {state}=context;state.browsing=packet.browsing;
+  const usage=packet.browsing;
+  wrap.appendChild(el('div',{class:'daily-browsing-summary',role:'status','aria-live':'polite'},[
+    el('b',{},usage.unlimited?'Unlimited property details':`${usage.remaining} of 30 detail views remaining`),
+    el('span',{},usage.unlimited?'Your membership includes full details and seller contacts.':'Scrolling is free. Opening full details counts once per property each day. '+browsingResetText(usage))
+  ]));
+  if(packet.requiresSignIn){wrap.append(dailyBrowsingGate(usage,true));return wrap;}
+  const listings=packet.feed||[];
+  if(!listings.length){wrap.append(el('div',{class:'empty'},[el('h3',{},'No properties in this view yet'),el('p',{},'Try For You, follow a property owner, or post a property.')]));return wrap;}
+  const stream=el('div',{class:'daily-feed-stream','aria-label':'Property feed. Scroll vertically to the next property.'});
+  const slots=listings.map(listing=>el('section',{class:'daily-feed-slot','data-listing-id':listing.id},propertyCard(listing,context)));
+  stream.append(...slots);wrap.appendChild(stream);
+  document.documentElement.classList.add('daily-property-feed');
+  let closed=false;
+  const handle=()=>{if(closed)return;let best=null,area=0;const bottom=Math.max(1,window.innerHeight-70);
+    for(const slot of slots){const rect=slot.getBoundingClientRect(),visible=Math.max(0,Math.min(rect.bottom,bottom)-Math.max(rect.top,0));if(visible>area){area=visible;best=slot;}}
+    if(best&&state.feedFocusId!==best.dataset.listingId){state.feedFocusId=best.dataset.listingId;if(state.view==='feed')writeRoute('replace');}
+  };
+  const restored=slots.find(slot=>slot.dataset.listingId===state.feedFocusId);
+  window.addEventListener('scroll',handle,{passive:true});window.addEventListener('resize',handle,{passive:true});
+  dailyFeedCleanup=()=>{closed=true;window.removeEventListener('scroll',handle);window.removeEventListener('resize',handle);document.documentElement.classList.remove('daily-property-feed');};
+  requestAnimationFrame(()=>{if(closed)return;if(restored)restored.scrollIntoView({block:'start',behavior:'auto'});handle();});
+  return wrap;
 }
 
-/* ================= CARD PAYMENT MODAL ================= */
-// Shared by every purchase button. If the server says the wallet balance
-// already covered it (or Stripe isn't configured yet), there's nothing to
-// do here. Otherwise this shows a real Stripe card form, confirms the
-// charge with Stripe directly (the card number never touches this
-// server), then waits briefly for the webhook to actually grant the
-// purchase before refreshing.
 async function handlePurchaseResponse(resp, successMsg, onDone) {
   if (!resp?.requiresPayment) {
     toast(successMsg, 'ok');
@@ -1045,12 +1059,14 @@ async function renderFeed(context = liveUIContext()) {
   const vb = context.demo ? null : verifyBanner(); if (vb) wrap.appendChild(vb);
   const tb = context.demo ? null : trialBar(); if (tb) wrap.appendChild(tb);
   wrap.appendChild(el('div', { class: 'feedhead' }, [
-    el('div',{class:'feedmode'},[el('button',{class:state.feedMode==='for-you'?'active':'',onclick:()=>{state.feedMode='for-you';render();}},'For You'),el('button',{class:state.feedMode==='following'?'active':'',onclick:()=>{state.feedMode='following';render();}},'Following')]),
+    el('div',{class:'feedmode'},[el('button',{class:state.feedMode==='for-you'?'active':'',onclick:()=>{state.feedMode='for-you';if(!context.demo){state.feedFocusId=null;writeRoute('replace');}render();}},'For You'),el('button',{class:state.feedMode==='following'?'active':'',onclick:()=>{state.feedMode='following';if(!context.demo){state.feedFocusId=null;writeRoute('replace');}render();}},'Following')]),
     el('div', {class:'feedtools'}, [el('button', { class: 'filterbtn', onclick: () => go('search') }, 'Search'),el('button', { class: 'filterbtn', onclick: () => go('saved') }, 'Liked'),el('button', { class: 'filterbtn', onclick: () => go('savedsearches') }, 'Deal alerts')])
   ]));
-  const { feed, access, dashboard: dash } = await api('GET', '/api/feed?mode='+encodeURIComponent(state.feedMode));
+  const packet=await api('GET', '/api/feed?mode='+encodeURIComponent(state.feedMode));
+  const {feed,access,dashboard: dash}=packet;
   state.access = access || state.access;
   if(dash) wrap.insertBefore(el('div',{class:'feedcommand'},[el('div',{class:'feedcommand-stats'},[miniMetric(dash.matched,'Market matches'),miniMetric(dash.buyerMatches,'Buyer matches'),miniMetric(dash.pendingOffers,'Pending offers'),miniMetric(dash.upcoming?new Date(dash.upcoming.at).toLocaleDateString():'—','Next deadline')]) ]), wrap.firstChild);
+  if(Array.isArray(packet.listingIds)&&!context.demo)return renderDailyFeed(wrap,packet,context);
   if (!feed.length && context.demo) { wrap.appendChild(el('div',{class:'empty'},[el('h3',{},'No sample properties in this view'),el('p',{},'Switch to For You to browse all sample properties. Save a property to try the Liked view; follow the sample buyer to explore Following.'),el('button',{class:'btn-ghost',onclick:()=>{state.feedMode='for-you';go('feed');}},'Browse sample properties')]));return wrap;}
   if (!feed.length) {
     wrap.appendChild(el('div', { class: 'empty' }, [
@@ -1070,6 +1086,7 @@ async function renderFeed(context = liveUIContext()) {
 
 function propertyCard(l, context = liveUIContext()) {
  const {api, go, render, openListingDetail, openPropertyShare} = context;
+  if(l.browsingRequired)return el('div',{class:'pcard daily-property-preview'},[el('h3',{},'Open property'),el('p',{class:'hint'},'Includes full details and seller contact information. Counts as one of your 30 daily views on Free.'),el('button',{class:'btn-primary',onclick:()=>openListingDetail(l.id)},'View property')]);
   const spread = l.arv ? l.arv - l.asking : 0;
   let idx = 0;
   const imgEl = el('div', { class: 'imgwrap' });
@@ -1152,7 +1169,7 @@ function propertyCard(l, context = liveUIContext()) {
         !context.demo&&canEditProperty(l,context.state)?el('button',{class:'btn-ghost',onclick:e=>{e.stopPropagation();go('compose',{composeEditId:l.id});}},'Edit property'):null,
         el('button', { onclick: e => { e.stopPropagation(); openPropertyShare(l); } }, 'Share'),
         el('button', { title:'Hide this property and improve recommendations', onclick: async e => { e.stopPropagation(); await api('POST','/api/feed/feedback',{listingId:l.id,kind:'hide'}); toast('Hidden from your feed','ok'); render(); } }, 'Not interested'),
-        el('button', { class: 'primary', onclick: e => { e.stopPropagation(); openListingDetail(l, idx); } }, l.locked ? '🔒 Unlock' : 'View details')
+        el('button', { class: 'primary', onclick: e => { e.stopPropagation(); openListingDetail(l, idx); } }, 'View details')
       ])
     ])
   ]);
@@ -1336,7 +1353,7 @@ async function maybeShowFirstLoginPayoff() {
 async function renderDetail(context = liveUIContext()) {
  const {state, api, go, render} = context;
   if (!state.detailId) throw new Error('This property link is missing its listing ID. Return to the feed and open it again.');
-  const d = await api('GET', '/api/listings/' + encodeURIComponent(state.detailId));
+  let d;try{d=await api('GET','/api/listings/' + encodeURIComponent(state.detailId));}catch(e){if(e.code==='DAILY_BROWSING_LIMIT'||e.code==='BROWSING_SIGN_IN'){const wrap=el('div',{class:'page'});wrap.append(el('button',{class:'backbtn',onclick:()=>go('feed')},'Back to feed'),dailyBrowsingGate(e.browsing,e.code==='BROWSING_SIGN_IN'));return wrap;}throw e;}
   const { listing, owner, otherListings, reviews } = d;
   state.access = d.access || state.access;
   const wrap = el('div', { class: 'detail' });
@@ -1391,35 +1408,7 @@ async function renderDetail(context = liveUIContext()) {
   wrap.appendChild(el('div', { class: 'dgrid' }, cells.map(([l, v]) => el('div', { class: 'dcell' }, [el('div', { class: 'l' }, l), el('div', { class: 'v' }, String(v))]))));
 
   // ---- PAYWALL ----
-  if (listing.locked) {
-    wrap.appendChild(el('div', { class: 'dsection' }, [
-      el('h3', {}, 'Full details'),
-      el('div', { class: 'lockwrap' }, [
-        el('div', { class: 'blurred' }, [
-          el('div', { class: 'dnotes' }, 'Exact address, seller notes, phone number and email are hidden until you unlock this listing. Sellers on Better Real Estate share direct contact so you can negotiate without a middleman.'),
-          el('div', { class: 'ownerbox', style: 'margin-top:14px' }, [el('div', { class: 'av' }, '••'), el('div', { class: 'meta' }, [el('div', { class: 'n' }, '••••• •••••'), el('div', { class: 's' }, '(•••) •••-••••')])])
-        ]),
-        el('div', { class: 'lockoverlay' }, [
-          el('div', { class: 'lk' }, '🔒'),
-          el('div', { class: 'lt' }, state.user.unlockCredits > 0
-            ? `Unlock with 1 of your ${state.user.unlockCredits} free credits`
-            : `Unlock for ${cents(state.pricing.unlockCredit)}`),
-          el('div', { class: 'ld' }, 'Exact address, seller notes, phone and email — plus the ability to make an offer.'),
-          el('button', {
-            class: 'btn-primary', onclick: async () => {
-              try {
-                const r = await api('POST', `/api/listings/${listing.id}/unlock`);
-                await handlePurchaseResponse(r, 'Unlocked', async () => { await refreshMe(); render(); });
-              } catch (e) { toast(e.message, 'err'); }
-            }
-          }, state.user.unlockCredits > 0 ? 'Use free credit' : 'Unlock ' + cents(state.pricing.unlockCredit)),
-          el('a', { onclick: () => go('upgrade') }, 'or go Plus for unlimited')
-        ])
-      ])
-    ]));
-    wrap.appendChild(dealCalculator(listing));
-    return wrap;
-  }
+  if(listing.locked){wrap.appendChild(dailyBrowsingGate(d.browsing,!state.user));return wrap;}
 
   if (listing.notes) wrap.appendChild(el('div', { class: 'dsection' }, [el('h3', {}, 'Seller notes'), el('div', { class: 'dnotes' }, listing.notes)]));
   wrap.appendChild(dealCalculator(listing));
@@ -1644,7 +1633,7 @@ function renderUpgrade() {
   const p = state.pricing;
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Plans'));
-  wrap.appendChild(el('div', { class: 'sub' }, 'Your account stays free. Browse the feed anytime, and upgrade only when you want more unlocks or the full toolkit.'));
+  wrap.appendChild(el('div', { class: 'sub' }, 'Free includes 30 full property-detail views and two AI property analyses daily. Scrolling through previews is free. Property views include full details and seller contacts. Upgrade for unlimited browsing and higher AI allowances.'));
 
   const st = el('div', { class: 'okmsg' });
   const adminUnlimited = state.access?.adminUnlimited === true || state.user?.role === 'admin';
@@ -1654,7 +1643,7 @@ function renderUpgrade() {
   if (adminUnlimited) {
     wrap.appendChild(el('div', { class: 'card', style: 'padding:18px;margin:14px 0;border:1px solid var(--accent)' }, [
       el('h3', { style: 'margin:0 0 6px' }, 'Admin — Unlimited access'),
-      el('div', { class: 'sub' }, 'All Better Real Estate platform features are permanently unlocked for this admin account. No subscription, unlock packs, AI quota, buy-box cap, or promotion charge is required.')
+      el('div', { class: 'sub' }, 'All Better Real Estate platform features are permanently unlocked for this admin account. No subscription, browsing cap, AI quota, buy-box cap, or promotion charge is required.')
     ]));
   }
   if (!adminUnlimited && state.access?.grantPlan && state.access?.grantUntil && new Date(state.access.grantUntil) > new Date()) {
@@ -1703,17 +1692,17 @@ function renderUpgrade() {
       onAnnual: adminUnlimited || companySeatAccess ? null : () => subscribeTo('wholesale', 'annual', st)
     }),
     tierCard({
-      key: 'pro', name: p.pro.label, tagline: 'For anyone unlocking regularly',
+      key: 'pro', name: p.pro.label, tagline: 'Unlimited browsing and everyday AI tools',
       priceLine: cents(p.pro.monthly) + '/mo or ' + cents(p.pro.annual) + '/yr',
-      perks: ['Unlimited listing unlocks', 'Analytics on your own listings', 'Plus badge on your profile', 'AI Deal Builder — 5 analyses per day', 'AI listing assistant — 2 drafts per day', 'Better Dispo AI enhancement — 3 imports per day'],
+      perks: ['Unlimited property browsing with full details and seller contacts', 'Analytics on your own listings', 'Plus badge on your profile', 'AI Deal Builder — 5 analyses per day', 'AI listing assistant — 2 drafts per day', 'Better Dispo AI enhancement — 3 imports per day'],
       current: currentTier === 'pro',
       onMonthly: adminUnlimited ? null : () => subscribeTo('pro', 'monthly', st),
       onAnnual: adminUnlimited ? null : () => subscribeTo('pro', 'annual', st)
     }),
     tierCard({
-      key: 'free', name: 'Free', tagline: 'Free account · includes 7 days of full access',
+      key: 'free', name: 'Free', tagline: '30 full property-detail views every day',
       priceLine: 'Free',
-      perks: ['Browse the whole feed, always', '5 free listing unlocks', `${cents(p.unlockCredit)} per unlock after that`, 'Smart deal-import parser and public buyer-list page'],
+      perks: ['30 distinct property-detail views per day', 'Full property details, seller notes and contact information', 'Daily allowance resets at midnight Eastern', '2 AI Deal Builder analyses per day', 'Smart deal-import parser and public buyer-list page'],
       current: currentTier === 'free'
     })
   ]));
@@ -1743,22 +1732,6 @@ function renderUpgrade() {
     ]));
   }
 
-  if (!adminUnlimited) {
-    wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Or just buy unlocks'));
-    wrap.appendChild(el('div', { class: 'card', style: 'padding:22px' }, [
-      el('h3', { style: 'margin:0 0 4px;font-size:18px' }, `${p.unlockPack.qty} unlock pack`),
-      el('div', { style: "font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:700" }, cents(p.unlockPack.price)),
-      el('div', { class: 'sub' }, `${cents(Math.round(p.unlockPack.price / p.unlockPack.qty))} each vs ${cents(p.unlockCredit)} one at a time`),
-      el('button', {
-        class: 'submitbtn', onclick: async () => {
-          try {
-            const r = await api('POST', '/api/billing/unlock-pack');
-            await handlePurchaseResponse(r, 'Credits added.', async () => { await refreshMe(); render(); });
-          } catch (e) { st.className = 'errmsg'; st.textContent = e.message; }
-        }
-      }, 'Buy pack')
-    ]));
-  }
   return wrap;
 }
 
@@ -3058,7 +3031,7 @@ async function renderLearnWholesaling(){
 
 /* ================= COMPOSE ================= */
 
-const TUTORIAL_VERSION = 93;
+const TUTORIAL_VERSION = 94;
 function tutorialTier(){
   if(state.user?.role==='admin'||state.access?.adminUnlimited)return'admin';
   if(state.access?.wholesale)return'wholesale'; if(state.access?.platinum)return'platinum';
@@ -3076,12 +3049,13 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'markethubs',selector:'.connected-section',min:0,release:77,title:'Find title company contacts',copy:'Market Hubs includes an independent title-company directory. Matching service states also appear on property details. Confirm licensing, fees and suitability directly; this is not an expedited title service.'},
  {view:'buyercrm',selector:'.buyercrmpage',min:0,release:77,title:'Bring your buyer relationships',copy:'Import a CSV with column mapping and duplicate review, export private notes, and save structured criteria. Contacts stay private and are never automatically invited.'},
  {view:'settings',selector:'#app .page',min:0,release:77,title:'Relevant property alerts',copy:'New properties alert matching members in Better by default. Turn automatic listing matching off in Settings. Missing required facts do not count as confirmed matches. Respond from property details and follow progress on the seller response board.'},
+ {view:'feed',selector:'.daily-browsing-summary',min:0,release:94,title:'Your daily property views',copy:'Free includes 30 distinct full property-detail views daily with seller contacts. Scrolling through previews is free. Opening details uses one view; revisiting the same property that day does not use another view. The allowance resets at midnight Eastern. Free includes two successful new-property AI analyses per day. Plus includes five per day; Platinum and Teams include unlimited analyses. Other AI tools remain membership based.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:76,title:'Gestures with a purpose',copy:'Better Guide uses a connected wave to greet you, a careful two-paw acknowledgement for a saved property, an outward gesture after sending a message and a deliberate nod when a deal advances. Celebrations remain for real milestones. Motion can be disabled in Settings and respects reduced-motion preferences.'},
  {view:'settings',selector:'#app .page',min:0,release:76,title:'Tutorial controls that fit',copy:'Desktop walkthroughs keep Move left and Move right controls in Better’s button style. On mobile the tutorial stays at the bottom with touch scrolling. Restart the 10-step introduction or open the full walkthrough from Settings or the dog menu.'},
  {view:'upgrade',selector:'.tiergrid4',min:0,release:75,title:'Choose your Better Credits',copy:'Select a plan to review checkout. Credits are optional: choose an amount up to your available balance and the first payment, then review the remaining amount due. Unused credits stay in your wallet; renewals are unchanged.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:75,title:'A shorter introduction',copy:'The main tutorial now takes 10 steps. Open Full platform walkthrough in the dog menu or Settings for all existing feature guidance. Both tutorials can be skipped.'},
  {view:'support',selector:'.support-page',min:0,release:75,title:'Meet Better Guide once',copy:'Better Guide introduces itself as an AI assistant once in your saved conversation. Later messages and reopening the chat do not repeat the introduction. Human support remains available.'},
- {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact remains available only after unlock.'},
+ {view:'settings',selector:'.account-phone-field',min:0,release:73,title:'Phone and verification',copy:'Adding a phone number is optional for ordinary account use. Add one in Settings before requesting an admin-reviewed verification badge. A phone number is not SMS verification; listing contact is included within Free’s 30 daily property views.'},
  {view:'admin',selector:'.admin-section-controls',min:0,release:87,title:'Organized administration',copy:'User Inspector defaults to all account types, including affiliates. Search, filter or page through the counted list. Open member entries to edit profiles, manage grants or choose reminder/message/email actions. Broadcast history expands to show saved content. Section choices are remembered on this device.'},
  {view:'manageproperties',selector:'.manage-properties',min:0,release:84,title:'Manage your property posts',copy:'Open Manage my properties from Profile or Quick Options. Edit, mark sold or delete your own posts; deletion asks for confirmation.'},
  {view:'feedback',selector:'.feedback-page',min:0,release:83,title:'Private reports and feedback',copy:'Use the Better dog to report issues, suggest features and review admin replies. Screenshot attachments stay private to your report.'},
@@ -3311,11 +3285,12 @@ function dealValuationPrecision(ev,ca){
 }
 
 async function renderDealBuilder(){
+
   const wrap=el('div',{class:'page dealbuilderpage'});
   wrap.appendChild(el('div',{class:'pagehead'},[el('div',{},[el('div',{class:'dispoeyebrow'},'PROPERTY INTELLIGENCE'),el('h2',{},'AI Deal Builder'),el('div',{class:'sub'},'Start with an address. Better resolves the exact property first, checks approved records and authorized MLS data, conditionally corroborates unresolved facts on the public web, screens closed-sale comps, and only then allows AI to synthesize the verified evidence.')]) ]));
   const propertyKind=el('select',{'aria-label':'Property analysis type'},[el('option',{value:'auto'},'Detect property type from evidence'),el('option',{value:'land'},'Land / vacant lot — confirm with sources')]);
   const address=el('input',{placeholder:'123 Main St, City, ST 12345',value:state.analysisAddress||''}),run=el('button',{class:'btn-primary'},'Analyze property'),status=el('div',{class:'hint'}),results=el('div'),usage=el('div',{class:'dealbuilderusage'});
-  const paintUsage=(u)=>{usage.innerHTML='';if(!u)return;usage.appendChild(el('div',{class:'usagepill '+(u.unlimited?'unlimited':'')},u.label));if(!u.unlimited)usage.appendChild(el('div',{class:'hint'},u.limit===5?'Plus includes 5 successful new-property analyses per day.':'Free trial includes one successful property analysis.'));};
+  const paintUsage=(u)=>{usage.innerHTML='';if(!u)return;usage.appendChild(el('div',{class:'usagepill '+(u.unlimited?'unlimited':'')},u.label));if(!u.unlimited)usage.appendChild(el('div',{class:'hint'},u.limit===5?'Plus includes 5 successful new-property analyses per day.':u.limit===2?'Free includes two successful new-property analyses daily, resetting at midnight Eastern. Failed analyses and reopening completed properties do not use another analysis.':'Review Plans for your AI allowance.'));};
   try{paintUsage((await api('GET','/api/deal-builder/usage')).usage)}catch(e){status.textContent=e.message||'Unable to load Deal Builder allowance.'}
   const search=el('div',{class:'card dealbuildersearch'},[el('div',{class:'dealbuildersearchtop'},[el('label',{},'Property address'),usage]),el('div',{class:'dealbuildersearchrow'},[address,run]),status]);search.append(propertyKind);wrap.appendChild(search);wrap.appendChild(results);
   const fmtFact=(field,v)=>{if(v===null||v===undefined||v==='')return '—';if(field==='squareFootage')return Number(v).toLocaleString()+' sq ft';if(field==='bathrooms')return Number(v)%1?Number(v).toFixed(1):String(Number(v));return String(v)};
@@ -3575,7 +3550,7 @@ async function renderCompose() {
   wrap.appendChild(el('label', {}, 'Notes')); wrap.appendChild(f.notes);
   const openToJV = el('input', { type:'checkbox' });openToJV.checked=!!editingListing?.openToJV;
   wrap.appendChild(el('label', { class:'checkrow dealoption' }, [openToJV, el('span', {}, [el('b', {}, 'Open to JV opportunities'), el('small', {}, 'Let other professionals know you are open to discussing a joint venture on this deal.')]) ]));
-  if (state.access?.platinum || state.user?.role === 'admin') {
+  if (state.access?.pro || state.access?.adminUnlimited || state.user?.role === 'admin') {
     const aiMsg = el('div', { class: 'hint' });
     const aiBtn = el('button', { class: 'btn-ghost', type: 'button' }, '✨ Draft property notes with AI');
     aiBtn.onclick = async () => {
@@ -3591,9 +3566,9 @@ async function renderCompose() {
       } catch (e) { aiMsg.textContent = e.message; }
       finally { aiBtn.disabled = false; aiBtn.textContent = '✨ Rewrite property notes with AI'; }
     };
-    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'Platinum AI Property Assistant'), el('div', { class: 'hint' }, 'Uses property facts and photos, with fair-housing-safe instructions. Exact street address is not sent to the AI.'), aiBtn, aiMsg]));
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, state.access?.platinum || state.access?.adminUnlimited || state.user?.role==='admin' ? 'Unlimited AI Property Assistant' : 'Better Plus AI Property Assistant'), el('div', { class: 'hint' }, 'Uses property facts and photos, with fair-housing-safe instructions. Exact street address is not sent to the AI.'), aiBtn, aiMsg]));
   } else {
-    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI property writing — Platinum'), el('div', { class: 'hint' }, 'Turn your property facts and photos into clean listing notes.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See Platinum')]));
+    wrap.appendChild(el('div', { class: 'aibox' }, [el('b', {}, 'AI property writing — Plus or higher'), el('div', { class: 'hint' }, 'Turn your property facts and photos into clean listing notes.'), el('button', { class: 'btn-ghost', type: 'button', onclick: () => go('upgrade') }, 'See memberships')]));
   }
   const err = el('div', { class: 'errmsg' });
   const submit = el('button', { class: 'submitbtn' }, editingListing?'Save property changes':'Post to feed');
@@ -3683,6 +3658,7 @@ async function renderSaved() {
   listings.forEach(l => {
     const toggle=el('button',{class:'watchtoggle '+(l.notifyChanges?'on':'')},l.notifyChanges?'Notifications on':'Notifications off');
     toggle.onclick=async e=>{e.stopPropagation();const next=!l.notifyChanges;const r=await api('PATCH','/api/saves/'+encodeURIComponent(l.id)+'/notifications',{enabled:next});l.notifyChanges=r.enabled;toggle.className='watchtoggle '+(r.enabled?'on':'');toggle.textContent=r.enabled?'Notifications on':'Notifications off';toast(r.enabled?'Change notifications enabled':'Notifications paused','ok');};
+    if(l.browsingRequired){const preview=propertyCard(l);preview.appendChild(toggle);grid.appendChild(preview);return;}
     grid.appendChild(el('div',{class:'watchcard'},[el('div',{class:'watchphoto',onclick:()=>go('detail',{detailId:l.id,photoIdx:0})},l.photos?.length?el('img',{src:l.photos[0]}):el('div',{class:'nophoto'},'No photo')),el('div',{class:'watchbody'},[el('b',{onclick:()=>go('detail',{detailId:l.id,photoIdx:0})},l.address),el('span',{},l.city+' · '+money(l.asking)),toggle]) ]));
   });
   wrap.appendChild(grid); return wrap;
@@ -4136,7 +4112,7 @@ async function renderMe() {
   wrap.appendChild(mineHeader);
 
   wrap.appendChild(el('div', { class: 'statgrid' }, [
-    stat(cents(w.balance), 'Wallet'), stat(state.user.unlockCredits, 'Unlocks'), stat(d.listings.length, 'Listings')
+    stat(cents(w.balance), 'Wallet'), stat(state.access?.pro?'Unlimited':'30 / day', 'Property views'), stat(d.listings.length, 'Listings')
   ]));
 
   if(state.user.founderLaunchPosition){
@@ -4247,7 +4223,7 @@ async function renderProfile(context = liveUIContext()) {
   }
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Listings'));
   const grid = el('div', { class: 'minigrid' });
-  listings.forEach(l => grid.appendChild(el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
+  listings.forEach(l => grid.appendChild(l.browsingRequired ? propertyCard(l) : el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
     el('div', { class: 'mi' }, l.photos?.length ? el('img', { src: l.photos[0] }) : null),
     el('div', { class: 'mt' }, [el('b', {}, l.address), el('span', {}, money(l.asking))])
   ])));
@@ -4413,7 +4389,7 @@ function renderSettings() {
   pbox.appendChild(el('label', {}, 'Display name')); pbox.appendChild(nameI);
   pbox.appendChild(el('label', {}, 'Username')); pbox.appendChild(usernameI);
   pbox.appendChild(el('div', { class: 'hint' }, 'Shown as @username. Usernames are searchable and can be changed once every 7 days.'));
-  pbox.appendChild(el('label', {}, 'Phone number (optional; shown after property unlock)')); pbox.appendChild(phoneI); pbox.appendChild(el('p',{class:'hint'},'Recommended for your account and required for a new verification badge request. Adding a number does not verify ownership or enroll you in texts.'));
+  pbox.appendChild(el('label', {}, 'Phone number (optional; included in full property details)')); pbox.appendChild(phoneI); pbox.appendChild(el('p',{class:'hint'},'Recommended for your account and required for a new verification badge request. Adding a number does not verify ownership or enroll you in texts.'));
   pbox.appendChild(el('label', {}, 'Market / location')); pbox.appendChild(locationI);
   pbox.appendChild(el('label', {}, 'Bio')); pbox.appendChild(bioI);
   pbox.appendChild(el('label', {}, 'Profile photo')); pbox.appendChild(avPrev); pbox.appendChild(avFile);
@@ -4614,7 +4590,7 @@ async function renderCompany() {
   wrap.appendChild(team);
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Company listings'));
   const grid = el('div', { class: 'minigrid' });
-  listings.forEach(l => grid.appendChild(el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
+  listings.forEach(l => grid.appendChild(l.browsingRequired ? propertyCard(l) : el('div', { class: 'minicard', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [
     el('div', { class: 'mi' }, l.photos?.length ? el('img', { src: l.photos[0] }) : null),
     el('div', { class: 'mt' }, [el('b', {}, l.address), el('span', {}, money(l.asking))])
   ])));
@@ -4811,7 +4787,7 @@ async function renderCompanyWorkspace() {
   const [{ listings }, { messages }] = await Promise.all([api('GET', '/api/company/listings'), api('GET', '/api/company/inbox')]);
   wrap.appendChild(el('div', { class: 'sectiontitle' }, 'Team listings'));
   const lc = el('div', { class: 'card' });
-  listings.slice(0, 30).forEach(l => lc.appendChild(el('div', { class: 'listrow' }, [el('div', { class: 'grow', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [el('div', { class: 't' }, l.address), el('div', { class: 's' }, `${l.city} · ${money(l.asking)} · ${l.owner?.name || 'Team'}`)]), el('button', { onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, 'Open')])));
+  listings.slice(0, 30).forEach(l => lc.appendChild(l.browsingRequired ? propertyCard(l) : el('div', { class: 'listrow' }, [el('div', { class: 'grow', onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, [el('div', { class: 't' }, l.address), el('div', { class: 's' }, `${l.city} · ${money(l.asking)} · ${l.owner?.name || 'Team'}`)]), el('button', { onclick: () => go('detail', { detailId: l.id, photoIdx: 0 }) }, 'Open')])));
   if (!listings.length) lc.appendChild(el('div', { class: 'empty compact' }, el('p', {}, 'Team listings will appear here.')));
   wrap.appendChild(lc);
 
@@ -5346,7 +5322,7 @@ async function renderMarketHubs(){
 }
 async function renderDealRoom(context = liveUIContext()){
  const {state, api, go, render} = context;
- const wrap=el('div',{class:'page dealroompage'});wrap.appendChild(el('button',{class:'backbtn',onclick:()=>context.demo?go('pipeline'):(history.length>1?history.back():go('pipeline'))},'← Back'));if(!state.detailId){wrap.appendChild(el('div',{class:'empty'},'Choose a listing or offer to open its deal room.'));return wrap;}let roomData;try{roomData=await api('GET','/api/listings/'+encodeURIComponent(state.detailId)+'/deal-room');}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));return wrap;}const {room,listing,canManage,messages,offers}=roomData;const roomResponses=roomData.responses||[];wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'PRIVATE DEAL ROOM'),el('h2',{},listing.address),el('div',{class:'sub'},listing.city)]),el('button',{class:'btn-ghost',onclick:()=>go('detail',{detailId:state.detailId})},'View listing')]));
+ const wrap=el('div',{class:'page dealroompage'});wrap.appendChild(el('button',{class:'backbtn',onclick:()=>context.demo?go('pipeline'):(history.length>1?history.back():go('pipeline'))},'← Back'));if(!state.detailId){wrap.appendChild(el('div',{class:'empty'},'Choose a listing or offer to open its deal room.'));return wrap;}let roomData;try{roomData=await api('GET','/api/listings/' + encodeURIComponent(state.detailId)+'/deal-room');}catch(e){wrap.appendChild(el('div',{class:'errmsg'},e.message));return wrap;}const {room,listing,canManage,messages,offers}=roomData;const roomResponses=roomData.responses||[];wrap.appendChild(el('div',{class:'pageheadrow'},[el('div',{},[el('div',{class:'eyebrow'},'PRIVATE DEAL ROOM'),el('h2',{},listing.address),el('div',{class:'sub'},listing.city)]),el('button',{class:'btn-ghost',onclick:()=>go('detail',{detailId:state.detailId})},'View listing')]));
  const left=el('section',{class:'ops-card'});left.appendChild(el('h3',{},'Deal status'));if(canManage){const stage=el('select',{'aria-label':'Deal room stage'});[['intake','Intake'],['marketing','Marketing'],['buyer-interest','Buyer interest'],['negotiation','Negotiation'],['title','Title'],['closing','Closing'],['closed','Closed'],['on-hold','On hold']].forEach(([v,l])=>stage.appendChild(el('option',{value:v},l)));stage.value=room.stage;const next=el('input',{placeholder:'Next action',value:room.nextAction||''}),notes=el('textarea',{placeholder:'Private deal-team notes'});notes.value=room.privateNotes||'';const save=el('button',{class:'btn-primary'},'Save deal room');save.onclick=async()=>{await api('PATCH','/api/listings/'+state.detailId+'/deal-room',{stage:stage.value,nextAction:next.value,privateNotes:notes.value,tasks:room.tasks||[]});toast('Deal room saved','ok');};left.append(el('label',{},'Stage'),stage,el('label',{},'Next action'),next,el('label',{},'Private team notes'),notes,save);}else left.appendChild(el('div',{class:'deal-stage-public'},[el('b',{},String(room.stage||'active').replace('-',' ')),el('span',{},'Seller-managed deal status')]));
  const offerBox=el('section',{class:'ops-card'});offerBox.appendChild(el('h3',{},'Offers'));if(!offers.length)offerBox.appendChild(el('div',{class:'hint'},'No structured offers in this room yet.'));offers.forEach(o=>offerBox.appendChild(el('div',{class:'room-offer'},[el('b',{},money(o.amount)),el('span',{},[o.financing?.replace('-',' '),o.emd?`${money(o.emd)} EMD`:null,o.closeDays?`${o.closeDays}d close`:null,o.inspectionDays!==undefined?`${o.inspectionDays}d inspection`:null].filter(Boolean).join(' · ')),el('small',{},o.status)])));
  const msgBox=el('section',{class:'ops-card room-messages'});msgBox.appendChild(el('h3',{},'Deal conversation'));const stream=el('div',{class:'room-message-stream'});(messages||[]).forEach(m=>stream.appendChild(el('div',{class:'room-message '+(m.fromUserId===state.user.id?'mine':'')},[el('b',{},m.fromUserId===state.user.id?'You':(m.fromName||'Participant')),el('span',{},m.body),el('small',{},new Date(m.at).toLocaleString())])));if(!(messages||[]).length)stream.appendChild(el('div',{class:'hint'},'Keep transaction-specific communication attached to the deal.'));const input=el('textarea',{placeholder:'Message the deal room…'}),send=el('button',{class:'btn-primary'},'Send');let recipient=null;if(canManage&&(offers.length||roomResponses.length)){recipient=el('select');const seen=new Set();[...offers,...roomResponses.filter(x=>x.status!=='pass').map(x=>({buyerId:x.userId,buyerName:x.userName}))].forEach(o=>{if(!seen.has(o.buyerId)){seen.add(o.buyerId);recipient.appendChild(el('option',{value:o.buyerId},o.buyerName||'Buyer'));}});msgBox.appendChild(recipient);}send.onclick=async()=>{if(!input.value.trim())return;try{await api('POST',`/api/listings/${state.detailId}/deal-room/messages`,{body:input.value.trim(),toUserId:recipient?.value||null});render();}catch(e){toast(e.message,'err');}};msgBox.append(stream,input,send);
@@ -5546,8 +5522,8 @@ function pageAbout() {
 
 function pageFaq() {
   return staticPage('Frequently asked questions', null, [
-    ['Is browsing free?', 'Yes, and it stays free. You can scroll every listing, see photos, price, beds and baths, estimated ARV and spread, and the city — without paying anything. What costs money is opening a listing in full: exact address, seller notes, phone number and email, and the ability to submit an offer.'],
-    ['What do I get with a new account?', `Your Better Real Estate account stays free. New accounts also include ${state.pricing?.signupTrialDays || 7} days of complimentary full access with no card required. After that, you still keep the Free plan and five free listing unlocks. Additional unlocks are ${cents(state.pricing.unlockCredit)} each or ${cents(state.pricing.unlockPack10)} for ten. Paid memberships are Better Plus (${cents(state.pricing.pro.monthly)}/mo), Platinum (${cents(state.pricing.platinum.monthly)}/mo), and Wholesale Teams (${cents(state.pricing.wholesale.monthly)}/mo), with annual options available on the Plans page.`],
+    ['Is browsing free?', 'Free membership includes 30 distinct property views each day, with exact addresses, seller notes and contact information. Your allowance resets at midnight Eastern. Scrolling through previews is free. Opening details uses one view; revisiting the same property that day does not use another view. Upgrade to Plus or higher for unlimited browsing. Free includes two AI property analyses per day.'],
+    ['What do I get with a new account?', `Your Better Real Estate account stays free. Free includes 30 daily property views with full details and seller contacts. You can post properties, use Network and Messages and take the free course. Free includes two AI property analyses daily. AI listing drafts and other AI tools require Plus or higher. Paid plans are Better Plus (${cents(state.pricing.pro.monthly)}/mo), Platinum (${cents(state.pricing.platinum.monthly)}/mo), and Wholesale Teams (${cents(state.pricing.wholesale.monthly)}/mo). See Plans for annual options and benefits.`],
     ['How does the ranking work?', 'Your buy box drives it. Set a price range, the markets you work, property types and a minimum spread, and matching listings rise to the top. Freshness, how many other buyers saved a listing, and whether you follow the seller all factor in. Promoted listings are pinned above organic ones and are labelled as promoted.'],
     ['What does promoting a listing do?', 'It pins your property above organic listings in every matching feed for the window you buy — 24 hours through a week, or a one-hour top slot with Super Boost. You can see exactly what it bought you in the analytics for that listing: views, saves, unlocks and offers.'],
     ['How does the marketplace fee work?', 'Listing an item is free. When it sells, Better Real Estate keeps 7% and the rest lands in your wallet. You can withdraw once your balance clears $20.'],
@@ -6416,11 +6392,11 @@ async function renderSupportChat(){
  const wrap=el('section',{class:'page support-page'}),admin=!!state.access?.adminUnlimited;
  wrap.append(el('div',{class:'pageheadrow'},[el('div',{},[el('h2',{},'Chat with Better'),el('p',{class:'sub'},'Private platform help from Better Guide and the Better team.')]),el('button',{class:'btn-ghost',onclick:()=>go('feed')},'Back to feed')]));
  wrap.appendChild(platformHelpPanel());
- const head=el('div',{class:'support-guide-head'},[el('div',{class:'guide-mascot-stage is-panel support-dog'},createBetterMascotRig({variant:'panel',label:'Better Guide'})),el('div',{},[el('b',{},'Better Guide'),el('p',{class:'hint'},'AI help uses Better’s platform reference. Do not share passwords, card details or API keys.')])]);wrap.append(head);
+ const head=el('div',{class:'support-guide-head'},[el('div',{class:'guide-mascot-stage is-panel support-dog'},createBetterMascotRig({variant:'panel',label:'Better Guide'})),el('div',{},[el('b',{},'Better Guide'),el('p',{class:'hint'},state.access?.pro?'AI help uses Better’s platform reference. Do not share passwords, card details or API keys.':'Contact the Better team for help. Free includes two property analyses daily; AI support chat requires Plus or higher. Never share passwords or payment details.')])]);wrap.append(head);
  const status=el('div',{class:'support-status',role:'status'}),stream=el('div',{class:'support-stream','aria-label':'Support conversation','aria-live':'polite'}),input=el('textarea',{placeholder:'How can we help?',maxlength:'2000','aria-label':'Support message'}),notice=el('div',{class:'errmsg',role:'status'}),actions=el('div',{class:'support-actions'});
  let thread=null,busy=false,messageId=null,lastBody='',activeId=state.supportThreadId||null;
  const send=el('button',{class:'btn-primary'},'Send'),refresh=el('button',{class:'btn-ghost'},'Refresh'),human=el('button',{class:'btn-ghost'},'Talk to a person');
- function draw(t){thread=t;status.textContent=!t?'AI support · Start a conversation':t.mode==='human'?'Connected to an admin · AI paused':t.mode==='waiting'?'Waiting for an admin · AI paused':'AI support · '+t.remaining+' messages remaining today (UTC reset)';stream.innerHTML='';if(!t?.messages?.length)stream.append(el('div',{class:'hint'},'Ask about posting properties, membership, buyers, deal tools or using Better.'));
+ function draw(t){thread=t;status.textContent=!state.access?.pro&&!admin?'Human support · Your message goes to the Better team':!t?'AI support · Start a conversation':t.mode==='human'?'Connected to an admin · AI paused':t.mode==='waiting'?'Waiting for an admin · AI paused':'AI support · '+t.remaining+' messages remaining today (UTC reset)';stream.innerHTML='';if(!t?.messages?.length)stream.append(el('div',{class:'hint'},'Ask about posting properties, membership, buyers, deal tools or using Better.'));
  (t?.messages||[]).forEach(m=>stream.append(el('div',{class:'support-message '+m.role},[el('b',{},m.role==='user'?(t.userId===state.user.id?'You':'Member'):m.role==='ai'?'Better Guide · AI':m.role==='admin'?m.name||'Better team':'Support status'),el('div',{},m.body),el('small',{},new Date(m.at).toLocaleString())])));stream.scrollTop=stream.scrollHeight;
  human.hidden=admin&&activeId&&t?.userId!==state.user.id;human.disabled=busy||t?.mode==='human'||(t?.mode==='waiting'&&t?.alertState==='sent');human.textContent=['failed','sending'].includes(t?.alertState)?'Retry admin notification':'Talk to a person';if(t?.alertState==='failed')notice.textContent='The admin email could not be sent. Your request is saved; retry the notification or use Contact support.';}
  const load=async()=>{const d=await api('GET',activeId?'/api/support/'+encodeURIComponent(activeId):'/api/support');draw(d.thread);};

@@ -16,7 +16,7 @@ assert(app.includes('function renderLearnWholesaling()'), 'course renderer missi
 assert(app.includes("selector:'.better-guide-trigger'"), 'Guide tutorial step missing');
 assert(app.includes("release:52,title:'Meet your Better Guide'"), 'v52 Guide What’s New step missing');
 assert(app.includes("release:52,title:'Learn wholesaling inside Better'"), 'v52 course What’s New step missing');
-assert(app.includes("const TUTORIAL_VERSION = 93;"), 'tutorial version must preserve and advance the Guide onboarding');
+assert(app.includes("const TUTORIAL_VERSION = 94;"), 'tutorial version must preserve and advance the Guide onboarding');
 assert(app.includes('BETTER_GUIDE_COURSE'), 'course curriculum missing');
 for (let n = 1; n <= 12; n++) assert(app.includes(`number:${n},`), `course module ${n} missing`);
 for (const required of ['Deal Intelligence','Network','Deal Pipeline','Buyer CRM','Better Dispo','Transaction Hub','Command Center']) {
