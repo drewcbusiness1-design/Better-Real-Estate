@@ -2292,7 +2292,7 @@ function gateListing(listing, user, db) {
   const unlocked = user && (hasFullAccess(user) || canEdit || (dailyBrowsing.website()&&dailyBrowsing.admitted(db,user,listing.id)) ||
     db.unlocks.some(u => u.userId === user.id && u.listingId === listing.id));
   if (unlocked) return { ...listing, freshness: listingFreshness(listing), canEdit, locked: false };
-  if(dailyBrowsing.website())return {id:listing.id,locked:true,browsingRequired:true,canEdit:false};
+  if(dailyBrowsing.website())return {id:listing.id,ownerId:listing.ownerId,ownerName:listing.ownerName,companyName:listing.companyName,city:listing.city,address:'Open property details',asking:listing.asking,arv:listing.arv,beds:listing.beds,baths:listing.baths,sqft:listing.sqft,year:listing.year,propertyType:listing.propertyType,photos:listing.photos||[],demo:!!listing.demo,locked:true,preview:true,canEdit:false};
   const { address, notes, ownerEmail, videoUrl, ...rest } = listing;
   return { ...rest, freshness: listingFreshness(listing), address: 'Address hidden', notes: null, ownerEmail: null, videoUrl: null, canEdit: false, locked: true };
 }
@@ -2524,7 +2524,7 @@ app.get('/api/feed', async (req, res) => {
   }).sort((a, b) => b._score - a._score);
   if(dailyBrowsing.website()){
     const browsing=dailyBrowsing.usage((db.browsingUsage||[]).find(r=>r.id===viewer?.id),isPro(viewer));
-    return res.set('Cache-Control','no-store').json({feed:[],listingIds:browsing.remaining===0?[]:feed.map(l=>l.id),browsing,requiresSignIn:!viewer,access:accessFor(viewer),dashboard:viewer?dashboardSummary(db,viewer):null});
+    return res.set('Cache-Control','no-store').json({feed,listingIds:feed.map(l=>l.id),browsing,requiresSignIn:!viewer,access:accessFor(viewer),dashboard:viewer?dashboardSummary(db,viewer):null});
   }
   res.json({ feed, access: accessFor(viewer), dashboard: viewer ? dashboardSummary(db, viewer) : null });
 });

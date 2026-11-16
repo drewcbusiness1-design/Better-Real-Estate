@@ -957,59 +957,40 @@ function browsingResetText(u){return u?.resetsAt?'Resets '+new Date(u.resetsAt).
 function dailyBrowsingGate(u=state.browsing,signIn=false){
   const card=el('section',{class:'daily-browsing-gate',role:'region','aria-label':'Daily property allowance'},[
     el('span',{class:'daily-browsing-kicker'},'YOUR DAILY BROWSE'),
-    el('h3',{},signIn?'Your next property starts here':'You have reached today’s 30 views'),
-    el('p',{},signIn?'Join free to view 30 properties a day, including full details and seller contact information.':'Keep exploring with unlimited browsing on Plus, or come back when your daily allowance resets.'),
+    el('h3',{},signIn?'Your next property starts here':'You have opened today’s 30 properties'),
+    el('p',{},signIn?'Join free to view 30 properties a day, including full details and seller contact information.':'Open more property details with Plus, or keep scrolling through previews and return after your daily allowance resets.'),
     el('p',{class:'hint'},browsingResetText(u)),
     el('div',{class:'daily-browsing-actions'},[
       el('button',{class:'btn-primary',onclick:()=>go(signIn?'auth':'upgrade',signIn?{authMode:'signup'}:{})},signIn?'Join free':'See memberships'),
-      el('button',{class:'btn-ghost',onclick:()=>{state.feedFocusId=null;go('feed');}},signIn?'Back to feed':'Check allowance')
+      el('button',{class:'btn-ghost',onclick:()=>{state.feedFocusId=null;go('feed');}},signIn?'Back to feed':'Keep scrolling')
     ]),el('p',{class:'hint'},'Free includes two AI property analyses per day.')
   ]);return card;
 }
 let dailyFeedCleanup=null;
 function stopDailyFeed(){if(dailyFeedCleanup){dailyFeedCleanup();dailyFeedCleanup=null;}}
 function renderDailyFeed(wrap,packet,context){
-  const {api,state}=context;state.browsing=packet.browsing;
-  const summary=el('div',{class:'daily-browsing-summary',role:'status','aria-live':'polite'});
-  const paint=u=>{state.browsing=u;summary.replaceChildren(el('b',{},u.unlimited?'Unlimited property browsing':`${u.remaining} of 30 views remaining`),el('span',{},u.unlimited?'Your membership includes full details and seller contacts.':browsingResetText(u)));};paint(packet.browsing);wrap.append(summary);
-  if(packet.requiresSignIn){wrap.append(dailyBrowsingGate(packet.browsing,true));return wrap;}
-  if(!packet.browsing.unlimited&&packet.browsing.remaining===0){wrap.append(dailyBrowsingGate(packet.browsing));return wrap;}
-  const ids=packet.listingIds;
-  if(!ids.length){wrap.append(el('div',{class:'empty'},[el('h3',{},'No properties in this view yet'),el('p',{},'Try For You, follow a property owner, or post a property.')]));return wrap;}
-  const stream=el('div',{class:'daily-feed-stream',tabindex:'0','aria-label':'Property feed. Scroll vertically to the next property.'});
-  const restoreFocus=!!state.feedFocusId;
-  let closed=false,busy=false,focus=Math.max(0,ids.indexOf(state.feedFocusId));
-  const slots=ids.map(id=>el('section',{class:'daily-feed-slot','data-listing-id':id},el('div',{class:'daily-feed-loading',role:'status'},'Scroll here to view this property')));
-  stream.append(...slots);const controls=el('div',{class:'daily-feed-controls'},[
-    el('span',{class:'hint'},'Scroll for the next property'),
-    el('button',{class:'btn-ghost','aria-label':'Previous property',onclick:()=>move(-1)},'Previous'),
-    el('button',{class:'btn-ghost','aria-label':'Next property',onclick:()=>move(1)},'Next')
-  ]);wrap.append(controls,stream);
+  const {state}=context;state.browsing=packet.browsing;
+  const usage=packet.browsing;
+  wrap.appendChild(el('div',{class:'daily-browsing-summary',role:'status','aria-live':'polite'},[
+    el('b',{},usage.unlimited?'Unlimited property details':`${usage.remaining} of 30 detail views remaining`),
+    el('span',{},usage.unlimited?'Your membership includes full details and seller contacts.':'Scrolling is free. Opening full details counts once per property each day. '+browsingResetText(usage))
+  ]));
+  if(packet.requiresSignIn){wrap.append(dailyBrowsingGate(usage,true));return wrap;}
+  const listings=packet.feed||[];
+  if(!listings.length){wrap.append(el('div',{class:'empty'},[el('h3',{},'No properties in this view yet'),el('p',{},'Try For You, follow a property owner, or post a property.')]));return wrap;}
+  const stream=el('div',{class:'daily-feed-stream','aria-label':'Property feed. Scroll vertically to the next property.'});
+  const slots=listings.map(listing=>el('section',{class:'daily-feed-slot','data-listing-id':listing.id},propertyCard(listing,context)));
+  stream.append(...slots);wrap.appendChild(stream);
   document.documentElement.classList.add('daily-property-feed');
-  function move(n){focus=Math.max(0,Math.min(slots.length-1,focus+n));slots[focus].scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
-  async function load(slot){
-    if(closed||busy||slot.dataset.loaded||slot.dataset.failed)return;
-    busy=true;slot.setAttribute('aria-busy','true');slot.replaceChildren(el('div',{class:'daily-feed-loading',role:'status'},'Opening property…'));
-    try{
-      const d=await api('POST','/api/browsing/view',{listingId:slot.dataset.listingId});if(closed)return;
-      slot.dataset.loaded='true';slot.replaceChildren(propertyCard(d.listing,context));if(d.browsing)paint(d.browsing);
-
-    }catch(e){
-      if(closed)return;
-      if(e.code==='DAILY_BROWSING_LIMIT'||e.code==='BROWSING_SIGN_IN'){
-        if(e.browsing)paint(e.browsing);slot.replaceChildren(dailyBrowsingGate(e.browsing,e.code==='BROWSING_SIGN_IN'));slot.dataset.loaded='true';
-        const index=slots.indexOf(slot);slots.slice(index+1).forEach(x=>x.remove());
-      }else{slot.dataset.failed='true';slot.replaceChildren(el('div',{class:'daily-feed-loading'},[el('p',{role:'alert'},e.message),el('button',{class:'btn-ghost',onclick:()=>{delete slot.dataset.failed;load(slot);}},'Try again')]));}
-    }finally{busy=false;slot.removeAttribute('aria-busy');if(!closed)requestAnimationFrame(handle);}
-  }
-  const handle=()=>{if(closed)return;const bottom=Math.max(1,window.innerHeight-70);let best=null,area=0;
-    slots.forEach((slot,i)=>{if(!slot.isConnected)return;const r=slot.getBoundingClientRect(),a=Math.max(0,Math.min(r.bottom,bottom)-Math.max(r.top,0));if(a>area){area=a;best=slot;focus=i;}});
-    if(best&&area>=Math.min(best.getBoundingClientRect().height||bottom,bottom)*.35){if(state.feedFocusId!==best.dataset.listingId){state.feedFocusId=best.dataset.listingId;if(state.view==='feed')writeRoute('replace');}load(best);}
+  let closed=false;
+  const handle=()=>{if(closed)return;let best=null,area=0;const bottom=Math.max(1,window.innerHeight-70);
+    for(const slot of slots){const rect=slot.getBoundingClientRect(),visible=Math.max(0,Math.min(rect.bottom,bottom)-Math.max(rect.top,0));if(visible>area){area=visible;best=slot;}}
+    if(best&&state.feedFocusId!==best.dataset.listingId){state.feedFocusId=best.dataset.listingId;if(state.view==='feed')writeRoute('replace');}
   };
+  const restored=slots.find(slot=>slot.dataset.listingId===state.feedFocusId);
   window.addEventListener('scroll',handle,{passive:true});window.addEventListener('resize',handle,{passive:true});
   dailyFeedCleanup=()=>{closed=true;window.removeEventListener('scroll',handle);window.removeEventListener('resize',handle);document.documentElement.classList.remove('daily-property-feed');};
-  // Use the document's natural vertical scroll; never trap touch/wheel input in a second scroller.
-  requestAnimationFrame(()=>{if(closed)return;if(restoreFocus)slots[focus].scrollIntoView({block:'start',behavior:'auto'});handle();});
+  requestAnimationFrame(()=>{if(closed)return;if(restored)restored.scrollIntoView({block:'start',behavior:'auto'});handle();});
   return wrap;
 }
 
@@ -1652,7 +1633,7 @@ function renderUpgrade() {
   const p = state.pricing;
   const wrap = el('div', { class: 'page' });
   wrap.appendChild(el('h2', {}, 'Plans'));
-  wrap.appendChild(el('div', { class: 'sub' }, 'Free includes 30 property views and two AI property analyses daily. Property views include full details and seller contacts. Upgrade for unlimited browsing and higher AI allowances.'));
+  wrap.appendChild(el('div', { class: 'sub' }, 'Free includes 30 full property-detail views and two AI property analyses daily. Scrolling through previews is free. Property views include full details and seller contacts. Upgrade for unlimited browsing and higher AI allowances.'));
 
   const st = el('div', { class: 'okmsg' });
   const adminUnlimited = state.access?.adminUnlimited === true || state.user?.role === 'admin';
@@ -1719,9 +1700,9 @@ function renderUpgrade() {
       onAnnual: adminUnlimited ? null : () => subscribeTo('pro', 'annual', st)
     }),
     tierCard({
-      key: 'free', name: 'Free', tagline: '30 full property views every day',
+      key: 'free', name: 'Free', tagline: '30 full property-detail views every day',
       priceLine: 'Free',
-      perks: ['30 distinct property views per day', 'Full property details, seller notes and contact information', 'Daily allowance resets at midnight Eastern', '2 AI Deal Builder analyses per day', 'Smart deal-import parser and public buyer-list page'],
+      perks: ['30 distinct property-detail views per day', 'Full property details, seller notes and contact information', 'Daily allowance resets at midnight Eastern', '2 AI Deal Builder analyses per day', 'Smart deal-import parser and public buyer-list page'],
       current: currentTier === 'free'
     })
   ]));
@@ -3068,7 +3049,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'markethubs',selector:'.connected-section',min:0,release:77,title:'Find title company contacts',copy:'Market Hubs includes an independent title-company directory. Matching service states also appear on property details. Confirm licensing, fees and suitability directly; this is not an expedited title service.'},
  {view:'buyercrm',selector:'.buyercrmpage',min:0,release:77,title:'Bring your buyer relationships',copy:'Import a CSV with column mapping and duplicate review, export private notes, and save structured criteria. Contacts stay private and are never automatically invited.'},
  {view:'settings',selector:'#app .page',min:0,release:77,title:'Relevant property alerts',copy:'New properties alert matching members in Better by default. Turn automatic listing matching off in Settings. Missing required facts do not count as confirmed matches. Respond from property details and follow progress on the seller response board.'},
- {view:'feed',selector:'.daily-browsing-summary',min:0,release:94,title:'Your daily property views',copy:'Free includes 30 distinct property views daily with full details and seller contacts. Scroll vertically to explore; opening details or revisiting the same property that day does not use another view. The allowance resets at midnight Eastern. Free includes two successful new-property AI analyses per day. Plus includes five per day; Platinum and Teams include unlimited analyses. Other AI tools remain membership based.'},
+ {view:'feed',selector:'.daily-browsing-summary',min:0,release:94,title:'Your daily property views',copy:'Free includes 30 distinct full property-detail views daily with seller contacts. Scrolling through previews is free. Opening details uses one view; revisiting the same property that day does not use another view. The allowance resets at midnight Eastern. Free includes two successful new-property AI analyses per day. Plus includes five per day; Platinum and Teams include unlimited analyses. Other AI tools remain membership based.'},
  {view:'feed',selector:'.better-guide-trigger',min:0,release:76,title:'Gestures with a purpose',copy:'Better Guide uses a connected wave to greet you, a careful two-paw acknowledgement for a saved property, an outward gesture after sending a message and a deliberate nod when a deal advances. Celebrations remain for real milestones. Motion can be disabled in Settings and respects reduced-motion preferences.'},
  {view:'settings',selector:'#app .page',min:0,release:76,title:'Tutorial controls that fit',copy:'Desktop walkthroughs keep Move left and Move right controls in Better’s button style. On mobile the tutorial stays at the bottom with touch scrolling. Restart the 10-step introduction or open the full walkthrough from Settings or the dog menu.'},
  {view:'upgrade',selector:'.tiergrid4',min:0,release:75,title:'Choose your Better Credits',copy:'Select a plan to review checkout. Credits are optional: choose an amount up to your available balance and the first payment, then review the remaining amount due. Unused credits stay in your wallet; renewals are unchanged.'},
@@ -5541,7 +5522,7 @@ function pageAbout() {
 
 function pageFaq() {
   return staticPage('Frequently asked questions', null, [
-    ['Is browsing free?', 'Free membership includes 30 distinct property views each day, with exact addresses, seller notes and contact information. Your allowance resets at midnight Eastern. Opening details or revisiting the same property that day does not use another view. Upgrade to Plus or higher for unlimited browsing. Free includes two AI property analyses per day.'],
+    ['Is browsing free?', 'Free membership includes 30 distinct property views each day, with exact addresses, seller notes and contact information. Your allowance resets at midnight Eastern. Scrolling through previews is free. Opening details uses one view; revisiting the same property that day does not use another view. Upgrade to Plus or higher for unlimited browsing. Free includes two AI property analyses per day.'],
     ['What do I get with a new account?', `Your Better Real Estate account stays free. Free includes 30 daily property views with full details and seller contacts. You can post properties, use Network and Messages and take the free course. Free includes two AI property analyses daily. AI listing drafts and other AI tools require Plus or higher. Paid plans are Better Plus (${cents(state.pricing.pro.monthly)}/mo), Platinum (${cents(state.pricing.platinum.monthly)}/mo), and Wholesale Teams (${cents(state.pricing.wholesale.monthly)}/mo). See Plans for annual options and benefits.`],
     ['How does the ranking work?', 'Your buy box drives it. Set a price range, the markets you work, property types and a minimum spread, and matching listings rise to the top. Freshness, how many other buyers saved a listing, and whether you follow the seller all factor in. Promoted listings are pinned above organic ones and are labelled as promoted.'],
     ['What does promoting a listing do?', 'It pins your property above organic listings in every matching feed for the window you buy — 24 hours through a week, or a one-hour top slot with Super Boost. You can see exactly what it bought you in the analytics for that listing: views, saves, unlocks and offers.'],

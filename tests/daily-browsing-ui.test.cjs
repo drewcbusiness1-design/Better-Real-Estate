@@ -14,22 +14,18 @@ class E{
 }
 function all(e,p){return e instanceof E?[...(p(e)?[e]:[]),...e.children.flatMap(c=>all(c,p))]:[];}
 (async()=>{
- let raf=[],calls=[],routeWrites=0,fail=false,block=false;
+ let raf=[],calls=[],routeWrites=0;
  testWindow={innerHeight:670,addEventListener(k,v){this['on'+k]=v;},removeEventListener(k,v){if(this['on'+k]===v)delete this['on'+k];}};
- const ctx={window:testWindow,document:{documentElement:{classList:{add(){},remove(){}}}},Date,Math,Promise,Intl,el:(...a)=>new E(...a),state:{view:'feed',feedFocusId:null},go(){},writeRoute(){routeWrites++;},matchMedia:()=>({matches:true}),requestAnimationFrame:f=>raf.push(f),propertyCard:l=>new E('div',{class:'pcard'},l.id)};
+ const ctx={window:testWindow,document:{documentElement:{classList:{add(){},remove(){}}}},Date,Math,Promise,Intl,el:(...a)=>new E(...a),state:{view:'feed',feedFocusId:null},go(){},writeRoute(){routeWrites++;},requestAnimationFrame:f=>raf.push(f),propertyCard:(l,c)=>new E('div',{class:'pcard'},[l.id,new E('button',{onclick:()=>c.openListingDetail(l.id)},'View details')])};
  vm.createContext(ctx);vm.runInContext(source.slice(source.indexOf('function browsingResetText('),source.indexOf('async function handlePurchaseResponse(')),ctx);
  const usage=used=>({unlimited:false,used,remaining:30-used,resetsAt:'2026-11-16T05:00:00Z'});
- const context={state:ctx.state,api:async(_,p,b)=>{calls.push(b.listingId);if(fail)throw Error('Fixture connection failure');if(block){const e=Error('Daily cap');e.code='DAILY_BROWSING_LIMIT';e.browsing=usage(30);throw e;}return {listing:{id:b.listingId},browsing:usage(calls.length)};}};
- const flush=async()=>{for(let i=0;i<8;i++){const todo=raf;raf=[];todo.forEach(f=>f());await new Promise(r=>setImmediate(r));}};
- const wrap=new E('main');ctx.renderDailyFeed(wrap,{listingIds:['a','b','c'],browsing:usage(0)},context);
- assert.equal(calls.length,0,'No invisible quota use before mount');await flush();assert.deepEqual(calls,['a']);
- const stream=all(wrap,e=>e.attrs.class==='daily-feed-stream')[0],buttons=all(wrap,e=>e.tag==='button');buttons.find(b=>b.attrs['aria-label']==='Next property').attrs.onclick();await flush();assert.deepEqual(calls,['a','b']);assert.equal(ctx.state.feedFocusId,'b');
- buttons.find(b=>b.attrs['aria-label']==='Previous property').attrs.onclick();await flush();assert.equal(calls.length,2);assert.equal(ctx.state.feedFocusId,'a');assert(routeWrites>=3);
- fail=true;all(wrap,e=>e.attrs.class==='daily-feed-slot')[2].scrollIntoView();await flush();assert.equal(calls.length,3);await flush();assert.equal(calls.length,3,'No automatic retry loop');const retry=all(wrap,e=>e.tag==='button'&&e.textContent==='Try again')[0];assert(retry);fail=false;retry.attrs.onclick();await flush();assert.equal(calls.length,4);
- ctx.stopDailyFeed();
- const full=new E('main');ctx.renderDailyFeed(full,{listingIds:[],browsing:usage(30)},context);assert(full.textContent.includes('You have reached today’s 30 views'));assert(full.textContent.includes('two AI property analyses'));await flush();assert.equal(calls.length,4);
- virtualScroll=0;const blocked=new E('main');ctx.state.feedFocusId=null;block=true;ctx.renderDailyFeed(blocked,{listingIds:['d','e'],browsing:usage(29)},context);await flush();assert(blocked.textContent.includes('You have reached today’s 30 views'));assert.equal(all(blocked,e=>e.attrs.class==='daily-feed-slot').length,1);
- ctx.stopDailyFeed();
+ const context={state:ctx.state,api:async()=>{throw Error('Scrolling must not call an admission API');},openListingDetail:id=>calls.push(id)};
+ const flush=async()=>{for(let i=0;i<4;i++){const todo=raf;raf=[];todo.forEach(f=>f());await new Promise(r=>setImmediate(r));}};
+ const packet=used=>({listingIds:['a','b','c'],feed:['a','b','c'].map(id=>({id,preview:true})),browsing:usage(used)});
+ const wrap=new E('main');ctx.renderDailyFeed(wrap,packet(0),context);await flush();assert.equal(calls.length,0);assert.equal(ctx.state.browsing.remaining,30);
+ const slots=all(wrap,e=>e.attrs.class==='daily-feed-slot');assert.equal(slots.length,3);slots[1].scrollIntoView();await flush();assert.equal(ctx.state.feedFocusId,'b');assert.equal(calls.length,0);assert.equal(ctx.state.browsing.remaining,30);assert(routeWrites>=2);
+ const buttons=all(wrap,e=>e.tag==='button');assert.equal(buttons.length,3);assert(buttons.every(b=>b.textContent==='View details'),'No previous or next navigation controls');buttons[1].attrs.onclick();assert.deepEqual(calls,['b']);ctx.stopDailyFeed();
+ virtualScroll=0;const full=new E('main');ctx.state.feedFocusId=null;ctx.renderDailyFeed(full,packet(30),context);await flush();assert.equal(all(full,e=>e.attrs.class==='daily-feed-slot').length,3,'Previews remain scrollable at the detail cap');assert(!full.textContent.includes('You have opened today'));assert.equal(ctx.state.browsing.remaining,0);ctx.stopDailyFeed();
  assert(source.includes('2 AI Deal Builder analyses per day'));assert(!source.includes('5 free listing unlocks'));assert(!source.includes('Use free credit'));assert(source.includes("p.set('feedItem',state.feedFocusId)"));
  const pcStart=source.indexOf('function propertyCard('),pcEnd=source.indexOf('/* ================= BETTER DISPO HELPERS',pcStart);vm.runInContext(source.slice(pcStart,pcEnd),ctx);let opened=null;const preview=ctx.propertyCard({id:'unseen',browsingRequired:true},{openListingDetail:id=>opened=id});assert(preview.textContent.includes('Open property'));all(preview,e=>e.tag==='button')[0].attrs.onclick();assert.equal(opened,'unseen');
  const profileStart=source.indexOf('async function renderProfile('),profileEnd=source.indexOf('/* ================= BUY BOX / SETTINGS',profileStart);
@@ -37,5 +33,5 @@ function all(e,p){return e instanceof E?[...(p(e)?[e]:[]),...e.children.flatMap(
  vm.runInContext(source.slice(profileStart,profileEnd),ctx);
  const profile=await ctx.renderProfile({state:{profileId:'seller'},go(){},render(){},api:async()=>({owner:{id:'seller',name:'Seller'},listings:[{id:'not-admitted',browsingRequired:true}],followerCount:0,reviews:[]})});
  assert(profile.textContent.includes('Open property'));assert(!profile.textContent.includes('NaN'));const open=all(profile,e=>e.tag==='button'&&e.textContent==='View property')[0];assert(open);open.attrs.onclick();assert.equal(opened,'not-admitted');
- console.log('PASS actual frontend functions in DOM harness: visible-card-only admission, next/previous, route restoration, no retry loop, recoverable failure, cap gate, blocked-card truncation, two-AI membership copy. This is not rendered-browser or responsive visual verification.');
+ console.log('PASS actual frontend DOM tests: free preview scrolling, zero quota requests on scroll, no navigation buttons, previews at the detail cap, route restoration, details navigation and safe profile placeholders. Not rendered-browser verification.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
