@@ -1,6 +1,6 @@
 # Install and review the website candidate
 
-This changes the website and its backend. It does not install or archive an iPhone app. No push or deployment has occurred. Complete the visual review before committing/pushing for production.
+This changes the website and its backend. It does not install or archive an iPhone app. The source is prepared and reviewed on staging. Check the persistent update record for the actual production status. Preserve unknown local changes.
 
 ## Install and test
 
@@ -45,14 +45,14 @@ better_install_daily_views
 
 No `--delete`, reset, force push, data copy or secret copy is used. The original source is recoverable through the backup branch. Existing runtime files remain in place.
 
-## Remaining visual review
+## Reproduce the local visual review
 
 ```bash
 cd "$HOME/Downloads/Better-Real-Estate"
 npm run preview:browsing
 ```
 
-Open `http://127.0.0.1:3159/__preview` in your own browser. This uses disposable fixture accounts and data and clears provider keys. It does not connect to production accounts or persistence. Keep it local. Use the width, theme, account, page and Used controls to review the states listed in the release handoff. Open details from a feed card. Set Used to 29 to test the last view, then scroll to the next card for the upgrade gate; Used 30 opens the gate immediately. The AI screen shows the correct allowance, but this fixture is not a live AI-provider test. Stop with Control+C when finished.
+Open `http://127.0.0.1:3159/__preview` in your own browser. This uses disposable fixture accounts and data and clears provider keys. It does not connect to production accounts or persistence. Keep it local. Use the width, theme, account, page and Used controls to review the states listed in the release handoff. Open details from a feed card. Set Used to 29, scroll through previews without using the remaining view, then open full details for the last view. Returning to the feed keeps previews available; opening a different unseen detail shows the limit gate. Repeat opens of an admitted property do not use another view. Used 30 leaves previews available and blocks unseen details. The AI screen shows the correct allowance, but this fixture is not a live AI-provider test. Stop with Control+C when finished.
 
 Targeted recheck after any changes:
 
@@ -61,9 +61,9 @@ cd "$HOME/Downloads/Better-Real-Estate"
 npm run test:browsing
 ```
 
-## Commit and push after visual acceptance
+## Commit and push commands
 
-Do not run this section while required visual checks remain incomplete. Review every intended diff first. The file list stages only this candidate's source, tests and handoff files, not unrelated data or secrets.
+For a fresh installation from the pinned baseline, use the following intended-file staging commands after review. Do not replay an already deployed release onto a different baseline. Review every intended diff first. The file list stages only this candidate's source, tests and handoff files, not unrelated data or secrets.
 
 ```bash
 better_commit_daily_views() {
