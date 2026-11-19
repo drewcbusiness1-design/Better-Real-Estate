@@ -1875,6 +1875,75 @@ app.post('/api/buyer-crm', requireAuth, async (req,res)=>{
 });
 app.delete('/api/buyer-crm/:id', requireAuth, async (req,res)=>{ req.db.buyerCrm=req.db.buyerCrm||[]; const n=req.db.buyerCrm.length; req.db.buyerCrm=req.db.buyerCrm.filter(x=>!(x.id===req.params.id&&(x.ownerId===req.user.id||(req.user.companyId&&x.companyId===req.user.companyId)))); if(req.db.buyerCrm.length===n)return res.status(404).json({error:'Buyer not found.'}); await saveDB(req.db); res.json({ok:true}); });
 
+// The anonymous previews intentionally have their own narrowly scoped response.
+function previewMarket(value) {
+  const match = String(value || '').trim().match(/^([\p{L}][\p{L} .’'-]{0,59}),[ \t]*([A-Z]{2})(?:[ \t]+\d{5}(?:-\d{4})?)?$/iu);
+  return match && US_STATES.has(match[2].toUpperCase()) ? match[1].trim() + ', ' + match[2].toUpperCase() : null;
+}
+
+function previewBuyerMarkets(box) {
+  const cities = Array.isArray(box.cities) ? box.cities : [];
+  const markets = cities.map(city => {
+    const value = String(city || '').trim();
+    return previewMarket(value) || (/^[\p{L}][\p{L} .’'-]{0,59}$/u.test(value) ? value : null);
+  }).filter(Boolean);
+  return [...new Set([...markets, ...cleanStates(box.states)])].slice(0, 4);
+}
+
+function previewPrice(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+app.get('/api/public/deal-preview/:intent', async (req, res, next) => {
+  const { intent } = req.params;
+  if (intent !== 'buyer' && intent !== 'seller') return res.status(404).json({ error: 'Preview not found.' });
+  res.set('Cache-Control', 'no-store');
+  try {
+    const db = await loadDB();
+    if (intent === 'buyer') {
+      const realOwners = new Set(db.users.filter(user => !isDemoUser(user)).map(user => user.id));
+      const newest = db.listings
+        .filter(listing => !listing.demo && !listing.sold && !listing.closedVerified && realOwners.has(listing.ownerId))
+        .map(listing => ({ listing, freshness: listingFreshness(listing) }))
+        .filter(({ freshness }) => freshness.availabilityStatus === 'active')
+        .sort((a, b) => (Date.parse(b.listing.createdAt) || 0) - (Date.parse(a.listing.createdAt) || 0))[0];
+      if (!newest) return res.json({ property: null });
+
+      const { listing, freshness } = newest;
+      return res.json({ property: {
+        id: listing.id,
+        market: previewMarket(listing.city),
+        propertyType: normalizePropertyType(listing.propertyType) || null,
+        asking: previewPrice(listing.asking),
+        confirmedDaysAgo: Number.isFinite(Date.parse(listing.lastConfirmedAt)) ? freshness.confirmedDaysAgo : null
+      } });
+    }
+
+    const rows = [];
+    for (const user of db.users) {
+      if (isDemoUser(user) || isAffiliateOnlyUser(user) || user.buyingStatus === 'paused') continue;
+      for (const box of getBuyBoxes(user)) {
+        if (box.public !== true || !buyBoxHasBuyerIntent(box)) continue;
+        const markets = previewBuyerMarkets(box);
+        const types = [...new Set((Array.isArray(box.propertyTypes) ? box.propertyTypes : [])
+          .map(normalizePropertyType).filter(Boolean))].slice(0, 4);
+        const minPrice = previewPrice(box.minPrice);
+        const maxPrice = previewPrice(box.maxPrice);
+        if (!markets.length && !types.length && !minPrice && !maxPrice) continue;
+        rows.push({
+          criteria: { markets, types, minPrice, maxPrice, verified: user.verified === true },
+          updatedAt: Date.parse(box.updatedAt || user.updatedAt) || 0
+        });
+      }
+    }
+    rows.sort((a, b) => Number(b.criteria.verified) - Number(a.criteria.verified) || b.updatedAt - a.updatedAt);
+    return res.json({ buyBoxes: rows.slice(0, 6).map(row => row.criteria) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/buyers-looking', requireAuth, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const rows = publicBuyerDemand(req.db, req.user.id).filter(x => {
