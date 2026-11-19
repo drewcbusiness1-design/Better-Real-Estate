@@ -1,7 +1,29 @@
 'use strict';
 const crypto=require('crypto'),ranges=require('./chartRanges');
+const {loadDB,sql,init,FILE_MODE,tableFor}=require('./store');
 const text=(v,n)=>String(v??'').trim().slice(0,n);
 function register(app,{requireAuth,requireAdmin,saveDB,isAdminUser,isDemoUser}){
+ app.get('/api/public/member-milestone', async (req, res, next) => {
+   try {
+     let count;
+     if (FILE_MODE) {
+       const db = await loadDB();
+       count = db.users.filter(user => user.emailVerified === true && !isDemoUser(user) && user.role !== 'admin').length;
+     } else {
+       await init();
+       const [result] = await sql(`SELECT COUNT(*) AS count FROM ${tableFor('users')}
+         WHERE data->'emailVerified' = 'true'::jsonb
+           AND data->'demo' IS DISTINCT FROM 'true'::jsonb
+           AND data->>'role' IS DISTINCT FROM 'admin'`);
+       count = Number(result.count);
+     }
+     const step = count < 10 ? 1 : 10 ** Math.floor(Math.log10(count));
+     res.set('Cache-Control', 'public, max-age=30').json({ members: Math.floor(count / step) * step, milestone: step > 1 });
+   } catch (error) {
+     next(error);
+   }
+ });
+
  app.get('/api/feedback',requireAuth,(req,res)=>res.json({reports:(req.db.feedbackReports||[]).filter(r=>isAdminUser(req.user)||r.userId===req.user.id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,100).map(({screenshot,replies,body,...r})=>({...r,userName:isAdminUser(req.user)?req.db.users.find(u=>u.id===r.userId)?.name:undefined}))}));
  app.get('/api/feedback/:id',requireAuth,(req,res)=>{const report=(req.db.feedbackReports||[]).find(r=>r.id===req.params.id&&(isAdminUser(req.user)||r.userId===req.user.id));if(!report)return res.status(404).json({error:'Report not found.'});res.json({report});});
  app.post('/api/feedback',requireAuth,async(req,res)=>{const b=req.body||{},kind=text(b.kind,50),subject=text(b.subject,160),body=text(b.body,4000),page=text(b.page,80).replace(/[^a-z0-9_-]/gi,'');if(!['Report a problem','Suggest a feature','General feedback'].includes(kind)||!subject||!body)return res.status(400).json({error:'Choose a type and add a subject and description.'});if((req.db.feedbackReports||[]).filter(r=>r.userId===req.user.id&&Date.now()-Date.parse(r.createdAt)<60000).length>=3)return res.status(429).json({error:'Please wait before submitting another report.'});const screenshot=b.screenshot||null;if(screenshot&&(!/^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=\s]+$/i.test(screenshot)||screenshot.length>1400000||Buffer.from(screenshot.split(',')[1]||'','base64').length>1048576))return res.status(400).json({error:'Choose a JPG, PNG or WebP screenshot under 1 MB.'});const report={id:crypto.randomUUID(),userId:req.user.id,kind,subject,body,page:page||'home',screenshot,status:'New',createdAt:new Date().toISOString(),replies:[]};(req.db.feedbackReports||=[]).push(report);await saveDB(req.db);res.json({id:report.id});});
