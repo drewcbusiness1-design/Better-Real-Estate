@@ -21,17 +21,16 @@
 try { if (localStorage.getItem('bre_theme') === 'dark') document.documentElement.dataset.theme = 'dark'; } catch {}
 </script>
 <style>
-html.bre-starting { background:#FAFAF8; }
-html.bre-starting[data-theme="dark"] { background:#0B0B0A; }
+html.bre-starting, html.bre-starting body { background:#FFF !important; color-scheme:light; }
 .bre-starting body > :is(header,main,footer,nav) { visibility:hidden; }
-.bre-startup { position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:24px;box-sizing:border-box;background:var(--bg,#FAFAF8);color:var(--ink,#111);font-family:Inter,system-ui,sans-serif;transition:opacity .14s ease; }
-[data-theme="dark"] .bre-startup { background:var(--bg,#0B0B0A);color:var(--ink,#F7F6F1); }
+.bre-startup { position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:24px;box-sizing:border-box;background:#FFF;color:#111;color-scheme:light;font-family:Inter,system-ui,sans-serif; }
+
 .bre-startup-inner { width:min(100%,340px);text-align:center; }
-.bre-startup-logo { display:block;width:min(100%,270px);height:auto;margin:0 auto 28px;padding:14px;box-sizing:border-box;background:#FAFAF8;border-radius:12px; }
-.bre-startup p { font-size:14px;line-height:1.6;margin:16px 0;color:var(--ink-soft,#63615C); }
-[data-theme="dark"] .bre-startup p { color:var(--ink-soft,#9C9A92); }
-.bre-startup-ring { display:block;width:24px;height:24px;margin:auto;border:2px solid var(--line,#E4E1D6);border-top-color:var(--accent,#E8590C);border-radius:50%;animation:bre-startup-spin 1s linear infinite; }
-.bre-startup a { display:inline-flex;align-items:center;justify-content:center;padding:11px 18px;border-radius:9px;background:var(--accent,#E8590C);color:var(--onaccent,#FFF);font-size:14px;font-weight:600;text-decoration:none; }
+.bre-startup-logo { display:block;width:min(100%,270px);height:auto;margin:0 auto 28px;padding:14px;box-sizing:border-box;background:#FFF;border-radius:12px; }
+.bre-startup p { font-size:14px;line-height:1.6;margin:16px 0;color:#63615C; }
+
+.bre-startup-ring { display:block;width:24px;height:24px;margin:auto;border:2px solid #E4E1D6;border-top-color:#E8590C;border-radius:50%;animation:bre-startup-spin 1s linear infinite; }
+.bre-startup a { display:inline-flex;align-items:center;justify-content:center;padding:11px 18px;border-radius:9px;background:#9C6500;color:#FFF;font-size:14px;font-weight:600;text-decoration:none; }
 .bre-startup a:focus-visible { outline:2px solid currentColor;outline-offset:4px; }
 .bre-startup [hidden] { display:none; }
 .bre-startup-done { opacity:0;pointer-events:none; }
