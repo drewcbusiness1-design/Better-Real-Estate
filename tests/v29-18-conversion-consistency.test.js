@@ -2,7 +2,7 @@ const fs = require('fs');
 const assert = require('assert');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
-assert(app.includes('Free to join · No card required'), 'homepage must say free to join');
+assert(require('fs').readFileSync(require('path').join(__dirname,'../public/index.html'),'utf8').includes('Free to join · No card required'), 'homepage must say free to join');
 assert(app.includes('30 full property-detail views every day'), 'Free plan must describe the daily full-property allowance');
 assert(app.includes('Your Better Real Estate account stays free.'), 'FAQ must explain permanent Free plan');
 assert(app.includes('Better Plus (${cents(state.pricing.pro.monthly)}/mo)'), 'FAQ Plus price must derive from live pricing');

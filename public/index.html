@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Better Real Estate | Off-market properties and investor connections</title>
-<meta name="description" content="Better Real Estate connects wholesalers, investors, buyers, sellers and funders. Post properties, build your network and organize deals. Free to join.">
+<title>Find Off-Market Deals and Buyers | Better Real Estate</title>
+<meta name="description" content="Browse off-market investment properties and see what buyers are looking for. Preview the latest listing and published buy boxes before joining Better Real Estate.">
 <link rel="canonical" href="https://betterrealestate.org/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Better Real Estate">
-<meta property="og:title" content="Better Real Estate | Off-market properties and investor connections">
-<meta property="og:description" content="Post properties. Connect with buyers. Move deals forward. Free to join, no card required.">
+<meta property="og:title" content="Find Off-Market Deals and Buyers | Better Real Estate">
+<meta property="og:description" content="Find buyers for your deal or browse investment properties that fit your buy box. Preview Better Real Estate before joining.">
 <meta property="og:url" content="https://betterrealestate.org/">
 <meta property="og:image" content="https://betterrealestate.org/brand-logo.png">
 <meta name="twitter:card" content="summary">
@@ -49,7 +49,6 @@ html.bre-starting[data-theme="dark"] { background:#0B0B0A; }
     <span class="bre-startup-ring" aria-hidden="true"></span>
     <p id="bre-startup-message">Loading Better Real Estate…</p>
     <a id="bre-startup-retry" href="" hidden>Reload page</a>
-    <noscript><style>.bre-startup-ring,#bre-startup-message { display:none; }</style><p>JavaScript is required to use Better Real Estate. Enable it, then reload this page.</p></noscript>
   </div>
 </div>
 <script>
@@ -76,7 +75,28 @@ html.bre-starting[data-theme="dark"] { background:#0B0B0A; }
     <div id="navlinks" class="navlinks"></div>
   </div>
 </header>
-<main id="app"></main>
+<main id="app">
+  <div class="homepublic">
+    <section class="homehero">
+      <div class="homewide">
+        <div id="home-intro" class="homehero-copy">
+          <div class="homeeyebrow">OFF-MARKET REAL ESTATE</div>
+          <h1>Find off-market deals. <em>Reach the right buyers.</em></h1>
+          <p>Wholesalers can see what buyers are looking for before sharing a deal. Investors can preview the latest listing and evaluate deals with Better’s built-in AI Deal Analysis.</p>
+          <div class="herobtns home-paths">
+            <a class="btn-primary" href="/?view=preview&amp;intent=seller" data-deal-intent="seller">Find buyers for my deal</a>
+            <a class="btn-ghost" href="/?view=preview&amp;intent=buyer" data-deal-intent="buyer">Find investment deals</a>
+          </div>
+          <div class="homeheronote"><span>Free to join · No card required</span><a href="/?view=try" data-home-demo>Try it out</a></div>
+        </div>
+        <noscript>
+          <style>.bre-starting body > :is(header,main,footer,nav) { visibility:visible; } #bre-startup { display:none; }</style>
+          <p>Enable JavaScript to browse previews, try the demo or sign in.</p>
+        </noscript>
+      </div>
+    </section>
+  </div>
+</main>
 <footer id="sitefooter"><div class="footinner"><a href="/guides/">Real estate guides</a></div></footer>
 <nav id="tabbar" class="tabbar"></nav>
 <script src="https://js.stripe.com/v3/"></script>

@@ -1713,3 +1713,21 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 
 @media(min-width:621px){.daily-feed-slot{scroll-margin-top:100px}}
 @media(prefers-reduced-motion:reduce){.daily-property-feed{scroll-snap-type:none}}
+
+/* Public deal paths and listings previews */
+.home-paths > a { display: inline-flex; align-items: center; justify-content: center; text-align: center; text-decoration: none; }
+.homeheronote > a { margin-inline-start: 14px; color: var(--accent-text); font-weight: 700; }
+.deal-preview { max-width: 960px; }
+.deal-preview > h1 { margin: 20px 0 8px; font-size: clamp(28px, 5vw, 44px); line-height: 1.13; }
+.deal-preview-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.deal-preview-list { margin-top: 28px; }
+.deal-preview-list > h2 { margin-bottom: 8px; }
+.deal-preview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; }
+.deal-preview-single { max-width: 420px; }
+.deal-preview-card { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow-wrap: anywhere; }
+.deal-preview-card h3 { margin: 0 0 6px; font-size: 17px; }
+.deal-preview-card p { margin: 0 0 8px; }
+.deal-preview-card p:empty, .deal-preview-list [role="status"]:empty { display: none; }
+.deal-preview-verified { color: var(--accent-text); font-size: 12px; font-weight: 800; }
+
+.listing-analysis-entry { margin: 12px 0; }
