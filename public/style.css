@@ -1731,3 +1731,16 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .deal-preview-verified { color: var(--accent-text); font-size: 12px; font-weight: 800; }
 
 .listing-analysis-entry { margin: 12px 0; }
+
+.home-listing-section { padding: clamp(32px, 5vw, 60px) 0; border-bottom: 1px solid var(--line); }
+.home-listing-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); align-items: center; gap: clamp(24px, 5vw, 64px); }
+.home-listing-content > h2, .home-listing-explainer h2 { margin: 0 0 14px; font-size: clamp(22px, 3vw, 30px); letter-spacing: -.025em; }
+.home-listing-explainer p { color: var(--ink-2); font-size: 15px; line-height: 1.65; margin: 0 0 12px; }
+.home-listing-content [role="status"]:empty { display: none; }
+.deal-preview-card.public-property-card { padding: 0; overflow: hidden; }
+.public-property-photo { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; background: var(--surface-2); }
+.public-property-summary { padding: 16px; }
+.public-property-summary h3 { font-size: 20px; }
+.public-property-price { font-size: 17px; font-weight: 700; }
+.property-preview-link { display: inline-block; margin-top: 5px; color: var(--accent-text); font-weight: 700; text-underline-offset: 3px; }
+@media (max-width: 680px) { .home-listing-grid { grid-template-columns: 1fr; } }

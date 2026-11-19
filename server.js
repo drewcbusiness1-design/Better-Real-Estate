@@ -1911,11 +1911,14 @@ app.get('/api/public/deal-preview/:intent', async (req, res, next) => {
       if (!newest) return res.json({ property: null });
 
       const { listing, freshness } = newest;
+      const cover = Array.isArray(listing.photos) ? listing.photos[0] : null;
+      const publicPhoto = typeof cover === 'string' && /^\/(?:api\/img|uploads)\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.(?:jpe?g|png|webp|gif)$/i.test(cover) ? cover : null;
       return res.json({ property: {
         id: listing.id,
         market: previewMarket(listing.city),
         propertyType: normalizePropertyType(listing.propertyType) || null,
         asking: previewPrice(listing.asking),
+        photo: publicPhoto,
         confirmedDaysAgo: Number.isFinite(Date.parse(listing.lastConfirmedAt)) ? freshness.confirmedDaysAgo : null
       } });
     }
