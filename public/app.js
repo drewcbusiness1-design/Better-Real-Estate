@@ -180,7 +180,7 @@ const cents = c => '$' + (c / 100).toFixed(2).replace(/\.00$/, '');
 const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const applyTheme = t => document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
 
-const ROUTED_VIEWS = new Set(['manageproperties','feedback','services','servicesdirectory','preview','support','home','auth','feed','detail','shop','cart','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
+const ROUTED_VIEWS = new Set(['manageproperties','feedback','services','servicesdirectory','try','preview','support','home','auth','feed','detail','shop','cart','shopitem','sellitem','shopmanage','shopedit','orders','settings','me','profile','saved','messages','chat','network','workspace','upgrade','compose','buybox','promote','analytics','wallet','offers','boostpicker','companyworkspace','company','companyjoin','buyerportal','leaderboard','insights','admin','emailcenter','memberships','suppliers','fulfilment','reports','dealbuilder','buyercrm','commandcenter','search','savedsearches','pipeline','dealcalendar','markethubs','titledirectory','dealroom','transactionhub','affiliate','intake','learn','about','terms','privacy','contact','faq','forgot']);
 const dealIntent = value => ['buyer', 'seller'].includes(value) ? value : null;
 const previewListingId = value => /^[a-z0-9_-]{1,80}$/i.test(value || '') ? value : null;
 
@@ -224,6 +224,7 @@ function applyRouteParams(params) {
   if (state.view === 'company') state.companyId = params.get('company') || null;
   if (state.view === 'network') state.networkTab = params.get('tab') || 'discover';
   if (state.view === 'buyerportal') { state.buyerPortalType = params.get('type') || null; state.buyerPortalId = params.get('target') || null; }
+  if (state.view === 'try') { const screens=['feed','detail','profile','chat','pipeline','dealroom','complete']; state.tryScreen=screens.includes(params.get('screen'))?params.get('screen'):screens[Math.max(0,Math.min(6,Number.parseInt(params.get('step'),10)||0))]; }
   if (params.get('invite')) state.companyInviteToken = params.get('invite');
   if (state.view === 'support') state.supportThreadId = params.get('thread') || null;
   if (state.view === 'search') { state.searchQ=params.get('q')||''; state.searchMarket=params.get('market')||''; }
@@ -237,6 +238,7 @@ function routeUrl(view = state.view) {
   if (state.navigationWorkspace === 'services') p.set('workspace','services');
   if (view && view !== (state.user ? 'feed' : 'home')) p.set('view', view);
   if (['detail','promote','analytics','dealroom'].includes(view) && state.detailId) p.set('id', state.detailId);
+  if (view === 'try' && state.tryScreen && state.tryScreen !== 'feed') p.set('screen',state.tryScreen);
   if (view === 'preview') p.set('intent', state.previewIntent || 'buyer');
   if (view === 'auth') {
     p.set('mode', state.authMode === 'login' ? 'login' : 'signup');
@@ -269,10 +271,9 @@ function writeRoute(mode = 'push') {
   else if (url !== current) history.pushState({ bre: true }, '', url);
 }
 
-let homeIntro, homeWorkflow;
+let homeIntro;
 async function boot() {
   homeIntro = document.getElementById('home-intro');
-  homeWorkflow = document.getElementById('home-workflow');
   const params = new URLSearchParams(location.search);
   state.pendingCampaign=readCampaignAttribution(params);
   const incomingRef = String(params.get('ref') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
@@ -317,7 +318,7 @@ async function boot() {
   else if (state.user) state.view = requestedView && ROUTED_VIEWS.has(requestedView) && !['home','auth'].includes(requestedView) ? requestedView : defaultMemberDashboard();
   else if (state.companyInviteToken) { state.view = 'auth'; state.authMode = 'signup'; }
   else {
-    const publicWithoutAccount = new Set(['home','auth','preview','about','terms','privacy','contact','faq','forgot','buyerportal','affiliate']);
+    const publicWithoutAccount = new Set(['try','home','auth','preview','about','terms','privacy','contact','faq','forgot','buyerportal','affiliate']);
     if (requestedView && ROUTED_VIEWS.has(requestedView) && !publicWithoutAccount.has(requestedView)) {
       state.postAuthTarget = {
         view: requestedView,
@@ -669,7 +670,7 @@ async function renderApp() {
   if(state.user||!['home','about','faq','upgrade','affiliate'].includes(state.view))window.BetterPixel?.pause();
   app.innerHTML = '';
   const views = {
-    manageproperties: renderManageProperties, feedback: renderFeedback, services: renderServices, servicesdirectory: renderServicesDirectory, preview: renderDealPreview, home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
+    manageproperties: renderManageProperties, feedback: renderFeedback, services: renderServices, servicesdirectory: renderServicesDirectory, try: renderTryItOut, preview: renderDealPreview, home: renderHome, auth: renderAuth, feed: renderFeed, detail: renderDetail,
     compose: renderCompose, saved: renderSaved, messages: renderMessages, chat: renderChat, network: renderNetwork,
     me: renderMe, profile: renderProfile, settings: renderSettings, buybox: renderBuyBox,
     promote: renderPromote, leaderboard: renderLeaderboard, admin: renderAdmin, emailcenter: renderEmailCenter, memberships: renderMemberships,
@@ -681,13 +682,13 @@ async function renderApp() {
   };
   let routeLoadTimer=null;
   try {
-    const requestedView = state.view, requestedDetailId = state.detailId, requestedComposeEditId=state.composeEditId||null;
+    const requestedView = state.view, requestedDetailId = state.detailId, requestedComposeEditId=state.composeEditId||null, requestedTryScreen=state.tryScreen||'feed', requestedTryProperty=requestedView==='try'?tryRead().property:null;
     if (requestedView === 'detail' && state.detailPreview?.id === requestedDetailId) app.appendChild(renderDetailPreview(state.detailPreview));
     else routeLoadTimer=setTimeout(()=>{if(generation===appRenderGeneration&&state.view===requestedView&&!app.firstChild)app.appendChild(el('div',{class:'route-loading',role:'status','aria-live':'polite'},[el('span',{class:'loading-wheel','aria-hidden':'true'}),el('span',{},'Loading…')]));},220);
     const rendered = await (views[requestedView] || renderHome)();
     clearTimeout(routeLoadTimer); routeLoadTimer=null;
     // Ignore stale async renders if the user navigated elsewhere while data was loading.
-    if (generation!==appRenderGeneration || state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId) || (requestedView==='compose'&&(state.composeEditId||null)!==requestedComposeEditId)) return;
+    if (generation!==appRenderGeneration || (requestedView==='try'&&((state.tryScreen||'feed')!==requestedTryScreen||tryRead().property!==requestedTryProperty)) || state.view !== requestedView || (requestedView === 'detail' && state.detailId !== requestedDetailId) || (requestedView==='compose'&&(state.composeEditId||null)!==requestedComposeEditId)) return;
     const preserveDetailScroll = requestedView === 'detail' ? window.scrollY : null;
     app.replaceChildren(rendered);
     window.betterStartupReady?.();
@@ -713,56 +714,191 @@ async function renderApp() {
 /* ================= HOME ================= */
 /* Shared screen context: production screens retain their existing defaults. */
 function liveUIContext(){return {state,api,go,render,openListingDetail,openPropertyShare,refreshUnread,renderTop,renderTabs,demo:false};}
+const TRY_PROPERTIES=Object.freeze([
+ {id:'sample-1',title:'Single-family renovation',market:'Memphis, TN',asking:115000,beds:3,baths:2,sqft:1450,type:'Single family',strategy:'Fix & flip'},
+ {id:'sample-2',title:'Rental portfolio starter',market:'Cleveland, OH',asking:98000,beds:3,baths:1,sqft:1280,type:'Single family',strategy:'Buy & hold'},
+ {id:'sample-3',title:'Two-unit opportunity',market:'Birmingham, AL',asking:165000,beds:4,baths:2,sqft:2100,type:'Duplex',strategy:'Buy & hold'}
+]);
+const TRY_SCREENS=['feed','detail','profile','chat','pipeline','dealroom','complete'];
+function tryInitial(){return {property:'sample-1',saved:[],messages:[],pipeline:null,room:{stage:'intake',nextAction:'Review the sample property',privateNotes:'',tasks:[]},following:false,guided:true,roomSaved:false,activity:[]};}
+function tryRead(){
+ if(state.tryMemoryV2)return state.tryMemoryV2;
+ const base=tryInitial();let raw;try{raw=JSON.parse(sessionStorage.getItem('bre-public-try-v2')||'null');}catch{}
+ if(raw&&typeof raw==='object'){
+  if(TRY_PROPERTIES.some(p=>p.id===raw.property))base.property=raw.property;
+  base.saved=Array.isArray(raw.saved)?raw.saved.filter(id=>TRY_PROPERTIES.some(p=>p.id===id)):[];
+  base.messages=Array.isArray(raw.messages)?raw.messages.filter(m=>typeof m.body==='string'&&m.body.length<=1000).slice(-20).map((m,i)=>({id:'sample-message-'+i,body:m.body,outgoing:!!m.outgoing,at:typeof m.at==='string'&&Number.isFinite(Date.parse(m.at))?m.at:new Date().toISOString()})):[];
+  const stages=['lead','analyzing','contacted','contract','dispo','closing','closed','dead'];
+  if(raw.pipeline&&stages.includes(raw.pipeline.stage))base.pipeline={id:'sample-pipeline',title:String(raw.pipeline.title||'Sample opportunity').slice(0,100),stage:raw.pipeline.stage,listingId:base.property,nextAction:String(raw.pipeline.nextAction||'').slice(0,300),notes:String(raw.pipeline.notes||'').slice(0,2000)};
+  if(raw.room&&['intake','marketing','buyer-interest','negotiation','title','closing','closed','on-hold'].includes(raw.room.stage))base.room={stage:raw.room.stage,nextAction:String(raw.room.nextAction||'').slice(0,300),privateNotes:String(raw.room.privateNotes||'').slice(0,2000),tasks:[]};
+  base.following=raw.following===true;base.guided=raw.guided!==false;base.roomSaved=raw.roomSaved===true;
+ }
+ state.tryMemoryV2=base;return base;
+}
+function tryPersist(){const d=tryRead();try{sessionStorage.setItem('bre-public-try-v2',JSON.stringify(d));}catch{}return d;}
+function tryListing(p){return {...p,address:p.title+' · Sample',city:p.market,propertyType:p.type,photos:[],ownerId:'sample-seller',ownerName:'Sample Seller',demo:true,notes:'Illustrative property for exploring Better. All facts and asking prices are sample inputs, not verified listing information.',situation:'Sample opportunity',timeline:'Illustrative timeline',locked:false,savedByMe:tryRead().saved.includes(p.id)};}
+function tryPerson(id='sample-buyer'){const p=TRY_PROPERTIES.find(p=>p.id===tryRead().property)||TRY_PROPERTIES[0];return {id,name:id==='sample-seller'?'Sample Seller':'Sample Buyer',role:id==='sample-seller'?'seller':'buyer',roles:[id==='sample-seller'?'seller':'buyer'],username:id,location:p.market,investmentMarkets:[p.market],markets:[p.market],bio:'Illustrative profile for this guided demo. No real member, transaction history or verified buyer is represented.',verified:false,friendStatus:'none'};}
+function tryNavigate(view,extra={}){
+ if(['search','savedsearches'].includes(view)){toast('Search and alerts are available in the full platform. Explore the sample properties here.');return;}
+ state.trySavedOnly=view==='saved';
+ const aliases={saved:'feed',messages:'chat',network:'profile'};view=aliases[view]||view;
+ if(!TRY_SCREENS.includes(view)){toast('That tool is available in the full platform. You can keep exploring the sample screens or sign up free.');return;}
+ if(extra.detailId&&TRY_PROPERTIES.some(p=>p.id===extra.detailId)){const d=tryRead();if(d.property!==extra.detailId){const keep=d.saved;state.tryMemoryV2=tryInitial();state.tryMemoryV2.saved=keep;state.tryMemoryV2.property=extra.detailId;tryPersist();}}
+ state.tryScreen=view;writeRoute();render();window.scrollTo({top:0,behavior:'auto'});
+}
+async function tryApi(method,path,body={}){
+ const d=tryRead(),p=TRY_PROPERTIES.find(p=>p.id===d.property)||TRY_PROPERTIES[0],listing=tryListing(p),at=new Date().toISOString();
+ const clean=v=>String(v||'').slice(0,1000);
+ const result=value=>{if(method!=='GET')tryPersist();return value;};
+ if(method==='GET'&&path.startsWith('/api/feed?'))return {feed:TRY_PROPERTIES.filter(p=>(!state.trySavedOnly||d.saved.includes(p.id))&&(!path.includes('following')||d.following)).map(tryListing)};
+ if(method==='GET'&&path==='/api/pipeline')return {deals:d.pipeline?[d.pipeline]:[]};
+ if(method==='POST'&&path==='/api/pipeline'){
+  if(body.listingId&&!TRY_PROPERTIES.some(x=>x.id===body.listingId))throw Error('Choose a sample property.');
+  if(body.listingId&&body.listingId!==d.property)throw Error('Open that sample property first.');
+  const stage=body.stage||d.pipeline?.stage||'lead';if(!['lead','analyzing','contacted','contract','dispo','closing','closed','dead'].includes(stage))throw Error('Choose a demo pipeline stage.');
+  d.pipeline={...(d.pipeline||{}),id:'sample-pipeline',listingId:d.property,title:clean(body.title||d.pipeline?.title||listing.address),stage,nextAction:clean(body.nextAction??d.pipeline?.nextAction??'Review sample buyer interest'),notes:clean(body.notes??d.pipeline?.notes)};return result({deal:d.pipeline});
+ }
+ if(method==='POST'&&path==='/api/saves/toggle'){
+  if(!TRY_PROPERTIES.some(x=>x.id===body.listingId))throw Error('Choose a sample property.');
+  d.saved=d.saved.includes(body.listingId)?d.saved.filter(x=>x!==body.listingId):[...d.saved,body.listingId];return result({saved:d.saved.includes(body.listingId)});
+ }
+ if(path.startsWith('/api/follow/status/')&&method==='GET')return {following:d.following};
+ if(path==='/api/follow'&&method==='POST'){d.following=!d.following;return result({following:d.following});}
+ if(method==='GET'&&/^\/api\/users\/sample-(buyer|seller)\/listings$/.test(path))return {owner:tryPerson(path.includes('sample-seller')?'sample-seller':'sample-buyer'),listings:[],followerCount:0,friendCount:0,reviews:[]};
+ if(method==='GET'&&/^\/api\/conversations\/sample-(buyer|seller)$/.test(path))return {other:tryPerson(path.includes('sample-seller')?'sample-seller':'sample-buyer'),messages:d.messages};
+ if(method==='POST'&&path==='/api/messages'){
+  if(!['sample-buyer','sample-seller'].includes(body.toUserId))throw Error('Choose a sample participant.');
+  if(!clean(body.body).trim())throw Error('Type a sample message first.');
+  d.messages.push({id:'sample-message-'+Date.now(),body:clean(body.body),outgoing:true,at},{id:'sample-reply-'+Date.now(),body:'Simulated reply: this fits the sample criteria. Let’s review the next steps in the Deal room.',outgoing:false,at});d.messages=d.messages.slice(-20);return result({ok:true});
+ }
+ if(method==='POST'&&path==='/api/offers')return result({ok:true,offer:{id:'sample-offer'}});
+ const match=path.match(/^\/api\/listings\/(sample-[123])(?:\/(.*))?$/);
+ if(match){const item=tryListing(TRY_PROPERTIES.find(x=>x.id===match[1])),suffix=match[2]||'';
+  if(method==='GET'&&!suffix)return {listing:item,owner:tryPerson('sample-seller'),otherListings:[],reviews:[]};
+  if(match[1]!==d.property)throw Error('Open the selected sample property.');
+  if(method==='GET'&&suffix==='deal-room')return {listing:item,room:d.room,canManage:true,messages:d.messages.map(m=>({...m,fromUserId:m.outgoing?'sample-you':'sample-buyer',fromName:'Sample Buyer'})),offers:[],responses:[]};
+  if(method==='PATCH'&&suffix==='deal-room'){
+   if(!['intake','marketing','buyer-interest','negotiation','title','closing','closed','on-hold'].includes(body.stage))throw Error('Choose a demo Deal room stage.');
+   d.room={stage:body.stage,nextAction:clean(body.nextAction),privateNotes:clean(body.privateNotes),tasks:[]};d.roomSaved=true;
+   d.activity.push({id:'sample-activity-'+Date.now(),text:'Sample Deal room saved: '+body.stage,userName:'You · demo',at});
+   if(d.pipeline&&body.stage==='closed')d.pipeline.stage='closed';tryPersist();setTimeout(()=>{if(state.view==='try')render();},0);return {ok:true,room:d.room};
+  }
+  if(method==='POST'&&suffix==='deal-room/messages')return tryApi('POST','/api/messages',{toUserId:'sample-buyer',body:body.body});
+ }
+ if(method==='GET'&&path==='/api/deals/'+d.property+'/activity')return {activity:d.activity};
+ throw Error('This tool is outside the demo. No data was sent. Try the guided steps or sign up to use your own workspace.');
+}
+function tryContext(screen){
+ const d=tryRead();return {demo:true,state:{view:screen,user:{id:'sample-you',name:'You · Demo',role:'buyer',roles:['buyer'],settings:{}},access:null,get feedMode(){return d.feedMode||'for-you';},set feedMode(v){d.feedMode=v;},photoIdx:0,detailId:d.property,profileId:'sample-buyer',chatUserId:'sample-buyer',chatListingId:d.property},api:tryApi,go:tryNavigate,render,openListingDetail:l=>tryNavigate('detail',{detailId:l.id}),openPropertyShare:()=>toast('Sample links are not shared. Sign up to share your own properties.'),refreshUnread:async()=>0,renderTop:()=>{},renderTabs:()=>{}};
+}
+async function renderTryItOut(){
+ const d=tryRead(),ready=!!(d.roomSaved&&d.room.stage==='closed'&&d.pipeline&&d.messages.some(m=>m.outgoing));
+ const requested=TRY_SCREENS.includes(state.tryScreen)?state.tryScreen:'feed',screen=requested==='complete'&&!ready?'feed':requested,ctx=tryContext(screen),p=TRY_PROPERTIES.find(x=>x.id===d.property)||TRY_PROPERTIES[0];
+ const button=(text,fn,primary=false)=>el('button',{type:'button',class:primary?'btn-primary':'btn-ghost',onclick:fn},text);
+ const signup=()=>{state.postAuthTarget=null;state.authMode='signup';go('auth');};
+ const wrap=el('div',{class:'try-platform page'});
+ wrap.appendChild(el('div',{class:'try-toolbar'},[el('div',{},[el('b',{},'Better · Interactive demo'),el('small',{},'Actual platform screens · Sample data')]),el('div',{class:'try-actions'},[button('Exit demo',()=>go(state.user?'feed':'home')),state.user?button('My workspace',()=>go('feed'),true):button('Sign up free',signup,true)])]));
+ wrap.appendChild(el('p',{class:'try-disclaimer'},'Demo only: all properties, people, messages and deal activity here are illustrative. Actions stay in this browser tab; no real messages, listings or transactions are created.'));
+ const titles={feed:'Browse the feed',detail:'Review a property',profile:'Meet a sample buyer',chat:'Try messaging',pipeline:'Organize your pipeline',dealroom:'Move the sample deal forward',complete:'Your sample workflow is complete'};
+ const tips={feed:'Open a sample property using View details. You can also try Save.',detail:'Explore the property facts and calculator. Then review the sample buyer below.',profile:'Try Follow, review the sample buying criteria and select Message.',chat:'Type a sample message and press Send. A clearly labeled simulated reply will appear.',pipeline:'Use the stage selector to move your opportunity, add a private note, then select Deal room.',dealroom:'Edit the stage, next action and private notes. Set the stage to Closed and Save deal room to finish the sample workflow.'};
+ if(d.guided)wrap.appendChild(el('aside',{class:'try-guide','aria-label':'Demo guidance'},[el('div',{class:'homeeyebrow'},'GUIDED DEMO · '+(TRY_SCREENS.indexOf(screen)+1)+' OF 7'),el('h1',{class:'try-title'},titles[screen]),el('p',{},tips[screen]||'Create your free account whenever you are ready.'),button('Explore without guidance',()=>{d.guided=false;tryPersist();render();})]));
+ else wrap.appendChild(button('Show guidance',()=>{d.guided=true;tryPersist();render();}));
+ wrap.appendChild(el('nav',{class:'try-app-nav','aria-label':'Demo workspace'},TRY_SCREENS.filter(x=>x!=='complete').map(x=>button(titles[x],()=>tryNavigate(x),screen===x))));
+ const views={feed:renderFeed,detail:renderDetail,profile:renderProfile,chat:renderChat,pipeline:renderPipeline,dealroom:renderDealRoom};
+ if(screen==='complete'){
+  wrap.appendChild(el('section',{class:'try-panel'},[el('h2',{},titles.complete),el('p',{},'You explored a property, started a sample conversation and practiced keeping the work in one place. This is an illustrative successful scenario, not a real closing or a guarantee of results.'),el('p',{},'Real contracts, due diligence, title work, funds and closing require the appropriate parties. Better helps you organize the work.'),state.user?button('Open my workspace',()=>go('feed'),true):button('Sign up free',signup,true),button('Try another property',()=>{state.tryMemoryV2=tryInitial();tryPersist();tryNavigate('feed');})]));
+ }else{
+  const ui=await views[screen](ctx);ui.classList.add('try-live-screen');wrap.appendChild(ui);
+  if(screen==='profile')wrap.appendChild(el('section',{class:'try-panel'},[el('h3',{},'Sample buying criteria'),el('p',{},p.market+' · '+p.type+' · '+p.strategy+' · Up to '+money(p.asking+35000)),el('p',{class:'hint'},'Criteria selected to illustrate a fit. This is not a verified or available real buyer.')]));
+  const next={detail:['Review sample buyer',()=>tryNavigate('profile')],profile:['Message sample buyer',()=>tryNavigate('chat')],chat:['Add sample property to pipeline',async()=>{await tryApi('POST','/api/pipeline',{listingId:d.property,title:p.title+' · Sample',stage:'lead'});tryNavigate('pipeline');}],pipeline:['Open sample Deal room',()=>tryNavigate('dealroom')]};
+  if(next[screen]){
+   const [label,fn]=next[screen];const control=button(label,fn,true);
+   if(d.guided&&screen==='chat'&&!d.messages.some(m=>m.outgoing))control.disabled=true;
+   if(d.guided&&screen==='pipeline'&&(!d.pipeline||d.pipeline.stage==='lead'))control.disabled=true;
+   wrap.appendChild(el('div',{class:'try-next'},[control]));
+  }
+  if(screen==='dealroom'){
+   const finish=button('Finish sample workflow',()=>tryNavigate('complete'),true);finish.disabled=!ready;wrap.appendChild(el('div',{class:'try-next'},[el('p',{role:'status'},finish.disabled?'Send a sample message, add the property to your pipeline and save the Deal room at Closed to finish.':'Sample stage saved. You can finish the walkthrough.'),finish]));
+  }
+ }
+ wrap.appendChild(el('div',{class:'try-bottom'},[button('Restart demo',()=>{state.tryMemoryV2=tryInitial();tryPersist();tryNavigate('feed');})]));
+ return wrap;
+}
+
 function renderHome() {
   const intro = homeIntro.cloneNode(true);
-  intro.querySelector('[data-home-signup]').addEventListener('click', event => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    state.postAuthTarget = null;
-    go('auth', { authMode: 'signup' });
-  });
+  for (const link of intro.querySelectorAll('[data-deal-intent], [data-home-demo]')) {
+    link.addEventListener('click', event => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      if (link.dataset.dealIntent) go('preview', { previewIntent: link.dataset.dealIntent });
+      else go('try', { tryScreen: 'feed' });
+    });
+  }
+  const wrap = el('div', { class: 'homepublic' });
 
-  const listing = el('section', { class: 'home-listing', 'aria-label': 'Latest listing', 'aria-busy': 'true' });
-  const content = el('div', { class: 'home-listing-content' });
-  const notice = el('p', { class: 'hint', role: 'status' }, 'Loading the latest listing…');
-  listing.append(el('h2', {}, 'Latest listing'), content, notice);
-  api('GET', '/api/public/deal-preview/buyer').then(({ property }) => {
-    if (property) content.replaceChildren(renderPublicPropertyCard(property));
-    notice.textContent = property ? '' : 'No current listings to preview.';
-  }).catch(() => {
-    notice.textContent = 'The latest listing is temporarily unavailable.';
-  }).finally(() => listing.setAttribute('aria-busy', 'false'));
+  const primary = (label) => el('button', { class: 'btn-primary', onclick: () => { state.authMode = 'signup'; go('auth'); } }, label);
+  const login = (label = 'Sign in') => el('button', { class: 'btn-ghost', onclick: () => { state.authMode = 'login'; go('auth'); } }, label);
 
-  return el('div', { class: 'homepublic' }, [
-    el('section', { class: 'homehero' }, el('div', { class: 'homewide homehero-grid' }, [intro, listing])),
-    homeWorkflow.cloneNode(true)
-  ]);
+  wrap.appendChild(el('section', { class: 'homehero' }, el('div', { class: 'homewide homehero-grid' }, [
+    intro,
+    el('div', { class: 'homecap-panel' }, [
+      el('div', { class: 'homecap-head' }, [el('span', {}, 'THE PLATFORM'), el('b', {}, 'One professional real estate workspace')]),
+      capability('Better Dispo', 'Match buyers and build distribution assets', '01'),
+      capability('Buyers Looking', 'See public acquisition criteria', '02'),
+      capability('Network & Messages', 'Build relationships and talk directly', '03'),
+      capability('Wholesale Teams', 'Work together with individual logins', '04'),
+      el('div', { class: 'homecap-foot' }, ['Built around the deal — ', el('strong', {}, 'not around noise.')])
+    ])
+  ])));
+
+  wrap.appendChild(el('section', { class: 'homeproof' }, el('div', { class: 'homewide homeproof-grid' }, [
+    proofItem('01', 'Find opportunities', 'A real-estate-first feed built around properties and people — not unrelated social noise.'),
+    proofItem('02', 'Find the right people', 'Public buy boxes, member discovery, follows, friends and direct messaging keep your network useful.'),
+    proofItem('03', 'Move the deal', 'Better Dispo turns one deal into buyer matching and polished distribution assets without rebuilding it everywhere.')
+  ])));
+
+  wrap.appendChild(el('section', { class: 'homesection' }, el('div', { class: 'homewide' }, [
+    el('div', { class: 'homesection-head' }, [
+      el('div', { class: 'homeeyebrow' }, 'ONE WORKSPACE'),
+      el('h2', {}, 'Less bouncing between tools. More focus on the deal.'),
+      el('p', {}, 'Better Real Estate brings the core parts of sourcing, networking and disposition into a workspace designed around how real estate professionals actually work.')
+    ]),
+    el('div', { class: 'homefeature-grid' }, [
+      homeFeature('Better Dispo', 'Paste or build a deal once. Match active buyers and create ready-to-share Facebook, Instagram, SMS, email and flyer assets.', 'Distribute'),
+      homeFeature('Buyers Looking', 'See what investors are actively acquiring by market, property type, strategy and price range before you start outreach.', 'Match'),
+      homeFeature('Real estate feed', 'Browse property-first posts, save opportunities and follow the people consistently bringing deals to your market.', 'Discover'),
+      homeFeature('Network & messaging', 'Search members, build professional connections and take conversations directly into private messages.', 'Connect'),
+      homeFeature('Wholesale Teams', 'Give your company a shared identity and workspace while each team member keeps a separate, accountable login.', 'Collaborate'),
+      homeFeature('Marketplace', 'Source rehab-related products and materials without turning the professional deal experience into a general marketplace.', 'Source')
+    ])
+  ])));
+
+  wrap.appendChild(el('section', { class: 'hometeam' }, el('div', { class: 'homewide hometeam-grid' }, [
+    el('div', {}, [
+      el('div', { class: 'homeeyebrow' }, 'FOR INDIVIDUALS AND TEAMS'),
+      el('h2', {}, 'Professional enough to become the workspace you open every day.'),
+      el('p', {}, 'Use Better Real Estate on your own or bring a wholesale company into a structured team workspace with individual accounts, company presence and shared deal operations.')
+    ]),
+    el('div', { class: 'hometeam-points' }, [
+      teamPoint('Separate team logins', 'No shared-password workflow.'),
+      teamPoint('Company presence', 'Keep the business identity connected to the people behind it.'),
+      teamPoint('Built to grow', 'Start with the network and add the professional tools you need.')
+    ])
+  ])));
+
+  wrap.appendChild(el('section', { class: 'homefinal' }, el('div', { class: 'homewide homefinal-inner' }, [
+    el('div', {}, [el('div', { class: 'homeeyebrow' }, 'BETTER REAL ESTATE'), el('h2', {}, 'Make better your standard.'), el('p', {}, 'Build your network. Find the deal. Reach the buyer. Keep the work in one place.')]),
+    el('div', { class: 'homefinal-actions' }, [primary('Create your account'), login('Already a member?')])
+  ])));
+  wrap.appendChild(el('div', { class: 'homewide homesocial' }, [el('span', {}, 'Follow Better'), socialLinksBlock(true)]));
+
+  return wrap;
 }
-
-function renderPublicPropertyCard(property) {
-  const days = property.confirmedDaysAgo;
-  const freshness = days === null || days >= 7 ? 'Needs seller confirmation'
-    : days === 0 ? 'Seller confirmed today' : 'Seller confirmed ' + days + (days === 1 ? ' day ago' : ' days ago');
-  const href = state.user ? '/?view=detail&id=' + encodeURIComponent(property.id)
-    : '/?view=auth&mode=signup&intent=buyer&property=' + encodeURIComponent(property.id);
-  const link = el('a', { href, class: 'property-preview-link' }, 'View property details');
-  link.addEventListener('click', event => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    continueDealPath('buyer', property.id);
-  });
-  return el('article', { class: 'deal-preview-card public-property-card' }, [
-    el('h3', {}, property.market || 'Investment property'),
-    el('p', { class: 'public-property-price' }, property.asking ? 'Asking ' + money(property.asking) : 'Asking price unavailable'),
-    property.propertyType ? el('p', {}, property.propertyType) : null,
-    el('p', { class: 'hint' }, freshness),
-    link
-  ]);
-}
-
 function renderDealPreview() {
   const intent = state.previewIntent || 'buyer';
   const seller = intent === 'seller';
+  const demo = () => go('try', { tryScreen: seller ? 'profile' : 'feed' });
   const wrap = el('div', { class: 'page deal-preview' });
   const rows = el('div', { class: seller ? 'deal-preview-grid' : 'deal-preview-grid deal-preview-single', 'aria-busy': 'true' });
   const notice = el('p', { class: 'sub', role: 'status' }, seller ? 'Loading public buy boxes…' : 'Loading the latest property…');
@@ -771,14 +907,16 @@ function renderDealPreview() {
   }, text);
   wrap.append(
     el('div', { class: 'deal-preview-nav' }, [
-      action(state.user ? 'Back to workspace' : 'Back to site', () => go(state.user ? defaultMemberDashboard() : 'home'))
+      action(state.user ? 'Back to workspace' : 'Back to site', () => go(state.user ? defaultMemberDashboard() : 'home')),
+      action(seller ? 'Find investment deals' : 'Find buyers for my deal', () => go('preview', { previewIntent: seller ? 'buyer' : 'seller' }))
     ]),
     el('h1', {}, seller ? 'Find buyers for your deal' : 'Find investment deals'),
     el('p', { class: 'sub' }, seller
       ? 'Review published buy boxes before sharing your deal. Join to see the buyers and message those whose criteria fit.'
       : 'Preview the newest current listing. Members can open full details, contact sellers and use Better’s built-in AI Deal Analysis.'),
     el('div', { class: 'deal-preview-nav' }, [
-      action(state.user ? (seller ? 'Open Buyers Looking' : 'Open property feed') : (seller ? 'Join to connect with buyers' : 'Join to browse deals'), () => continueDealPath(intent), true)
+      action(state.user ? (seller ? 'Open Buyers Looking' : 'Open property feed') : (seller ? 'Join to connect with buyers' : 'Join to browse deals'), () => continueDealPath(intent), true),
+      action(seller ? 'Try the sample buyer workflow' : 'Try the interactive demo', demo)
     ]),
     el('section', { class: 'deal-preview-list' }, [
       el('h2', {}, seller ? 'Published buy boxes' : 'Latest property preview'),
@@ -805,15 +943,28 @@ function renderDealPreview() {
           preview.verified ? el('span', { class: 'deal-preview-verified' }, 'Verified profile') : null
         ]));
       } else {
-        rows.appendChild(renderPublicPropertyCard(preview));
+        const days = preview.confirmedDaysAgo;
+        const freshness = days === null || days >= 7 ? 'Needs seller confirmation'
+          : days === 0 ? 'Seller confirmed today' : 'Seller confirmed ' + days + (days === 1 ? ' day ago' : ' days ago');
+        rows.appendChild(el('article', { class: 'deal-preview-card' }, [
+          el('h3', {}, preview.market || 'Investment property'),
+          el('p', {}, [preview.propertyType, preview.asking ? 'Asking ' + money(preview.asking) : 'Asking price unavailable'].filter(Boolean).join(' · ')),
+          el('p', { class: 'hint' }, freshness),
+          action(state.user ? 'View property details' : 'Join to view property', () => continueDealPath(intent, preview.id))
+        ]));
       }
     }
   }).catch(() => {
     rows.setAttribute('aria-busy', 'false');
-    notice.textContent = 'Previews are temporarily unavailable.';
+    notice.textContent = 'Previews are temporarily unavailable. You can still try the interactive demo.';
   });
   return wrap;
 }
+function capability(h, p, n) { return el('button', { type:'button', class:'homecap-row', onclick:()=>openHomeFeature(h), 'aria-label':'How '+h+' works' }, [el('span', { class: 'homecap-num' }, n), el('div', {}, [el('b', {}, h), el('small', {}, p)]), el('span', { class: 'homecap-arrow' }, '→')]); }
+function proofItem(n, h, p) { return el('div', { class: 'homeproof-item' }, [el('span', {}, n), el('div', {}, [el('h3', {}, h), el('p', {}, p)])]); }
+function homeFeature(h, p, tag) { return el('article', { class: 'homefeature' }, [el('div', { class: 'homefeature-tag' }, tag), el('h3', {}, h), el('p', {}, p)]); }
+function teamPoint(h, p) { return el('div', { class: 'hometeam-point' }, [el('span', {}, '✓'), el('div', {}, [el('b', {}, h), el('small', {}, p)])]); }
+
 const BETTER_SOCIAL_LINKS = [
   ['Instagram', 'https://www.instagram.com/thebetterrealestate'],
   ['Facebook', 'https://www.facebook.com/share/1CfSN43wRg/?mibextid=wwXIfr'],
@@ -3034,7 +3185,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'services',selector:'.service-workspace',min:0,release:82,title:'Your service workspace',copy:'Publish services and areas, receive quote requests, reply in Messages and track jobs. Switch to Main dashboard anytime. Private notes are visible only to you. Free tools do not require a paid plan.'},
  {view:'servicesdirectory',selector:'.service-workspace',min:0,release:84,title:'Find property services',copy:'Services, Find services, Messages, Network and Profile stay in the service workspace. Main dashboard returns to the full platform. Search providers and request quotes; verify qualifications directly.'},
  {view:'affiliate',selector:'.affiliate-center',min:0,release:73,title:'Individual commission agreements',copy:'Admin can propose a personal commission rate. Review and accept it in Affiliate Center to activate it for future eligible first paid memberships. A custom rate replaces automatic leaderboard increases until you accept a return to automatic rates. Past earnings keep their original rate.'},
- {view:'home',selector:'.herobtns',min:0,release:81,title:'See the latest listing before joining',copy:'The homepage shows one current property. Members can use Buyers Looking to review published buying criteria, then open a profile to send a private message. Open AI Deal Analysis from full property details when you are ready to start research.'},
+ {view:'home',selector:'.herobtns',min:0,release:81,title:'Try Better before signing up',copy:'From the homepage, wholesalers can preview public buy boxes and investors can preview the newest active listing before creating an account. Open AI Deal Analysis from full property details to start research when you are ready. Try it out opens an isolated, guided sample deal. Use the actual feed, property, profile, messaging, pipeline and Deal room screens with isolated sample data. Save a property, send a simulated message, move its pipeline stage and save the sample Deal room. Create a real account whenever you are ready.'},
  {view:'home',selector:'#sitefooter',min:0,release:73,title:'Public real estate guides',copy:'Open Real estate guides in the footer for free guides to posting wholesale properties, finding buyers and reviewing deal evidence. Property Share links provide a branded preview; share only information you are authorized to publish.'},
  {view:'settings',selector:'#app .page',min:0,release:71,title:'Advertising measurement preferences',copy:'Optional Meta Pixel measures public marketing page visits. You can turn advertising measurement off in Settings. Private pages and browser privacy signals are respected; email and phone preferences are separate.'},
  {view:'pipeline',selector:'.pipeline-room-button',min:1,release:79,title:'Open the linked deal room',copy:'Use Deal room on a linked pipeline card to open that property’s existing room. Access still follows the property’s permissions.'},
@@ -6348,6 +6499,16 @@ function openQuickCreate(){
  if(!state.user)return go('auth');const {card,close}=workspaceDialog('Quick create');
  const routes=[['Post a property','Add the property and supported deal details.','compose'],['Add a pipeline lead','Track an opportunity and its next action.','pipeline'],['Add a calendar reminder','Schedule a follow-up or deadline.','dealcalendar']];
  const list=el('div',{class:'workspace-create-list'});routes.forEach(([title,copy,view])=>list.append(el('button',{class:'btn-ghost',onclick:()=>{close();if(view==='pipeline'){openFormModal('Add pipeline lead',[{key:'title',label:'Deal or lead name',placeholder:'Property address or seller lead'},{key:'nextAction',label:'Next action',placeholder:'Follow up with seller'}],'Add lead',async v=>{if(!v.title.trim())throw new Error('Add a deal or lead name.');await api('POST','/api/pipeline',{...v,stage:'lead'});go('pipeline');});}else if(view==='dealcalendar'){openFormModal('Add deal reminder',[{key:'title',label:'Reminder title',placeholder:'Follow up with buyer'},{key:'at',label:'Date & time',type:'datetime-local'}],'Add reminder',async v=>{if(!v.title.trim()||!v.at)throw new Error('Add a title and date.');await api('POST','/api/deal-calendar',v);go('dealcalendar');});}else go(view);}},[el('b',{},title),el('span',{},copy)])));card.append(list);
+}
+function openHomeFeature(title){
+ const features={
+ 'Better Dispo':['Turn supported property details into buyer matching and distribution assets.',['Create or import your property details.','Review buyer matches and available distribution tools.','Share accurate materials and follow up with interested buyers.']],
+ 'Buyers Looking':['Review the public criteria buyers have chosen to share.',['Browse buyer markets, property types and price ranges.','Compare the criteria with your opportunity.','Join Better to connect directly with the buyer.']],
+ 'Network & Messages':['Build professional connections and keep conversations together.',['Find members by their profile and markets.','Follow or send a friend request.','Use private messages to discuss the next steps.']],
+ 'Wholesale Teams':['One company workspace with individual member logins.',['Review the Wholesale Teams plan and seat allowance.','Create your company workspace and invite team members.','Work together while each member keeps their own account.']]
+ };
+ const f=features[title];if(!f)return;const {card,close}=workspaceDialog(title+' · How it works');card.append(el('p',{class:'sub'},f[0]),el('ol',{class:'feature-steps'},f[1].map(x=>el('li',{},x))),el('div',{class:'hint'},title==='Wholesale Teams'?'Paid Team membership required. Review current pricing and access before purchasing.':'Some tools depend on membership. Review Plans for current access.'));
+ card.append(el('button',{class:'btn-primary',onclick:()=>{close();go(title==='Wholesale Teams'?'upgrade':'auth');}},title==='Wholesale Teams'?'View Team plans':'Join free'));
 }
 async function renderSupportChat(){
  const wrap=el('section',{class:'page support-page'}),admin=!!state.access?.adminUnlimited;
