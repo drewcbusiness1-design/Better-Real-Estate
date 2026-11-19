@@ -9,7 +9,7 @@ const required=[
 required.forEach(u=>assert(app.includes(u),`missing social URL: ${u}`));
 assert(app.includes("rel: 'noopener noreferrer'"),'external links must be protected');
 assert(app.includes("target: '_blank'"),'social links should open in a new tab');
-assert(app.slice(app.indexOf('function renderFooter()')).includes('socialLinksBlock(true)'), 'shared footer social links missing');
+assert(app.includes("class: 'homewide homesocial'"),'homepage social links missing');
 assert(app.includes("class: 'authsocial'"),'signup social links missing');
 assert(app.includes('socialLinksBlock(true)'),'shared social block missing');
 assert(css.includes('.sociallink:focus-visible'),'keyboard focus style missing');
