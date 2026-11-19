@@ -27,7 +27,8 @@ async function run() {
     older: { city: '97 Private Street, NJ', createdAt: new Date(Date.now() - 9 * 86400000).toISOString(), lastConfirmedAt: new Date().toISOString() }
   })) db.listings.push({ ...listing, id, ...changes });
   listing.city = 'Trenton, nj 08608';
-  listing.photos = ['/uploads/private-address.png'];
+  const cover = '/api/img/15f33dcc-031b-4655-abf0-f6ab3b8e8dc0.jpg';
+  listing.photos = [cover, '/api/img/bced9768-e9da-47cf-9fd9-2848d981466d.png'];
 
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -35,21 +36,28 @@ async function run() {
   try {
     const home = await (await fetch(base)).text();
     assert.match(home, /<h1>Find off-market deals\. <em>Reach the right buyers\.<\/em><\/h1>/);
-    assert.match(home, /href="\/\?view=preview&amp;intent=seller"/);
-    assert.match(home, /href="\/\?view=preview&amp;intent=buyer"/);
+    assert.match(home, /href="\/\?view=auth&amp;mode=signup" data-home-signup/);
+    assert.doesNotMatch(home, /view=try|data-deal-intent|href="\/\?view=preview/);
 
     const response = await fetch(base + '/api/public/deal-preview/buyer');
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'no-store');
     const { property } = await response.json();
     assert.deepEqual(property, {
-      id: 'listing', market: 'Trenton, NJ', propertyType: 'Single family', asking: 200000, confirmedDaysAgo: 2
+      id: 'listing', market: 'Trenton, NJ', propertyType: 'Single family', asking: 200000, photo: cover, confirmedDaysAgo: 2
     });
     listing.sold = true;
     const fallback = await (await fetch(base + '/api/public/deal-preview/buyer')).json();
     assert.equal(fallback.property.id, 'older');
     assert.equal(fallback.property.market, null);
     listing.sold = false;
+
+    for (const unsafe of ['https://example.test/house.jpg','/api/doc/notes.jpg','//example.test/house.jpg','/uploads/private-address.png']) {
+      listing.photos = [unsafe, cover];
+      const deniedPhoto = await (await fetch(base + '/api/public/deal-preview/buyer')).json();
+      assert.equal(deniedPhoto.property.photo, null);
+    }
+    listing.photos = [];
 
     const sellerResponse = await fetch(base + '/api/public/deal-preview/seller');
     assert.equal(sellerResponse.status, 200);
