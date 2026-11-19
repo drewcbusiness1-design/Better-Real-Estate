@@ -1731,3 +1731,17 @@ button.homecap-row:hover{background:var(--surface-2)}button.homecap-row:focus-vi
 .deal-preview-verified { color: var(--accent-text); font-size: 12px; font-weight: 800; }
 
 .listing-analysis-entry { margin: 12px 0; }
+
+.home-listing { min-width: 0; padding: clamp(16px, 3vw, 26px); border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.home-listing > h2 { margin: 0 0 16px; color: var(--ink-soft); font-size: 14px; font-weight: 650; }
+.home-listing .deal-preview-card { padding: 0; border: 0; }
+.home-listing .public-property-card h3 { font-size: clamp(23px, 3vw, 34px); letter-spacing: -.035em; }
+.home-listing .public-property-price { font-size: 20px; font-weight: 700; }
+.home-listing [role="status"]:empty { display: none; }
+.property-preview-link { display: inline-block; margin-top: 8px; color: var(--accent-text); font-weight: 700; text-underline-offset: 3px; }
+.home-workflow { padding: clamp(32px, 6vw, 60px) 0; }
+.home-workflow h2 { margin: 0 0 18px; font-size: clamp(22px, 4vw, 30px); letter-spacing: -.025em; }
+.home-workflow-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(16px, 3vw, 30px); }
+.home-workflow-grid h3 { margin: 0 0 6px; font-size: 16px; }
+.home-workflow-grid p { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+@media (max-width: 680px) { .home-workflow-grid { grid-template-columns: 1fr; } }

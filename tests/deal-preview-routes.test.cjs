@@ -34,9 +34,11 @@ async function run() {
   const base = 'http://127.0.0.1:' + server.address().port;
   try {
     const home = await (await fetch(base)).text();
-    assert.match(home, /<h1>Find off-market deals\. <em>Reach the right buyers\.<\/em><\/h1>/);
-    assert.match(home, /href="\/\?view=preview&amp;intent=seller"/);
-    assert.match(home, /href="\/\?view=preview&amp;intent=buyer"/);
+    assert.match(home, /<h1>Find off-market deals\. <em>Connect with buyers\.<\/em><\/h1>/);
+    assert.match(home, /href="\/\?view=auth&amp;mode=signup" data-home-signup/);
+    assert.match(home, /<h2 id="home-workflow-title">How Better works<\/h2>/);
+    assert.match(home, /check the markets, price ranges and property types/);
+    assert.doesNotMatch(home, /view=try|data-deal-intent|href="\/\?view=preview/);
 
     const response = await fetch(base + '/api/public/deal-preview/buyer');
     assert.equal(response.status, 200);
