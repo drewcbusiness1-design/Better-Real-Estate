@@ -1772,3 +1772,7 @@ html:has(.home-preview-dialog[open]) { overflow: hidden; }
   .home-preview-dialog .buyerdemandhead { flex-wrap: wrap; }
   .home-preview-dialog .buyerdemandhead .grow { min-width: 105px; }
 }
+
+.home-preview-dialog .btn-primary { background: #171717; color: #fff; border-color: #171717; }
+.home-preview-dialog .btn-primary:hover { background: #333; color: #fff; }
+:root[data-theme="dark"] .home-preview-dialog .btn-primary { background: #e0bc65; color: #171717; border-color: #e0bc65; }

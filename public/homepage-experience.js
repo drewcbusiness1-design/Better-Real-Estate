@@ -11,6 +11,11 @@
     user: { id: 'example-' + id, name, role: 'buyer', location: market },
     label: type + ' acquisition criteria', cities: [market], propertyTypes: [type], maxPrice, strategy
   }));
+  const connections = [
+    { id: 'connection-agent', name: 'Casey Monroe', role: 'agent', location: 'Austin, TX' },
+    { id: 'connection-lender', name: 'Drew Bennett', role: 'lender', location: 'Columbus, OH' },
+    { id: 'connection-wholesaler', name: 'Skyler Davis', role: 'seller', location: 'Atlanta, GA' }
+  ];
   const team = [
     { id: 'owner', name: 'Sam Patel', role: 'Owner' },
     { id: 'acquisitions', name: 'Alex Kim', role: 'Acquisitions' },
@@ -46,7 +51,7 @@
       const buyer = buyers.find(row => row.user.id === user.id);
       show(button('Back to preview', main), el('div', { class: 'personcard home-preview-profile' }, [
         avatarNode(user), el('h3', {}, user.name), el('p', {}, user.location),
-        el('p', {}, buyer.strategy + ' · ' + buyer.label + ' · Up to ' + money(buyer.maxPrice)),
+        el('p', {}, buyer ? buyer.strategy + ' · ' + buyer.label + ' · Up to ' + money(buyer.maxPrice) : 'Real estate professional · ' + user.role),
         button('Open sample conversation', () => message(user), true)
       ]));
     }
@@ -86,7 +91,7 @@
       const results = el('div', { class: 'home-preview-results' });
       function draw() {
         const term = query.value.trim().toLowerCase();
-        const rows = buyers.filter(row => [row.user.name, row.user.location, row.label, row.strategy].join(' ').toLowerCase().includes(term));
+        const rows = (network ? connections.map(user => ({ user })) : buyers).filter(row => [row.user.name, row.user.location, row.label, row.strategy].join(' ').toLowerCase().includes(term));
         results.replaceChildren(...(rows.length ? rows.map(row => network ? personCard(row.user, { preview: actions }) : buyerDemandCard(row, actions))
           : [el('p', { class: 'hint', role: 'status' }, 'No examples match this search.')]));
       }

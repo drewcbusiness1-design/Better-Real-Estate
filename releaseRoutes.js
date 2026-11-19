@@ -8,13 +8,10 @@ function register(app,{requireAuth,requireAdmin,saveDB,isAdminUser,isDemoUser}){
      let count;
      if (FILE_MODE) {
        const db = await loadDB();
-       count = db.users.filter(user => user.emailVerified === true && !isDemoUser(user) && user.role !== 'admin').length;
+       count = db.users.length;
      } else {
        await init();
-       const [result] = await sql(`SELECT COUNT(*) AS count FROM ${tableFor('users')}
-         WHERE data->'emailVerified' = 'true'::jsonb
-           AND data->'demo' IS DISTINCT FROM 'true'::jsonb
-           AND data->>'role' IS DISTINCT FROM 'admin'`);
+       const [result] = await sql(`SELECT COUNT(*) AS count FROM ${tableFor('users')}`);
        count = Number(result.count);
      }
      const step = count < 10 ? 1 : 10 ** Math.floor(Math.log10(count));

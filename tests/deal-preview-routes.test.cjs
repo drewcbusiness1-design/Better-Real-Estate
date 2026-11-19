@@ -78,8 +78,8 @@ async function run() {
       { id: 'pending-only', role: 'buyer', emailVerified: false }
     ];
     for (const [count, members, milestone] of [[0, 0, false], [9, 9, false], [10, 10, true], [78, 70, true], [99, 90, true], [100, 100, true], [984, 900, true], [1234, 1000, true]]) {
-      db.users = [...sampleAccounts, ...Array.from({ length: count }, (_, index) => ({
-        id: 'verified-' + index, role: 'buyer', emailVerified: true
+      db.users = [...Array.from({ length: count }, (_, index) => ({
+        ...sampleAccounts[index % sampleAccounts.length], id: 'signup-' + index
       }))];
       const response = await fetch(base + '/api/public/member-milestone');
       assert.equal(response.status, 200);
