@@ -71,6 +71,21 @@ async function run() {
     assert.equal((await fetch(base + '/api/listings/listing')).status, 401);
     assert.equal(db.browsingUsage.length, 0);
     assert.equal(db.views.length, 0);
+
+    const sampleAccounts = [
+      { id: 'admin-only', role: 'admin', emailVerified: true },
+      { id: 'demo-only', role: 'buyer', emailVerified: true, demo: true },
+      { id: 'pending-only', role: 'buyer', emailVerified: false }
+    ];
+    for (const [count, members, milestone] of [[0, 0, false], [9, 9, false], [10, 10, true], [78, 70, true], [99, 90, true], [100, 100, true], [984, 900, true], [1234, 1000, true]]) {
+      db.users = [...sampleAccounts, ...Array.from({ length: count }, (_, index) => ({
+        id: 'verified-' + index, role: 'buyer', emailVerified: true
+      }))];
+      const response = await fetch(base + '/api/public/member-milestone');
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { members, milestone });
+    }
+
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

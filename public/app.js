@@ -737,6 +737,9 @@ function renderHome() {
     ])
   ])));
 
+  const community = window.BetterHome?.community(el, api);
+  if (community) wrap.appendChild(community);
+
   wrap.appendChild(el('section', { class: 'homeproof' }, el('div', { class: 'homewide homeproof-grid' }, [
     proofItem('01', 'Find opportunities', 'A real-estate-first feed built around properties and people — not unrelated social noise.'),
     proofItem('02', 'Find the right people', 'Public buy boxes, member discovery, follows, friends and direct messaging keep your network useful.'),
@@ -892,7 +895,7 @@ function renderDealPreview() {
   });
   return wrap;
 }
-function capability(h, p, n) { return el('button', { type:'button', class:'homecap-row', onclick:()=>openHomeFeature(h), 'aria-label':'How '+h+' works' }, [el('span', { class: 'homecap-num' }, n), el('div', {}, [el('b', {}, h), el('small', {}, p)]), el('span', { class: 'homecap-arrow' }, '→')]); }
+function capability(h, p, n) { return el('button', { type:'button', class:'homecap-row', 'aria-haspopup':'dialog', onclick:()=>openHomeFeature(h), 'aria-label':'How '+h+' works' }, [el('span', { class: 'homecap-num' }, n), el('div', {}, [el('b', {}, h), el('small', {}, p)]), el('span', { class: 'homecap-arrow' }, '→')]); }
 function proofItem(n, h, p) { return el('div', { class: 'homeproof-item' }, [el('span', {}, n), el('div', {}, [el('h3', {}, h), el('p', {}, p)])]); }
 function homeFeature(h, p, tag) { return el('article', { class: 'homefeature' }, [el('div', { class: 'homefeature-tag' }, tag), el('h3', {}, h), el('p', {}, p)]); }
 function teamPoint(h, p) { return el('div', { class: 'hometeam-point' }, [el('span', {}, '✓'), el('div', {}, [el('b', {}, h), el('small', {}, p)])]); }
@@ -3118,6 +3121,7 @@ function tutorialStepsFor(tier=tutorialTier()){
  {view:'servicesdirectory',selector:'.service-workspace',min:0,release:84,title:'Find property services',copy:'Services, Find services, Messages, Network and Profile stay in the service workspace. Main dashboard returns to the full platform. Search providers and request quotes; verify qualifications directly.'},
  {view:'affiliate',selector:'.affiliate-center',min:0,release:73,title:'Individual commission agreements',copy:'Admin can propose a personal commission rate. Review and accept it in Affiliate Center to activate it for future eligible first paid memberships. A custom rate replaces automatic leaderboard increases until you accept a return to automatic rates. Past earnings keep their original rate.'},
  {view:'home',selector:'.home-listing-section',min:0,release:81,title:'See the latest property before joining',copy:'The homepage shows an active listing with its cover photo when available. Use Buyers Looking to review published buying criteria, then open a member profile to send a private message. Open AI Deal Analysis from full property details.'},
+ {view:'home',selector:'.homecap-panel',min:0,release:81,title:'Try a tool from the homepage',copy:'Open a platform arrow to explore the buyers, messages, marketing drafts and team assignments using sample data. Close the window to return to the homepage.'},
  {view:'home',selector:'#sitefooter',min:0,release:73,title:'Public real estate guides',copy:'Open Real estate guides in the footer for free guides to posting wholesale properties, finding buyers and reviewing deal evidence. Property Share links provide a branded preview; share only information you are authorized to publish.'},
  {view:'settings',selector:'#app .page',min:0,release:71,title:'Advertising measurement preferences',copy:'Optional Meta Pixel measures public marketing page visits. You can turn advertising measurement off in Settings. Private pages and browser privacy signals are respected; email and phone preferences are separate.'},
  {view:'pipeline',selector:'.pipeline-room-button',min:1,release:79,title:'Open the linked deal room',copy:'Use Deal room on a linked pipeline card to open that property’s existing room. Access still follows the property’s permissions.'},
@@ -3754,7 +3758,8 @@ function friendButton(user, onChanged) {
 }
 function personCard(user, opts = {}) {
   const card = el('div', { class: 'personcard' });
-  const main = el('div', { class: 'personmain', onclick: () => go('profile', { profileId: user.id }) }, [
+  const profile = opts.preview ? () => opts.preview.profile(user) : () => go('profile', { profileId: user.id });
+  const main = el('div', { class: 'personmain', onclick: profile }, [
     avatarNode(user),
     el('div', { class: 'personmeta' }, [
       el('div', { class: 'personname' }, [user.name, user.verified ? el('span', { class: 'vbadge' }, '✓') : null]),
@@ -3765,6 +3770,12 @@ function personCard(user, opts = {}) {
   ]);
   card.appendChild(main);
   const actions = el('div', { class: 'personactions' });
+  if (opts.preview) {
+    actions.append(el('button', { onclick: profile }, 'View profile'),
+      el('button', { class: 'primary', onclick: () => opts.preview.message(user) }, 'Message'));
+    card.appendChild(actions);
+    return card;
+  }
   const follow = el('button', {}, user.following ? 'Following' : 'Follow');
   follow.onclick = async () => {
     try { await withButtonBusy(follow, async () => { const r = await api('POST', '/api/follow', { userId: user.id }); user.following = r.following; follow.textContent = r.following ? 'Following' : 'Follow'; }); }
@@ -3778,13 +3789,15 @@ function personCard(user, opts = {}) {
 }
 
 function buyingStatusLabel(v) { return v === 'paused' ? 'Paused' : v === 'selective' ? 'Selective' : 'Actively buying'; }
-function buyerDemandCard(row) {
+function buyerDemandCard(row, preview) {
   const u = row.user || {};
+  const profile = preview ? () => preview.profile(u) : () => go('profile', { profileId: u.id });
+  const message = preview ? () => preview.message(u) : () => go('chat', { chatUserId: u.id });
   const card = el('div', { class: 'buyerdemandcard' });
   card.appendChild(el('div', { class: 'buyerdemandhead' }, [
     avatarNode(u, 'small'),
     el('div', { class: 'grow' }, [
-      el('div', { class: 'personname', onclick: () => go('profile', { profileId: u.id }) }, [u.name || 'Buyer', u.verified ? el('span', { class: 'vbadge' }, 'Verified profile') : null]),
+      el('div', { class: 'personname', onclick: profile }, [u.name || 'Buyer', u.verified ? el('span', { class: 'vbadge' }, 'Verified profile') : null]),
       u.username ? el('div', { class: 'personhandle' }, '@' + u.username) : null,
       el('div', { class: 'personsub' }, [row.company?.name, row.strategy, ...(row.states || []), ...(row.cities || [])].filter(Boolean).slice(0,4).join(' · '))
     ]),
@@ -3798,9 +3811,9 @@ function buyerDemandCard(row) {
     row.minSpread ? el('span', {}, `Min spread ${money(row.minSpread)}`) : null
   ].filter(Boolean)));
   card.appendChild(el('div', { class: 'personactions' }, [
-    el('button', { onclick: () => go('profile', { profileId: u.id }) }, 'View profile'),
-    el('button', { onclick: () => shareNative({ kind: 'buyer', targetId: u.id, title: `${u.name || 'Investor'} is buying on Better Real Estate`, text: [...(row.cities || []).slice(0,3), row.strategy].filter(Boolean).join(' · ') }) }, 'Share'),
-    el('button', { class: 'primary', onclick: () => go('chat', { chatUserId: u.id }) }, 'Message buyer')
+    el('button', { onclick: profile }, 'View profile'),
+    preview ? null : el('button', { onclick: () => shareNative({ kind: 'buyer', targetId: u.id, title: `${u.name || 'Investor'} is buying on Better Real Estate`, text: [...(row.cities || []).slice(0,3), row.strategy].filter(Boolean).join(' · ') }) }, 'Share'),
+    el('button', { class: 'primary', onclick: message }, 'Message buyer')
   ]));
   return card;
 }
@@ -6432,15 +6445,8 @@ function openQuickCreate(){
  const routes=[['Post a property','Add the property and supported deal details.','compose'],['Add a pipeline lead','Track an opportunity and its next action.','pipeline'],['Add a calendar reminder','Schedule a follow-up or deadline.','dealcalendar']];
  const list=el('div',{class:'workspace-create-list'});routes.forEach(([title,copy,view])=>list.append(el('button',{class:'btn-ghost',onclick:()=>{close();if(view==='pipeline'){openFormModal('Add pipeline lead',[{key:'title',label:'Deal or lead name',placeholder:'Property address or seller lead'},{key:'nextAction',label:'Next action',placeholder:'Follow up with seller'}],'Add lead',async v=>{if(!v.title.trim())throw new Error('Add a deal or lead name.');await api('POST','/api/pipeline',{...v,stage:'lead'});go('pipeline');});}else if(view==='dealcalendar'){openFormModal('Add deal reminder',[{key:'title',label:'Reminder title',placeholder:'Follow up with buyer'},{key:'at',label:'Date & time',type:'datetime-local'}],'Add reminder',async v=>{if(!v.title.trim()||!v.at)throw new Error('Add a title and date.');await api('POST','/api/deal-calendar',v);go('dealcalendar');});}else go(view);}},[el('b',{},title),el('span',{},copy)])));card.append(list);
 }
-function openHomeFeature(title){
- const features={
- 'Better Dispo':['Turn supported property details into buyer matching and distribution assets.',['Create or import your property details.','Review buyer matches and available distribution tools.','Share accurate materials and follow up with interested buyers.']],
- 'Buyers Looking':['Review the public criteria buyers have chosen to share.',['Browse buyer markets, property types and price ranges.','Compare the criteria with your opportunity.','Join Better to connect directly with the buyer.']],
- 'Network & Messages':['Build professional connections and keep conversations together.',['Find members by their profile and markets.','Follow or send a friend request.','Use private messages to discuss the next steps.']],
- 'Wholesale Teams':['One company workspace with individual member logins.',['Review the Wholesale Teams plan and seat allowance.','Create your company workspace and invite team members.','Work together while each member keeps their own account.']]
- };
- const f=features[title];if(!f)return;const {card,close}=workspaceDialog(title+' · How it works');card.append(el('p',{class:'sub'},f[0]),el('ol',{class:'feature-steps'},f[1].map(x=>el('li',{},x))),el('div',{class:'hint'},title==='Wholesale Teams'?'Paid Team membership required. Review current pricing and access before purchasing.':'Some tools depend on membership. Review Plans for current access.'));
- card.append(el('button',{class:'btn-primary',onclick:()=>{close();go(title==='Wholesale Teams'?'upgrade':'auth');}},title==='Wholesale Teams'?'View Team plans':'Join free'));
+function openHomeFeature(title) {
+  window.BetterHome.open(title, { el, avatarNode, buyerDemandCard, personCard, money });
 }
 async function renderSupportChat(){
  const wrap=el('section',{class:'page support-page'}),admin=!!state.access?.adminUnlimited;
